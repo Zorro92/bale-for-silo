@@ -3,12 +3,12 @@ namespace Bale.Xbox.Services;
 
 /// <summary>
 /// bale-debug.sh captions: the open player's in-band closed captions (GET: the where line's Captions: state) and the subtitle
-/// menu's CC or Off row (POST action=cc|off) through the player's own pick path, for console checks where the menu is slow
-/// to drive with keys. Fixed messages and counters only, never caption text.
+/// menu's CC row of a channel or its Off row (POST action=cc|cc1..cc4|off, cc = CC1) through the player's own pick path, for
+/// console checks where the menu is slow to drive with keys. Fixed messages and counters only, never caption text.
 /// </summary>
 internal sealed partial class DebugServer
 {
-    private const string CaptionsUsage = "usage: GET /captions | POST /captions?action=cc|off\n";
+    private const string CaptionsUsage = "usage: GET /captions | POST /captions?action=cc|cc1|cc2|cc3|cc4|off\n";
 
     private static async Task<(string Status, string Body)> CaptionsAsync(string? action)
     {

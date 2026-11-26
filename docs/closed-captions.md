@@ -1,8 +1,9 @@
 # In-band closed captions (CEA-608)
 
 Status (2026-11-26): **wired into the player** (`fe2dc00`, on wrapper bale.84 with the fork's caption tap, pinned in
-`e9fc6ba`); console check pending. The backlog items are "In-band closed captions (CEA-608)" and "In-band CEA-708" in
-docs/parity-backlog.md. CEA-708 is not decoded yet.
+`e9fc6ba`), with a row for every CEA-608 channel the stream carries (owner, 2026-11-26; "In the player"); console check
+pending. The backlog items are "In-band closed captions (CEA-608)" and "In-band CEA-708" in docs/parity-backlog.md.
+CEA-708 is not decoded yet.
 
 CEA-608 ("line 21") captions reach digital video as ATSC A/53 `cc_data`: in H.264 and HEVC SEI
 (`user_data_registered_itu_t_t35`, "GA94", type 3; SCTE 128 for cable) and in MPEG-2 picture user data.
@@ -25,8 +26,10 @@ Broadcast recordings, US TV episodes and many WEB-DLs carry them without a separ
   overrides (the brief, and what FFmpeg, mpv and VLC do), with a plain flag for Android TV's look
   (`FLAG_PLAIN`, `SubtitleOverlay.AttachCaptions(..., plain: true)`). Deliberate deviation (owner, 2026-11-25):
   the default stays styled. Captions keep their own colours, italics and underline, where Android TV and AetherEngine
-  draw plain text; the player never passes `FLAG_PLAIN`. In the player: one CC row on CC1 once captions are found, picked on
-  the client and kept across remounts ("In the player").
+  draw plain text; the player never passes `FLAG_PLAIN`. In the player: a row for each channel found, CC1 to CC4 (one row
+  "CC" while CC1 is the only one), picked on the client and kept across remounts with its channel ("In the player").
+  Deliberate deviation (owner, 2026-11-26): every channel the stream carries is offered, where Android TV and AetherEngine
+  show one CC1 track.
 
 ## How it runs
 
@@ -150,8 +153,10 @@ that slows the CPU about a quarter, about 1.2 GB of usable memory):
   4096 commands, libass events pruned a minute after they end. Nothing on the GPU besides the overlay's own.
 - **Player (UI thread):** one decoder per FFmpeg mount of a tapped codec, released with the mount, so at most two
   exist while a replaced mount closes; the 100 ms tick asks the mount's decoder for its seen bits (a lock and a read)
-  about once a second until the attempt has found captions, never afterwards; an attach is one call that replays at
-  most 30 s of kept cues. No FFmpegInteropX call and nothing per frame.
+  about once a second until the attempt has found all four channels, which for a stream with CC1 alone (the common
+  case) is the whole attempt: one lock and read a second; a channel pick is one `bale_cc_select` (a lock; the 12 KiB
+  decoder state rebuilt in place) and an attach, which replays at most 30 s of kept cues. No FFmpegInteropX call and
+  nothing per frame.
 
 ## Timeline
 
@@ -177,7 +182,7 @@ cues it kept, so a late attach loses nothing. All of this is still to check on t
 ## In the player
 
 `PlayerPage.Captions.cs`, with the decisions in Bale.Core's `PlaybackClosedCaptions` (one per playback attempt: a new
-attempt, Retry or the next episode, starts with CC off).
+attempt, Retry or the next episode, starts with CC off, on CC1).
 
 **Which mounts.** Every FFmpeg mount of an H.264, HEVC or MPEG-2 stream (`PlaybackClosedCaptions.Taps`, the route's
 codec) gets its own `ClosedCaptions` and a fresh `bale_cc_sink` token (a process-wide counter over 1..999999999), made
@@ -196,27 +201,38 @@ survive only if the server's FFmpeg carries the decoder's A53 side data through 
 it (libx264's and NVENC's `a53cc` default to on; the hardware encoders differ), and a frame rate change would drop
 or repeat caption pairs. Not checked on a server: the HLS console check below says what a transcode delivers.
 
-**The CC row.** Once a mount's decoder reports CC1 captions (`bale_cc_seen` bit 0: caption commands, not padding,
-CC2-CC4 or CEA-708 data; asked about once a second from the player's tick until found), the control bar's Subtitles
-menu and the Options panel's Subtitles pane list a row "CC" after the catalog's tracks (`TrackIndex` −2, which nothing
-sends to the server; it counts as a track, so a file with only captions shows the Subtitles tab). It stays for the
-attempt, since a remount's decoder starts unseen. A menu or panel already open lists it the next time it opens.
+**The CC rows.** Once a mount's decoder reports a channel's captions (`bale_cc_seen` bits 0-3, CC1 to CC4: caption
+commands, not padding, Text or CEA-708 data; asked about once a second from the player's tick until all four were found),
+the control bar's Subtitles menu and the Options panel's Subtitles pane list a row for it after the catalog's tracks, in
+channel order: "CC" while CC1 is the only one, so the common case looks as Android's one track does, else "CC1" to "CC4".
+Each has its own `TrackIndex`, −2 to −5 for CC1 to CC4 (`PlaybackClosedCaptions.TrackIndexOf`; no server track uses
+them, −1 being Off, and nothing sends them to the server), and each counts as a track, so a file with only captions
+shows the Subtitles tab. A channel found later adds its row (a lone "CC" then reads "CC1"); every row stays for the
+attempt, since a remount's decoder starts unseen. A menu or panel already open lists a new row the next time it opens.
 - Android TV lists in-band CEA-608 as a track the player found itself (`TvSubtitleIdentity.kt`
   tvMountedSubtitleIdentity: `SubtitleIdentity.LocalMedia3`), after the server's rows (`TvSubtitleHudState.kt`
   buildTvSubtitleHudOptions). Media3 exposes it where its extractor reads caption SEI, which Silo's player sets up
   for MPEG-TS (progressive TS through `TsExtractor`'s default caption format, HLS TS through
   `exposeCea608WhenMissingDeclarations` in `SiloPlayerFactory.kt`), as one track that decodes CC1 unless the PMT
   declares caption services, which then give one track each with its language. The fork's tap carries no such
-  declaration, so Bale offers one row, decoding CC1 (the test clips are all CC1); the tap reads every container FFmpeg
-  demuxes.
+  declaration either. Deliberate deviation (owner, 2026-11-26): Bale offers a row for every channel the stream carries
+  instead of Media3's one CC1 track, so captions on CC2 to CC4 (field 2 carries CC3 and CC4) are not out of reach; the
+  tap reads every container FFmpeg demuxes. The test clips 10-15 carry CC1 alone (their field 2 is null padding).
 - The label: Android's row for an undeclared track has no language and falls back to a numbered "Subtitle N"
   (`formatSubtitleTrackDisplayLabel`, from `extractTrackEntries` in `TvPlayerScreen.kt`, whose number runs one past
-  the track's place), and to the language's name when one is declared. Bale calls the row "CC", Android's name for
-  CEA-608 everywhere else (`TvSubtitleChoiceLabels.kt` subtitleFormatShortName, the HUD's CC chip); one constant,
-  `PlaybackClosedCaptions.Title`. AetherEngine names its synthetic track "Closed Captions".
+  the track's place), and to the language's name when one is declared. Bale calls a lone CC1 row "CC", Android's name
+  for CEA-608 everywhere else (`TvSubtitleChoiceLabels.kt` subtitleFormatShortName, the HUD's CC chip; one constant,
+  `PlaybackClosedCaptions.Title`), and the rows of a stream with more channels by the channels' CEA-608 names, "CC1" to
+  "CC4" (`PlaybackClosedCaptions.TitleOf`). AetherEngine names its synthetic track "Closed Captions".
 
-**Picking it** is the client's business, as Android commits a client-owned identity locally (`SubtitleTransition.kt`
-select, `TvSubtitleTransactionAdapter.kt`): no track_change replan. If the plan plays a server subtitle (its
+**Picking one** is the client's business, as Android commits a client-owned identity locally (`SubtitleTransition.kt`
+select, `TvSubtitleTransactionAdapter.kt`): no track_change replan. The mount's decoder decodes the picked channel from
+then on (`ClosedCaptions.Select`, `bale_cc_select`); a change of channel starts that channel's 608 decoder afresh and
+drops the cues kept for the previous one and the overlay's caption events at once (a `Clear`), so nothing drawn from the
+previous channel stays up, and the attach that follows draws the new channel from its next caption on (a decoder
+decodes one channel at a time, so it kept nothing of the new one). The channel already on changes nothing. Every later
+mount's decoder starts on the picked channel (`StartCaptions` selects it before the tap's first packet), and Off keeps
+the channel for them, so picking the same row again replays what its decoder kept. If the plan plays a server subtitle (its
 selected_tracks name one: a sidecar, a burn-in or a native track), the player's Off path runs first
 (`ChangeTracksAsync(null, -1, remember: false)`), so the server stops its burn-in or sidecar, and the plan that Off
 brings (adopted in place or remounted) draws CC; a refused or busy Off leaves the server subtitle and CC off. Android
@@ -239,18 +255,22 @@ with the same `SubtitleStyle` as text subtitles), never plain.
   that carried no decision (deep link, cast, remote start) of a file without a server subtitle inventory, with subtitle
   mode "always" and no preferred language (`TvPlayerViewModel.kt` resolveTvAutoSubtitleIdentity); Bale has no such
   start.
-- A recovery replan, seek reanchor, HLS remount and quality change keep CC on: Android keeps a player-discovered
+- A recovery replan, seek reanchor, HLS remount and quality change keep CC on, on the picked channel (nothing saves the
+  channel either; a new attempt starts on CC1): Android keeps a player-discovered
   CEA-608 track as keep-current, so a recovery keeps the viewer's subtitles (`TvPlayerViewModel.kt`
   selectedSubtitleTrackIndex). Bale's replans already ask for no subtitle after the Off (the plan's selected tracks
   and `PlaybackReplan.WithTracks`), and every mount draws its new decoder while CC is on, unless its plan plays a
   server subtitle (which ends CC, as a pick of it does).
 
-**Debug.** `bale-debug.sh where` has a `Captions:` line: `offered`, `picked`, and the mount's decoder (`attached`,
+**Debug.** `bale-debug.sh where` has a `Captions:` line: `offered` (the channels found, `cc1,cc3`, or `no`), `picked`
+(the channel on, `cc3`, or `no`), and the mount's decoder (`attached`, the `channel` it decodes (also while CC is off),
 `token`, `seen` channels, `packets`, `captioned`, `pairs`, `cues`, `late`, `depth`, `flushes`, the timing `origin`), or
-`decoder=none (route=… codec=…)`. `bale-debug.sh captions` prints it; `captions cc` picks the CC row through the
-menu's path (409 until captions were found) and `captions off` the Off row (which also turns a server subtitle off and,
-on a Silo session, saves Off as the row does). The log says `player: closed captions found channel=cc1`, `player: closed
-captions picked`, `player: subtitles mode=render format=cea608 channel=cc1` and `player: closed captions off`.
+`decoder=none (route=… codec=…)`. `bale-debug.sh captions` prints it; `captions cc1` to `captions cc4` pick that
+channel's row through the menu's path (`cc` is CC1, the row a stream with CC1 alone calls "CC"; 409 until that channel
+was found) and `captions off` the Off row (which also turns a server subtitle off and, on a Silo session, saves Off as the
+row does). The log says `player: closed captions found channel=cc1` (`channel=cc1,cc3` when one check finds several),
+`player: closed captions picked channel=cc3`, `player: subtitles mode=render format=cea608 channel=cc3` and `player:
+closed captions off`.
 
 ## Tests and the debug path
 
@@ -264,14 +284,19 @@ captions picked`, `player: subtitles mode=render format=cea608 channel=cc1` and 
   (TS) and must match too. Skipped without the clips or `ffprobe` (CI). 2026-11-25: all 11 match, none late.
 - `tests/cc_warp.rs` (Windows CI): the caption ABI on a WARP overlay: the caption drawn at its time, gone after its
   erase, before its start, after a flush and after a detach.
+- `tests/cc_abi.rs` (every platform): the caption ABI without an overlay: one stream with CC1 in field 1 and CC3 and
+  CC4 in field 2 (data channels 1 and 2), each picked with `bale_cc_select` and decoding only its own caption; a pick
+  drops what the previous channel showed; out of range channels and 708 services refused.
 - `tests/Bale.Core.Tests/ClosedCaptionsTests.cs`: the C# imports against the Rust exports and CI's list, the
   counters' layout, the sink option; and the wrapper run against a Linux build of bale_gpu when one is in
-  native/bale-gpu/target/release (skipped otherwise, as on CI).
-- `tests/Bale.Core.Tests/PlaybackClosedCaptionsTests.cs`: the decisions (which mounts, when CC is offered, a pick with
-  and without a server subtitle, Off and a server pick, a recovery and a seek reanchor keeping CC, Auto, the Options
-  rows); `PlayerClosedCaptionsWiringTests.cs` pins the player's wiring by source (a decoder and token per mount and its
-  disposal, the row in both menus, the client-only pick that remembers nothing, the in-place answer, the timing origin,
-  the flush clearing the overlay, the debug readout and command).
+  native/bale-gpu/target/release (skipped otherwise, as on CI): CC1, and the CC3 row decoding a field-2 stream.
+- `tests/Bale.Core.Tests/PlaybackClosedCaptionsTests.cs`: the decisions (which mounts, which channels are offered and
+  their rows' names and track indexes, a pick with and without a server subtitle, a switch between channels, Off and a
+  server pick, a recovery and a seek reanchor keeping CC on its channel, Auto, the Options rows);
+  `PlayerClosedCaptionsWiringTests.cs` pins the player's wiring by source (a decoder and token per mount and its
+  disposal, on the picked channel, the rows in both menus, the client-only pick that switches the mount's decoder and
+  remembers nothing, the in-place answer, the timing origin, the flush clearing the overlay, the debug readout and
+  command).
 - `cargo run --release --example cc_dump -- <clip> [cc1|cc2|cc3|cc4] [--ass]` prints a local clip's captions as Bale
   decodes them (or the ASS script the overlay would draw).
 
@@ -280,7 +305,7 @@ captions picked`, `player: subtitles mode=render format=cea608 channel=cc1` and 
 - **Console checks** of the wiring (pending), with the clips 10–15 (bale-subtitle-clips, all CC1, 30 s of 1080p30
   H.264; serve them with `scripts/serve-media.py` and play each with `bale-debug.sh play-url`):
   1. `where` shows the mount's decoder counting packets and, a second or two after the first caption, `seen=cc1` and
-     `offered=yes`; the Subtitles menu (driven by keys once) lists Off and CC; `captions cc` picks it.
+     `offered=cc1`; the Subtitles menu (driven by keys once) lists Off and CC; `captions cc` picks it.
   2. The captions at their times against the clock burned into the picture (10–12: "608 1/6" at 1–5 s, two lines
      6–10 s, italics 11–15 s, yellow 16–20 s, the top row 21–25 s, the last 26–29 s), in the appearance's font, size
      and box; the rich clips' colours, italics, underline and backgrounds (13, 14) and the split clip (15). Screenshots.
@@ -291,10 +316,15 @@ captions picked`, `player: subtitles mode=render format=cea608 channel=cc1` and 
      non-zero `origin`; whether a transcode keeps captions), with seeks; a server subtitle on, then CC (the subtitle
      goes, CC shows); `fault playback` (the recovery keeps CC); the next episode starts with CC off and the series'
      subtitle preference unchanged; `mem` around a few remounts with CC on.
+  5. A stream with captions on more than CC1 (none of the clips has one; a broadcast recording with a second language
+     on CC3, or a clip made with field-2 captions): the rows CC1 and CC3 in channel order, `captions cc3` (CC1's
+     caption goes at once, CC3's next caption shows, `picked=cc3 channel=cc3`), a seek and `fault playback` staying on
+     CC3, Off then CC3 again.
 - **CEA-708** (DTVCC): `bale_cc_select`'s service number and `SEEN_DTVCC` are there; the decoder is not.
 - Not handled: 608 Text mode (T1-T4) and XDS content are skipped, flash is drawn steady, a background change
   inside a row (the box takes the row's first background), MPEG-2's other caption formats (SCTE 20, DVD) and
   QuickTime `c608` caption tracks (a subtitle stream, not video; AetherEngine reads them). In the player: a menu or
-  panel already open when captions are found lists CC only when it next opens, and nothing re-attaches CC on an
+  panel already open when a channel is found lists its row only when it next opens; a channel switch shows the new
+  channel from its next caption on, since a decoder decodes one channel at a time; and nothing re-attaches CC on an
   appearance change (each attach reads the current appearance, and Settings › Subtitles is not reachable while the
   player is open).

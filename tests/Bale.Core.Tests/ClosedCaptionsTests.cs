@@ -146,36 +146,43 @@ public class ClosedCaptionsNativeTests
     }
 
     /// <summary>
-    /// An Annex B H.264 access unit: an A/53 SEI with this frame's field-1 pair of a pop-on "HI" (shown at frame 10,
-    /// erased at frame 40, control codes twice), then a slice.
+    /// An Annex B H.264 access unit: an A/53 SEI with this frame's pair of a pop-on "HI" (shown at frame 10, erased at frame
+    /// 40, control codes twice) in field 1 as CC1, or in field 2 as CC3 (its miscellaneous codes on 15, the field-2 form),
+    /// and a null pair in the other field, then a slice.
     /// </summary>
-    private static byte[] Packet(int frame)
+    private static byte[] Packet(int frame, bool field2)
     {
+        var misc = field2 ? 0x15 : 0x14;
         int[] pair = frame switch
         {
-            0 or 1 => [0x14, 0x20],
+            0 or 1 => [misc, 0x20],
             2 or 3 => [0x14, 0x60],
             4 => ['H', 'I'],
-            10 or 11 => [0x14, 0x2F],
-            40 or 41 => [0x14, 0x2C],
+            10 or 11 => [misc, 0x2F],
+            40 or 41 => [misc, 0x2C],
             _ => [0, 0],
         };
-        byte[] payload = [0xB5, 0x00, 0x31, (byte)'G', (byte)'A', (byte)'9', (byte)'4', 0x03, 0x42, 0xFF,
-            0xFC, Parity(pair[0]), Parity(pair[1]), 0xFD, 0x80, 0x80, 0xFF];
+        byte[] cc = field2
+            ? [0xFC, 0x80, 0x80, 0xFD, Parity(pair[0]), Parity(pair[1])]
+            : [0xFC, Parity(pair[0]), Parity(pair[1]), 0xFD, 0x80, 0x80];
+        byte[] payload = [0xB5, 0x00, 0x31, (byte)'G', (byte)'A', (byte)'9', (byte)'4', 0x03, 0x42, 0xFF, .. cc, 0xFF];
         return [0, 0, 0, 1, 0x06, 0x04, (byte)payload.Length, .. payload, 0x80, 0, 0, 1, 0x65, 0x88, 0x84, 0x21];
     }
 
-    private static unsafe int Push(ulong token, int frame)
+    private static unsafe int Push(ulong token, int frame, bool field2 = false)
     {
-        var data = Packet(frame);
+        var data = Packet(frame, field2);
         fixed (byte* bytes = data)
             return bale_cc_push(token, bytes, (nuint)data.Length, frame * 333_333L, 1, 0);
     }
 
+    private static bool HasNativeBuild() =>
+        OperatingSystem.IsLinux() && File.Exists(Path.Combine(AppContext.BaseDirectory, "bale_gpu.dll"));
+
     [Fact]
     public void TheWrapperDrivesTheDecoderTheTapFeeds()
     {
-        if (!OperatingSystem.IsLinux() || !File.Exists(Path.Combine(AppContext.BaseDirectory, "bale_gpu.dll"))) return;
+        if (!HasNativeBuild()) return;
         var captions = ClosedCaptions.Create();
         Assert.NotNull(captions);
         const ulong token = 0xCC_0C5;
@@ -198,5 +205,39 @@ public class ClosedCaptionsNativeTests
         Assert.Equal(0u, captions.Seen());
         Assert.False(captions.TryGetStats(out _));
         captions.Dispose();
+    }
+
+    /// <summary>
+    /// CC3 is field 2 (cc_type 1): the player's pick of the CC3 row (ClosedCaptions.Select) decodes a field-2 stream, which
+    /// CC1 only sees; a field-1 stream has nothing on CC3.
+    /// </summary>
+    [Fact]
+    public void TheCc3RowDecodesField2()
+    {
+        if (!HasNativeBuild()) return;
+        using var captions = ClosedCaptions.Create();
+        Assert.NotNull(captions);
+        const ulong token = 0xCC_0C3;
+        Assert.Equal(0, captions.Register(token));
+        // A new decoder is on CC1: the field-2 caption is seen as CC3 and shows nothing.
+        for (var frame = 0; frame < 60; frame++) Assert.Equal(0, Push(token, frame, field2: true));
+        Assert.Equal(ClosedCaptions.SeenCc3 | ClosedCaptions.SeenCcData, captions.Seen());
+        Assert.True(captions.TryGetStats(out var stats));
+        Assert.Equal((0ul, 0ul), (stats.Pairs, stats.Cues));
+
+        // The CC3 row, then the same stream again from the start (a seek): one caption, from field 2.
+        Assert.Equal(0, captions.Select(3));
+        Assert.Equal(0, bale_cc_flush(token));
+        for (var frame = 0; frame < 60; frame++) Assert.Equal(0, Push(token, frame, field2: true));
+        Assert.True(captions.TryGetStats(out stats));
+        Assert.Equal((1ul, 0u), (stats.Cues, stats.Late));
+        Assert.True(stats.Pairs > 0);
+
+        // A new stream on the same decoder keeps CC3, and a field-1 caption is not CC3's.
+        Assert.Equal(0, captions.Register(token));
+        for (var frame = 0; frame < 60; frame++) Assert.Equal(0, Push(token, frame));
+        Assert.Equal(ClosedCaptions.SeenCc1 | ClosedCaptions.SeenCcData, captions.Seen());
+        Assert.True(captions.TryGetStats(out stats));
+        Assert.Equal((0ul, 0ul), (stats.Pairs, stats.Cues));
     }
 }

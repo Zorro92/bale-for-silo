@@ -10,10 +10,11 @@ namespace Bale.Xbox;
 /// <summary>
 /// In-band closed captions (CEA-608 in the video's A/53 cc_data; docs/closed-captions.md). Each FFmpeg mount of an H.264,
 /// HEVC or MPEG-2 stream gets its own bale_gpu caption decoder (<see cref="ClosedCaptions"/>) under a fresh bale_cc_sink
-/// token, disposed with the mount (DisposeMount). The subtitle lists offer CC once a decoder has seen CC1 captions; picking
-/// it draws the mount's captions on Bale's subtitle overlay in the subtitle appearance, keeping their own 608 colours and
-/// italics. The decisions (what is offered, what a pick does, what a remount keeps) are Bale.Core's
-/// <see cref="PlaybackClosedCaptions"/>, one per attempt. UI thread throughout; logs carry fixed words, never caption text.
+/// token, disposed with the mount (DisposeMount). The subtitle lists offer a row per caption channel a decoder has seen (CC1
+/// to CC4, one "CC" row while CC1 is the only one; owner 2026-11-26); picking one has the mount's decoder decode that channel
+/// and draws its captions on Bale's subtitle overlay in the subtitle appearance, keeping their own 608 colours and italics.
+/// The decisions (what is offered, what a pick does, what a remount keeps) are Bale.Core's <see cref="PlaybackClosedCaptions"/>,
+/// one per attempt. UI thread throughout; logs carry fixed words, never caption text.
 /// </summary>
 public sealed partial class PlayerPage
 {
@@ -29,8 +30,9 @@ public sealed partial class PlayerPage
     /// <summary>
     /// Every mount, as its source is configured (<paramref name="config"/> null for Windows' own source): a plan that plays a
     /// server subtitle ends CC, and an FFmpeg source of a tapped codec gets this mount's own decoder and token (a remount
-    /// gets new ones). While CC is on, the new decoder is drawn from its first packet, so a recovery replan, a seek reanchor,
-    /// an HLS remount or a quality change keeps the viewer's captions. Failures leave playback running without captions.
+    /// gets new ones), decoding the attempt's caption channel. While CC is on, the new decoder is drawn from its first packet,
+    /// so a recovery replan, a seek reanchor, an HLS remount or a quality change keeps the viewer's captions on the channel
+    /// they picked. Failures leave playback running without captions.
     /// </summary>
     private void StartCaptions(Attempt attempt, Mount media, MediaSourceConfig? config)
     {
@@ -45,7 +47,8 @@ public sealed partial class PlayerPage
             // Null when bale_gpu.dll or its caption ABI is missing: the mount plays without captions.
             if (ClosedCaptions.Create() is not { } decoder) return;
             var token = NextCaptionToken();
-            if (decoder.Register(token) < 0)
+            // The channel the viewer picked (CC1 until then), before the tap's first packet arrives.
+            if (decoder.Register(token) < 0 || decoder.Select(attempt.Captions.Channel) < 0)
             {
                 decoder.Dispose();
                 return;
@@ -101,7 +104,7 @@ public sealed partial class PlayerPage
             _subtitleTimingOrigin = media.Transport.Timeline.TimelineOffsetSeconds;
             UpdateSubtitleLayout();
             PushSubtitleClock(force: true);
-            Log.Info("player: subtitles mode=render format=cea608 channel=cc1");
+            Log.Info($"player: subtitles mode=render format=cea608 channel=cc{attempt.Captions.Channel}");
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex) { LogFailure("closed captions", ex); }
@@ -135,12 +138,12 @@ public sealed partial class PlayerPage
     }
 
     /// <summary>
-    /// A subtitle row of the control bar's menu or the Options panel. CC is the player's own (PickClosedCaptionsAsync); Off
-    /// ends CC at once and a server subtitle once a plan plays it, and both then take the ordinary track change.
+    /// A subtitle row of the control bar's menu or the Options panel. A CC row is the player's own (PickClosedCaptionsAsync);
+    /// Off ends CC at once and a server subtitle once a plan plays it, and both then take the ordinary track change.
     /// </summary>
     private Task PickSubtitleAsync(int index)
     {
-        if (index == PlaybackClosedCaptions.TrackIndex) return PickClosedCaptionsAsync();
+        if (PlaybackClosedCaptions.ChannelOf(index) is { } channel) return PickClosedCaptionsAsync(channel);
         if (_attempt is { } attempt && attempt.Captions.PickTrack(index))
         {
             DetachCaptions(attempt.Media);
@@ -150,72 +153,81 @@ public sealed partial class PlayerPage
     }
 
     /// <summary>
-    /// The CC row: CC goes on without a track_change replan, and nothing is remembered. A server subtitle on screen goes first,
-    /// through the Off path (remember: false, so that Off is no subtitle preference either), so the server stops its burn-in
-    /// or sidecar; the plan the Off brings then draws CC (StartCaptions on a remount, AdoptCaptions in place).
+    /// A CC row: CC goes on, on <paramref name="channel"/>, without a track_change replan, and nothing is remembered. The mount's
+    /// decoder decodes that channel from now on (bale_cc_select: a change starts it afresh and clears what the previous channel
+    /// drew on the overlay at once), and every later mount's decoder starts on it (StartCaptions). A server subtitle on screen
+    /// goes first, through the Off path (remember: false, so that Off is no subtitle preference either), so the server stops
+    /// its burn-in or sidecar; the plan the Off brings then draws CC (StartCaptions on a remount, AdoptCaptions in place).
     /// </summary>
-    private async Task PickClosedCaptionsAsync()
+    private async Task PickClosedCaptionsAsync(uint channel)
     {
         if (_attempt is not { Media: { Opened: true, FailureQueued: false } media } attempt || !IsCurrent(attempt, media)
-            || !attempt.Captions.Offered) return;
-        if (attempt.Captions.Selected)
+            || !attempt.Captions.Offers(channel)) return;
+        if (attempt.Captions.Selected && attempt.Captions.Channel == channel)
         {
-            Log.Info("player: closed captions already on");
+            Log.Info($"player: closed captions already on channel=cc{channel}");
             return;
         }
-        if (attempt.Captions.Pick(attempt.Plan))
+        var serverSubtitle = attempt.Captions.Pick(channel, attempt.Plan);
+        media.CaptionDecoder?.Select(channel);
+        if (serverSubtitle)
         {
-            Log.Info("player: closed captions picked; turning the server subtitle off first");
+            Log.Info($"player: closed captions picked channel=cc{channel}; turning the server subtitle off first");
             await ChangeTracksAsync(null, -1, remember: false);
             // Refused, busy or failed: the server's subtitle stays, and CC is off again.
             if (!attempt.Captions.PlanPlays(attempt.Plan)) Log.Info("player: closed captions not on: the server subtitle stayed");
         }
         else
         {
-            Log.Info("player: closed captions picked");
+            Log.Info($"player: closed captions picked channel=cc{channel}");
+            // Also when another channel was on: the attach starts the live track afresh from the new channel's captions.
             await AttachCaptionsAsync(attempt, media);
         }
         UpdateTrackValues();
     }
 
     /// <summary>
-    /// The 100 ms tick: about once a second, until this attempt has found captions, asks the mount's decoder what it has seen.
-    /// The first CC1 captions add the CC row, which the menus and the Options panel list the next time they open.
+    /// The 100 ms tick: about once a second, until this attempt has found all four channels, asks the mount's decoder what it
+    /// has seen. Each channel found adds its CC row, which the menus and the Options panel list the next time they open.
     /// </summary>
     private void UpdateCaptions()
     {
-        if (_attempt is not { Media: { CaptionDecoder: { } decoder } media } attempt || attempt.Captions.Discovered
+        if (_attempt is not { Media: { CaptionDecoder: { } decoder } media } attempt || attempt.Captions.AllFound
             || !IsCurrent(attempt, media)) return;
         var now = Environment.TickCount64;
         if (now - _captionsCheckedAt < CaptionsCheckMs) return;
         _captionsCheckedAt = now;
         try
         {
-            if (!attempt.Captions.Observe(decoder.Seen())) return;
-            Log.Info("player: closed captions found channel=cc1");
+            var found = attempt.Captions.Observe(decoder.Seen());
+            if (found == 0) return;
+            Log.Info($"player: closed captions found channel={PlaybackClosedCaptions.Names(found)}");
             UpdateTrackValues();
         }
         catch (Exception ex) { LogFailure("closed captions", ex); }
     }
 
 #if DEBUG_SERVER
-    /// <summary>The where line's Captions: what the attempt offers and picked, and the mount's decoder and its counters.</summary>
+    /// <summary>
+    /// The where line's Captions: the channels the attempt offers and the one picked, and the mount's decoder (the channel
+    /// it decodes, also while CC is off) and its counters.
+    /// </summary>
     internal string DebugCaptions
     {
         get
         {
-            var captions = _attempt?.Captions;
-            var text = $"offered={YesNo(captions?.Offered)} picked={YesNo(captions?.Selected)}";
-            if (_attempt?.Media is not { } media) return text + " decoder=none (no mount)";
+            if (_attempt is not { } attempt) return "offered=no picked=no decoder=none (no mount)";
+            var captions = attempt.Captions;
+            var text = $"offered={(captions.Discovered ? PlaybackClosedCaptions.Names(captions.Found) : "no")}"
+                + $" picked={(captions.Selected ? $"cc{captions.Channel}" : "no")}";
+            if (attempt.Media is not { } media) return text + " decoder=none (no mount)";
             if (media.CaptionDecoder is not { } decoder)
                 return text + $" decoder=none (route={(media.Route.UseFfmpeg ? "ffmpeg" : "windows")} codec={media.Route.VideoCodec ?? "unknown"})";
             if (!decoder.TryGetStats(out var stats)) return text + " decoder=unavailable";
             return text + string.Create(CultureInfo.InvariantCulture,
-                $" attached={YesNo(media.CaptionsAttached)} token={media.CaptionToken} seen={SeenText(stats.Seen)} packets={stats.Packets}"
-                + $" captioned={stats.CaptionPackets} pairs={stats.Pairs} cues={stats.Cues} late={stats.Late} depth={stats.Depth}"
-                + $" flushes={stats.Flushes} origin={_subtitleTimingOrigin:0.###}s");
-
-            static string YesNo(bool? value) => value == true ? "yes" : "no";
+                $" attached={(media.CaptionsAttached ? "yes" : "no")} channel=cc{captions.Channel} token={media.CaptionToken}"
+                + $" seen={SeenText(stats.Seen)} packets={stats.Packets} captioned={stats.CaptionPackets} pairs={stats.Pairs}"
+                + $" cues={stats.Cues} late={stats.Late} depth={stats.Depth} flushes={stats.Flushes} origin={_subtitleTimingOrigin:0.###}s");
         }
     }
 
@@ -233,17 +245,29 @@ public sealed partial class PlayerPage
     }
 
     /// <summary>
-    /// bale-debug.sh captions cc|off: the subtitle menu's CC or Off row through the menu's own path (Off also turns a server
-    /// subtitle off, and on a Silo session saves Off as the viewer's pick, as the row does).
+    /// bale-debug.sh captions cc|cc1..cc4|off: the subtitle menu's CC row of that channel (cc is CC1, the row a stream with CC1
+    /// alone lists as "CC") or its Off row, through the menu's own path (Off also turns a server subtitle off, and on a Silo
+    /// session saves Off as the viewer's pick, as the row does).
     /// </summary>
     internal async Task<(string Status, string Body)> DebugPickCaptionsAsync(string action)
     {
         if (_attempt is not { Media: { Opened: true, FailureQueued: false } media } attempt || !IsCurrent(attempt, media))
             return ("409 Conflict", "no active player pipeline\n");
-        if (action == "cc" && !attempt.Captions.Offered)
-            return ("409 Conflict", "no closed captions found on this playback yet\nCaptions: " + DebugCaptions + "\n");
-        await PickSubtitleAsync(action == "cc" ? PlaybackClosedCaptions.TrackIndex : -1);
+        var channel = DebugCaptionChannel(action);
+        if (channel is { } wanted && !attempt.Captions.Offers(wanted))
+            return ("409 Conflict", $"no closed captions found on cc{wanted} of this playback yet\nCaptions: " + DebugCaptions + "\n");
+        await PickSubtitleAsync(channel is { } row ? PlaybackClosedCaptions.TrackIndexOf(row) : -1);
         return ("200 OK", "Captions: " + DebugCaptions + "\n");
     }
+
+    /// <summary>The channel a debug action picks: cc and cc1 are CC1, cc2..cc4 the others; null for off.</summary>
+    private static uint? DebugCaptionChannel(string action) => action switch
+    {
+        "cc" or "cc1" => 1u,
+        "cc2" => 2u,
+        "cc3" => 3u,
+        "cc4" => 4u,
+        _ => null,
+    };
 #endif
 }

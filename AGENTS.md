@@ -71,6 +71,9 @@ unchanged. Gap analysis and phases: docs/apple-playback-parity.md.
   a subtitle pick moves to the new file's track with the same language, forced and SDH flags (same full tag
   first, then the same title), else Auto; Auto and Off carry. A Version pick keeps an audio ordinal the new
   file has; an Edition pick that changes the file drops it.
+- **Closed caption channels:** the subtitle menus offer every CEA-608 channel the stream carries, a row each (CC1 to
+  CC4; a stream with CC1 alone keeps one "CC" row), where Android TV and AetherEngine show one CC1 track (owner,
+  2026-11-26; `PlaybackClosedCaptions`, docs/closed-captions.md).
 
 **Unit mapping.** Xbox lays out at 960×540 effective pixels, the same canvas as Android TV's dp, so
 Android geometry maps 1:1 (`88.dp` → `88`). Android text is `sp × 0.86` (the TV app's
@@ -420,9 +423,10 @@ For Bale, a normal app with hevcPlayback on the Series X:
   In-band CEA-608 closed captions (A/53 `cc_data` in H.264/HEVC SEI and MPEG-2 user data) are decoded by bale_gpu
   `subs::cc` from the fork's packet tap (`bale_cc_sink`, caption ABI `bale_cc_*`) into a live track on the same overlay
   (`ClosedCaptions`, `SubtitleOverlay.AttachCaptions`). Every FFmpeg mount of those codecs gets its own decoder and
-  token; the subtitle menus list one CC row (CC1) once captions are seen, and picking it is client-only (no replan,
-  nothing remembered, a server subtitle turned Off first) and survives remounts (`PlaybackClosedCaptions`,
-  `PlayerPage.Captions.cs`, docs/closed-captions.md "In the player"); console check pending.
+  token; the subtitle menus list a row for each channel seen, CC1 to CC4 (a lone CC1 stays one "CC" row), and picking
+  one is client-only (the mount's decoder switches to that channel; no replan, nothing remembered, a server subtitle
+  turned Off first) and survives remounts on its channel (`PlaybackClosedCaptions`, `PlayerPage.Captions.cs`,
+  docs/closed-captions.md "In the player"); console check pending.
 - FFmpeg audio selection must honor the server's ordinal, not FFmpeg's reordered default:
   map `AudioStreams[].StreamIndex` back to demux order, then set the item's AudioTracks.SelectedIndex
   before Play. Fail closed if the selected stream is missing.

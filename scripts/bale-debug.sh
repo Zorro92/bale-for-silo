@@ -132,10 +132,12 @@
 #   scripts/bale-debug.sh suboverlay [stats|load <url> [font-url...]|clear]  Bale's own subtitle renderer over the open player:
 #                                               load a subtitle file (.srt = SubRip, .vtt = WebVTT, else ASS/SSA; fonts are added first),
 #                                               clear it, or print its counters (default)
-#   scripts/bale-debug.sh captions [cc|off]     in-band closed captions (CEA-608) of the open player: no args = the where line's Captions:
-#                                               (offered/picked, the mount's decoder: seen channels, packets, cues, attached, timing origin);
-#                                               cc picks the subtitle menu's CC row (409 until captions were found), off its Off row, both
-#                                               through the menu's own path (off also turns a server subtitle off and saves Off as a pick does)
+#   scripts/bale-debug.sh captions [cc|cc1|cc2|cc3|cc4|off]  in-band closed captions (CEA-608) of the open player: no args = the
+#                                               where line's Captions: (offered channels, picked channel, the mount's decoder: its channel,
+#                                               seen channels, packets, cues, attached, timing origin); ccN picks the subtitle menu's row of
+#                                               CCN (cc = CC1, the one "CC" row of a stream with CC1 alone; 409 until that channel's captions
+#                                               were found), off its Off row, all through the menu's own path (off also turns a server
+#                                               subtitle off and saves Off as a pick does)
 #   scripts/bale-debug.sh goto "Unwatched#2"     setup only: focus the second matching control
 #   scripts/bale-debug.sh targets               list controls goto can reach
 #   scripts/bale-debug.sh tree                  the visible element tree with bounds
@@ -896,8 +898,8 @@ case "${1:-}" in
     esac
     ;;
   captions)
-    if [[ "$#" -gt 2 || ( "$#" == 2 && ! "$2" =~ ^(cc|off)$ ) ]]; then
-      echo 'usage: scripts/bale-debug.sh captions [cc|off]' >&2
+    if [[ "$#" -gt 2 || ( "$#" == 2 && ! "$2" =~ ^(cc[1-4]?|off)$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh captions [cc|cc1|cc2|cc3|cc4|off]' >&2
       exit 2
     fi
     if [[ "$#" == 1 ]]; then

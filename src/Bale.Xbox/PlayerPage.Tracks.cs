@@ -39,8 +39,8 @@ public sealed partial class PlayerPage
     }
 
     /// <summary>
-    /// The Detail lists without their Auto rows: in the player a pick names a track (or Off). Subtitles end with in-band closed
-    /// captions once the player has found them (PlaybackClosedCaptions.WithEntry, PlayerPage.Captions.cs).
+    /// The Detail lists without their Auto rows: in the player a pick names a track (or Off). Subtitles end with a row per
+    /// in-band closed caption channel the player has found (PlaybackClosedCaptions.WithEntries, PlayerPage.Captions.cs).
     /// </summary>
     private IReadOnlyList<PlaybackSelectorOption> TrackOptions(PlaybackSelectorKind kind)
     {
@@ -48,7 +48,7 @@ public sealed partial class PlayerPage
         // The Detail page's "Start without subtitles" describes a start, not a running player.
         var options = PlaybackFormatting.SelectorOptions(kind, detail, selection).Where(option => option.TrackIndex is not null)
             .Select(option => option.TrackIndex == -1 ? option with { Detail = "No subtitles" } : option).ToList();
-        return kind == PlaybackSelectorKind.Subtitles && _attempt is { } attempt ? attempt.Captions.WithEntry(options) : options;
+        return kind == PlaybackSelectorKind.Subtitles && _attempt is { } attempt ? attempt.Captions.WithEntries(options) : options;
     }
 
     /// <summary>The value a focused Audio / Subtitles pill shows ("English", "Off").</summary>
