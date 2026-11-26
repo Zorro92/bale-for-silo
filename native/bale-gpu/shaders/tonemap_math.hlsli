@@ -183,13 +183,14 @@ float2 quantize_chroma(float2 uv) { return clamp(floor(128.0 + 224.0 * uv + 0.5)
 // 10-bit limited range (ABI 2 P010 output): 64-940 luma, 64-960 chroma.
 float quantize_luma10(float y) { return clamp(floor(64.0 + 876.0 * y + 0.5), 64.0, 940.0); }
 float2 quantize_chroma10(float2 uv) { return clamp(floor(512.0 + 896.0 * uv + 0.5), 64.0, 960.0); }
-// 8-bit NV12 output is ordered-dithered (BALE_TONEMAP_OUTPUT_NV12_DITHERED). Plain rounding adds
-// floor(x + 0.5); this adds floor(x + t) with t = (bayer8 + 0.5) / 64, a static 8x8 Bayer matrix at
-// the output pixel: 64 evenly spaced thresholds with mean 0.5, so a flat area keeps its mean level
-// and a slow ramp's 10-bit steps become a fixed fine pattern instead of 8-bit bands. Bayer rather
-// than blue noise: it is computed exactly from the pixel position (no table/texture, bit-identical
-// CPU reference) and its period-8 structure is at the highest spatial frequency, invisible at one
-// code. No per-frame offset: the pattern is tied to the output pixel and constant over time, so a
+// 8-bit NV12 output is ordered-dithered (BALE_TONEMAP_OUTPUT_NV12_DITHERED): with rav1g's R2 threshold
+// (below) by default since 2026-11-26, with this Bayer one under debug `bayerdither` (the default from
+// 2026-11-19). Plain rounding adds floor(x + 0.5); this adds floor(x + t) with t = (bayer8 + 0.5) / 64,
+// a static 8x8 Bayer matrix at the output pixel: 64 evenly spaced thresholds with mean 0.5, so a flat
+// area keeps its mean level and a slow ramp's 10-bit steps become a fixed fine pattern instead of 8-bit
+// bands. Bayer rather than blue noise: it is computed exactly from the pixel position (no table/texture,
+// bit-identical CPU reference) and its period-8 structure is at the highest spatial frequency, invisible
+// at one code. No per-frame offset: the pattern is tied to the output pixel and constant over time, so a
 // still picture produces identical frames (no crawl, no shimmer); motion only moves the content.
 // Chroma V uses the mirrored threshold (63 - bayer8) so Cb and Cr do not step together.
 uint bayer8(uint2 p) {
@@ -210,16 +211,17 @@ float2 quantize_chroma_dithered(float2 uv, uint2 p) {
     float2 t = float2(dither_threshold(v), dither_threshold(63u - v));
     return clamp(floor(128.0 + 224.0 * uv + t), 16.0, 240.0);
 }
-// Debug `r2dither` (2026-11-26): rav1g's display-pass threshold instead of Bayer, so that the stage writes
-// the 8-bit codes rav1g's pass writes for the same value (rav1g libav1/dx/shaders/display_pass.hlsl
-// `threshold`, `luma_code`, `chroma_code`; docs/integration.md "The dither"). The R2 sequence (M. Roberts,
-// "The unreasonable effectiveness of quasirandom sequences", 2018), frac(x / g + y / g^2) for the plastic
-// number g = 1.3247..., in 32-bit fixed point (uint arithmetic wraps mod 2^32, as rav1g's): its top 8 bits
-// t8, threshold (t8 + 1/2) / 256, exact in fp32; a code is floor(v + t), as with Bayer. Luma takes it at
-// the output pixel, Cb at its chroma sample, Cr at the transposed sample (x and y swapped), so that Cb and
-// Cr do not step together. Its 256 levels have mean 1/2 and no period; about 6 instructions a sample.
-// (t8 + 1/2) / 256 is spelled (2 t8 + 1) / 512, (sum >> 23) | 1 over 512: one exact product, which fxc
-// folds into the sum's single rounding. rav1g's mad(t8, 1/256, 1/512) fxc splits into a mad and an add.
+// The default since 2026-11-26 (owner; the debug word `r2dither` before): rav1g's display-pass threshold
+// instead of Bayer, so that the stage writes the 8-bit codes rav1g's pass writes for the same value (rav1g
+// libav1/dx/shaders/display_pass.hlsl `threshold`, `luma_code`, `chroma_code`; docs/integration.md "The
+// dither"). The R2 sequence (M. Roberts, "The unreasonable effectiveness of quasirandom sequences", 2018),
+// frac(x / g + y / g^2) for the plastic number g = 1.3247..., in 32-bit fixed point (uint arithmetic wraps
+// mod 2^32, as rav1g's): its top 8 bits t8, threshold (t8 + 1/2) / 256, exact in fp32; a code is
+// floor(v + t), as with Bayer. Luma takes it at the output pixel, Cb at its chroma sample, Cr at the
+// transposed sample (x and y swapped), so that Cb and Cr do not step together. Its 256 levels have mean
+// 1/2 and no period; about 6 instructions a sample. (t8 + 1/2) / 256 is spelled (2 t8 + 1) / 512,
+// (sum >> 23) | 1 over 512: one exact product, which fxc folds into the sum's single rounding. rav1g's
+// mad(t8, 1/256, 1/512) fxc splits into a mad and an add.
 static const uint R2_X = 0xc13fa9a9u; // round(2^32 / g)
 static const uint R2_Y = 0x91e10da6u; // round(2^32 / g^2)
 float r2_threshold(uint2 p) {

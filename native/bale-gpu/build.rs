@@ -6,7 +6,8 @@ use std::process::Command;
 /// (output name, source name, profile, preprocessor defines). The zero-copy compute shaders are
 /// built a second time with `BALE_8BIT` for 8-bit pictures; their 10-bit builds take no define. The
 /// tone-map plane shaders are built again with `BALE_STAGED` for the downscale path, and both of
-/// those again with `BALE_DITHER_R2` for rav1g's NV12 threshold (debug `r2dither`, 2026-11-26).
+/// those again with `BALE_DITHER_R2` for rav1g's NV12 threshold (the stage's default since
+/// 2026-11-26; the builds without it are the static Bayer ones of debug `bayerdither`).
 const SHADERS: [(&str, &str, &str, &[&str]); 19] = [
     ("fullscreen_vs", "fullscreen_vs", "vs_5_0", &[]),
     ("tonemap_luma_ps", "tonemap_luma_ps", "ps_5_0", &[]),
@@ -25,7 +26,7 @@ const SHADERS: [(&str, &str, &str, &[&str]); 19] = [
         "ps_5_0",
         &["BALE_STAGED=1"],
     ),
-    // The same four plane shaders with rav1g's R2 dither threshold instead of Bayer.
+    // The same four plane shaders with rav1g's R2 dither threshold instead of Bayer: the default set.
     (
         "tonemap_luma_r2_ps",
         "tonemap_luma_ps",
