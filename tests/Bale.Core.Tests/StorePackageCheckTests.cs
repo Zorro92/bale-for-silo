@@ -35,6 +35,23 @@ public sealed partial class StorePackageCheckTests
     }
 
     [Fact]
+    public void ProductionBuildsTakeTheStoreIdentityFromRepositoryVariablesAndSignWithIt()
+    {
+        var ci = Read("ci.yml.txt");
+        var stamp = Step(ci, "Stamp version");
+        foreach (var variable in new[] { "STORE_NAME: ${{ vars.BALE_STORE_IDENTITY_NAME }}", "STORE_PUBLISHER: ${{ vars.BALE_STORE_PUBLISHER }}",
+            "STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.BALE_STORE_PUBLISHER_DISPLAY_NAME }}" })
+            Assert.Contains(variable, stamp);
+        // Only production, and only with both values; debug-server builds keep the development identity.
+        Assert.Contains("if ('${{ matrix.debug_server }}' -eq 'false' -and $env:STORE_NAME -and $env:STORE_PUBLISHER) {", stamp);
+        // Signing needs the certificate subject to equal the stamped Publisher.
+        var certificate = Step(ci, "Create signing certificate");
+        Assert.Contains("$publisher = ([xml](Get-Content 'src/Bale.Xbox/Package.appxmanifest')).Package.Identity.Publisher", certificate);
+        Assert.Contains("New-SelfSignedCertificate -Type Custom -Subject $publisher", certificate);
+        Assert.True(ci.IndexOf("- name: Stamp version", StringComparison.Ordinal) < ci.IndexOf("- name: Create signing certificate", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void TheCapabilityAllowListIsTheSourceManifests()
     {
         XNamespace foundation = "http://schemas.microsoft.com/appx/manifest/foundation/windows10";

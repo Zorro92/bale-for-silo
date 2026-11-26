@@ -59,8 +59,9 @@ function Package([hashtable]$Changes = @{}) {
     return New-Msix $files
 }
 
+# The check's output as one string (a production package with the development identity also prints a note).
 function Check([string]$Package, [string]$DebugServer = 'false') {
-    & "$PSScriptRoot/check-production-package.ps1" -PackagePath $Package -DebugServer $DebugServer
+    (& "$PSScriptRoot/check-production-package.ps1" -PackagePath $Package -DebugServer $DebugServer) -join "`n"
 }
 
 function Assert-Throws([scriptblock]$Block, [string]$Message) {
@@ -73,8 +74,12 @@ function Assert-Throws([scriptblock]$Block, [string]$Message) {
 }
 
 try {
-    # A good production package passes.
-    if ((Check (Package)) -notmatch 'PASS') { throw 'A Store-ready production package must pass' }
+    # A good production package passes, with a note while it has the development identity.
+    $result = Check (Package)
+    if ($result -notmatch 'PASS' -or $result -notmatch 'A Store upload needs the reserved one') { throw "A Store-ready production package must pass: $result" }
+    $store = (Manifest).Replace('Name="Bale.ClientForSilo" Publisher="CN=Bale Development"', 'Name="12345Bale.Bale" Publisher="CN=00000000-0000-0000-0000-000000000000"')
+    $result = Check (Package @{ 'AppxManifest.xml' = $store })
+    if ($result -notmatch 'PASS' -or $result -match 'reserved one') { throw "The Store identity needs no note: $result" }
 
     # Store rules.
     Assert-Throws { Check (Package @{ 'AppxManifest.xml' = Manifest -Extra @('inputInjectionBrokered') }) } 'declares inputInjectionBrokered'

@@ -100,6 +100,9 @@ try {
 }
 finally { $zip.Dispose() }
 
+if ($production -and $identity.GetAttribute('Publisher') -ceq 'CN=Bale Development') {
+    Write-Output 'Identity: the development identity (Bale.ClientForSilo, CN=Bale Development). A Store upload needs the reserved one: set the BALE_STORE_* repository variables (docs/store-readiness.md).'
+}
 if ($production) {
     Write-Output "Production package $($version): capabilities $($capabilities -join ', '); Windows.Xbox; revision 0; no WinUI 2, symbols or debug markers; rav1g.dll and $($Rav1gLicenseFiles.Count) licences: PASS"
 }

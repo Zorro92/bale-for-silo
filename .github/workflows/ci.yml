@@ -429,23 +429,36 @@ jobs:
       # (verify-on-xbox skill). Production: 0.1.<run>.0, because the Store reserves the fourth part and
       # needs it 0; every submission must also be higher than the last, so a Store package comes from a new
       # run, never a re-run (docs/store-readiness.md). check-production-package.ps1 refuses another revision.
+      # Production builds also take Partner Center's reserved identity (Product identity page) from the repository
+      # variables BALE_STORE_IDENTITY_NAME, BALE_STORE_PUBLISHER and BALE_STORE_PUBLISHER_DISPLAY_NAME when they are set
+      # (docs/store-readiness.md); debug-server builds keep the development identity, so both install side by side.
       - name: Stamp version
         shell: pwsh
+        env:
+          STORE_NAME: ${{ vars.BALE_STORE_IDENTITY_NAME }}
+          STORE_PUBLISHER: ${{ vars.BALE_STORE_PUBLISHER }}
+          STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.BALE_STORE_PUBLISHER_DISPLAY_NAME }}
         run: |
           $path = Resolve-Path 'src/Bale.Xbox/Package.appxmanifest'
           [xml]$manifest = Get-Content $path
           $revision = if ('${{ matrix.debug_server }}' -eq 'true') { [int]'${{ github.run_attempt }}' - 1 } else { 0 }
           $manifest.Package.Identity.Version = "0.1.${{ github.run_number }}.$revision"
+          if ('${{ matrix.debug_server }}' -eq 'false' -and $env:STORE_NAME -and $env:STORE_PUBLISHER) {
+            $manifest.Package.Identity.Name = $env:STORE_NAME
+            $manifest.Package.Identity.Publisher = $env:STORE_PUBLISHER
+            if ($env:STORE_PUBLISHER_DISPLAY_NAME) { $manifest.Package.Properties.PublisherDisplayName = $env:STORE_PUBLISHER_DISPLAY_NAME }
+          }
           $manifest.Save($path)
-          "Package version: $($manifest.Package.Identity.Version)"
+          "Package identity: $($manifest.Package.Identity.Name), $($manifest.Package.Identity.Publisher), version $($manifest.Package.Identity.Version)"
 
-      # Throwaway certificate for sideloading, left in the runner's store for the build to sign with.
-      # The deploy script installs Bale.cer on the console.
+      # Throwaway certificate for sideloading, left in the runner's store for the build to sign with. Its subject is
+      # the stamped Publisher, which signing requires. The deploy script installs Bale.cer on the console.
       - name: Create signing certificate
         id: cert
         shell: pwsh
         run: |
-          $cert = New-SelfSignedCertificate -Type Custom -Subject 'CN=Bale Development' `
+          $publisher = ([xml](Get-Content 'src/Bale.Xbox/Package.appxmanifest')).Package.Identity.Publisher
+          $cert = New-SelfSignedCertificate -Type Custom -Subject $publisher `
             -KeyUsage DigitalSignature -FriendlyName 'Bale Development' `
             -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(1) `
             -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3', '2.5.29.19={text}')

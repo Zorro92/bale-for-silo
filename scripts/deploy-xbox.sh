@@ -78,14 +78,20 @@ CER="$(find "$DIR" -name '*.cer' | head -n1)"
 mapfile -t DEPS < <(find "$DIR" -path '*/Dependencies/x64/*' \( -name '*.appx' -o -name '*.msix' \))
 [[ -n "$MSIX" ]] || { echo "No .msix found in $DIR" >&2; exit 1; }
 
-# Local packages may not use the CI filename, but their manifest still identifies the build.
+# Local packages may not use the CI filename, but their manifest still identifies the build. Its identity name is the
+# development one (Bale.ClientForSilo) unless a production build took the Store's (docs/store-readiness.md).
+MANIFEST="$(unzip -p "$MSIX" AppxManifest.xml 2>/dev/null || true)"
+IDENTITY_PATTERN='<Identity[[:space:]][^>]*>'
+IDENTITY=""
+[[ "$MANIFEST" =~ $IDENTITY_PATTERN ]] && IDENTITY="${BASH_REMATCH[0]}"
+PACKAGE_NAME="Bale.ClientForSilo"
+NAME_PATTERN="[[:space:]]Name=[\"']([A-Za-z0-9.-]+)[\"']"
+[[ "$IDENTITY" =~ $NAME_PATTERN ]] && PACKAGE_NAME="${BASH_REMATCH[1]}"
 EXPECTED_VERSION="$(basename "$MSIX" | cut -d_ -f2)"
 if [[ ! "$EXPECTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   EXPECTED_VERSION=""
-  MANIFEST="$(unzip -p "$MSIX" AppxManifest.xml 2>/dev/null || true)"
-  IDENTITY_PATTERN='<Identity[[:space:]][^>]*>'
   VERSION_PATTERN="[[:space:]]Version=[\"']([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)[\"']"
-  if [[ "$MANIFEST" =~ $IDENTITY_PATTERN && "${BASH_REMATCH[0]}" =~ $VERSION_PATTERN ]]; then
+  if [[ "$IDENTITY" =~ $VERSION_PATTERN ]]; then
     EXPECTED_VERSION="${BASH_REMATCH[1]}"
   fi
 fi
@@ -126,7 +132,7 @@ done
 # contain both versions. Allow 20 seconds for the exact build to appear before launching it.
 for (( ATTEMPT=0; ATTEMPT<=10; ATTEMPT++ )); do
   PACKAGES="$("${CURL[@]}" -f "$BASE/api/app/packagemanager/packages" \
-    | jq -c '[.InstalledPackages[] | select(.PackageFullName | startswith("Bale.ClientForSilo_"))]')"
+    | jq -c --arg prefix "${PACKAGE_NAME}_" '[.InstalledPackages[] | select(.PackageFullName | startswith($prefix))]')"
   if [[ -z "$EXPECTED_VERSION" ]]; then
     PACKAGE="$(jq -c 'max_by([.Version.Major, .Version.Minor, .Version.Build, .Version.Revision])' <<<"$PACKAGES")"
     break
