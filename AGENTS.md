@@ -510,7 +510,10 @@ For Bale, a normal app with hevcPlayback on the Series X:
 - Debug real-player override is **policy** (default) or **off** only; off also withdraws fallback
   claims. The standalone `playtest-ffmpeg` probe retains its experimental modes. See docs/player-plan.md.
 - Never print media URLs, stream grants, headers or media/session exception messages. Log only safe
-  HRESULTs, IDs/codecs and fixed diagnostics; keep FFmpeg's native log provider disabled.
+  HRESULTs, IDs/codecs and fixed diagnostics; keep FFmpeg's native log provider disabled. `Services/Log.cs` runs
+  every line through Core's `LogRedaction` as a safety net, not a licence: credentials are masked in every build, and
+  production builds also drop URLs (scheme kept), query strings, IPv4 and host:port addresses and the server's
+  problem detail (`LogRedactionTests`).
 
 ## Player skip transport
 

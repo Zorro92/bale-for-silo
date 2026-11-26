@@ -328,7 +328,7 @@ internal static class Artwork
                     // Only throttling and server trouble are worth another try; a 403 or 404 isn't.
                     if (response.StatusCode != HttpStatusCode.TooManyRequests && (int)response.StatusCode < 500 || attempt >= Attempts)
                     {
-                        Log.Info($"Artwork {(int)response.StatusCode} ({uri.Host}{uri.AbsolutePath})");
+                        Log.Info($"Artwork {(int)response.StatusCode} ({uri.GetLeftPart(UriPartial.Path)})");
                         return null;
                     }
 
@@ -346,7 +346,8 @@ internal static class Artwork
         }
         catch (Exception ex)
         {
-            Log.Info($"Artwork failed ({uri.Host}{uri.AbsolutePath}): {ex.Message}");
+            // Production logs keep the scheme alone (Log's redaction); debug-server builds keep host and path.
+            Log.Info($"Artwork failed ({uri.GetLeftPart(UriPartial.Path)}): {ex.Message}");
             return null;
         }
         finally

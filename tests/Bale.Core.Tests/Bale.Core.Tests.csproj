@@ -55,6 +55,7 @@
     <None Include="../../src/Bale.Xbox/PlayerPage.DebugNavigation.cs" Link="PlayerPage.DebugNavigation.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/PageFrame.xaml.cs" Link="PageFrame.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/Log.cs" Link="Log.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/Artwork.cs" Link="Artwork.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/ShellPage.DebugNavigation.cs" Link="ShellPage.DebugNavigation.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/ShellPage.xaml.cs" Link="ShellPage.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugCodecNames.cs" Link="DebugCodecNames.cs" />

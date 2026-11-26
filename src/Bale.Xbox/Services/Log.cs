@@ -1,15 +1,23 @@
 using System.Text;
+using Bale.Core.Text;
 using Windows.Storage;
 
 namespace Bale.Xbox.Services;
 
 /// <summary>
 /// Plain-text log in the app's LocalState folder (scripts/xbox-logs.sh reads it). Debug-server builds mirror it into a
-/// numbered in-memory buffer that the debug server streams live (scripts/bale-debug.sh log).
+/// numbered in-memory buffer that the debug server streams live (scripts/bale-debug.sh log). Every line passes
+/// Core's LogRedaction in <see cref="Write"/>: credentials are masked in every build, and production builds also drop
+/// URLs, query strings, addresses and the server's problem detail.
 /// </summary>
 internal static class Log
 {
     private const long MaxBytes = 1024 * 1024;
+#if DEBUG_SERVER
+    private const bool DebugServerBuild = true;
+#else
+    private const bool DebugServerBuild = false;
+#endif
 
     private static readonly object Gate = new();
     private static readonly string FilePath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "bale.log");
@@ -31,12 +39,13 @@ internal static class Log
     public static void Lines(IReadOnlyList<string> messages)
     {
         if (messages.Count == 0) return;
-        foreach (var message in messages) DebugNavigationHistory.PlayerEvent(message);
+        var masked = messages.Select(LogRedaction.MaskCredentials).ToList();
+        foreach (var message in masked) DebugNavigationHistory.PlayerEvent(message);
         var prefix = $"{DateTimeOffset.Now:O} INFO ";
         var text = new StringBuilder(messages.Count * 128);
         lock (Gate)
         {
-            foreach (var message in messages)
+            foreach (var message in masked)
             {
                 var line = prefix + message;
                 Recent.Enqueue((++_sequence, line));
@@ -52,15 +61,12 @@ internal static class Log
     }
 #endif
 
-    public static void Error(string context, Exception ex) => Write("ERROR", $"{context}: {Describe(ex)}{ex}");
-
-    /// <summary>For API failures, the HTTP status and the server's problem text, which the exception message lacks.</summary>
-    private static string Describe(Exception ex) => ex switch
-    {
-        Bale.Core.Api.Models.Problem problem => $"HTTP {problem.ResponseStatusCode} {problem.Title}: {problem.Detail} ",
-        Microsoft.Kiota.Abstractions.ApiException api => $"HTTP {api.ResponseStatusCode} ",
-        _ => string.Empty,
-    };
+    /// <summary>
+    /// The failure, led by the HTTP status an API failure's message lacks (LogRedaction.Describe). The server's problem
+    /// detail is debug-server builds only; <see cref="Write"/> redacts the rest of the text.
+    /// </summary>
+    public static void Error(string context, Exception ex) =>
+        Write("ERROR", $"{context}: {LogRedaction.Describe(ex, includeDetail: DebugServerBuild)}{ex}");
 
 #if DEBUG_SERVER
     /// <summary>Lines after <paramref name="since"/>, and the sequence number to ask from next.</summary>
@@ -76,8 +82,12 @@ internal static class Log
 
     private static void Write(string level, string message)
     {
+        // The one place that decides what bale.log may hold (Core LogRedaction).
 #if DEBUG_SERVER
+        message = LogRedaction.MaskCredentials(message);
         DebugNavigationHistory.PlayerEvent(message);
+#else
+        message = LogRedaction.ForProduction(message);
 #endif
         var line = $"{DateTimeOffset.Now:O} {level} {message}";
         lock (Gate)
