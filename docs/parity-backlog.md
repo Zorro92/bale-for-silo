@@ -183,7 +183,35 @@ This compares Bale's Settings with Android TV's `screens/settings/TvSettingsScre
 - [ ] Display resolution matching toggle (a documented deviation, on by default; AGENTS.md says the toggle comes with 0.2.x Settings)
 
 ### Not for Xbox, or blocked
-- App language (`ui.app_language`; needs localisation); Diagnostics pane (no reporting pipeline); Show Audiobooks (no audiobook tab); Watch Party; Force HDR Passthrough and True Black Bars (Android hardware workarounds)
+- App language (`ui.app_language`; needs localisation); Diagnostics pane (no reporting pipeline); Show Audiobooks (moved: Bale does show an Audiobooks tab, see the app parity audit); Watch Party; Force HDR Passthrough and True Black Bars (Android hardware workarounds)
+
+## App parity audit (2026-11-26, against Android TV)
+
+A read-only comparison of every Android TV screen against Bale, leaving out items already listed above. Paths are under `androidTvApp/.../tv/ui/`.
+
+### Beta blockers
+- [ ] Detail: Trailers & More cards do nothing when selected (`DetailPage.Sections.cs` `OnTrailerClick` is empty). Android plays a local extra in the player as type `extra` and opens a remote trailer in YouTube (`TvItemDetailScreen.kt:1448-1466`, `TvDetailTrailersSection.kt:116`). The wave 2 item "Trailers & More" was ticked as done, but only the cards were built
+- [ ] Shell: the Audiobooks tab always shows when the server has an audiobook library. Android hides it by default behind Settings › General › Show Audiobooks (`TvMediaDestinations.kt:16-24`, `TvMainShell.kt:327-341`). Bale has no audiobook hero or player. Match Android: hide the tab by default, with the Settings switch
+
+### Noticeable
+- [ ] Player end screen: Android's full-screen Up Next / Playing Next / Finished / More To Watch, with the video framed over the next backdrop and an On Deck row of 12 in-progress items, also at the end of a movie or a last episode (`TvPlayerScreen.kt:3506-3870`, `TvOnDeckItems.kt`). Bale has a corner card for episodes only
+- [ ] Player › Options › Video: Version, Quality, Speed, Aspect, HDR/DV output, Intro skip, Sleep timer (`TvPlayerHud.kt:1188-1390`). Bale has only Auto-play
+- [ ] Player: subtitle timing / delay (`TvPlayerHud.kt:1739`, `TvSubtitleSyncCard.kt`)
+- [ ] Player: trickplay preview frames while scrubbing (`TvPlayerScrubber.kt:456-480`)
+- [ ] Player: playback/control socket for remote commands (pause/seek/stop from web or phone, admin stop/message) and marker reconcile (`TvPlaybackRealtimeController.kt`)
+- [ ] Accessibility: media cards have no automation name, so Narrator likely reads a class name (`TvMediaCard.kt:199` sets `contentDescription`); check with Narrator on the console
+- [ ] Shuffle: series and season from Detail › More, plus Up Next's Pick Another / Stop shuffling (`TvItemDetailScreen.kt:2224-2250`). Its "waits for the player" condition is now met
+
+### Minor
+- [ ] Player: audio delay; subtitle style in the player's Subtitles tab; AI subtitle translate (server capability); intro and credits segments coloured on the scrubber; Up Next card "Keep Watching" label, auto-play toggle and runtime line; Menu opens Options on Video (Bale opens Info); "Try Anyway" on the server-unreachable error
+- [ ] Detail: description translation (metadata-AI); hero drawn from the opened card before the fetch (Android `62dc95035`)
+- [ ] Accessibility: reduce motion (`UISettings.AnimationsEnabled`)
+- [ ] Personal collection page (title, Shuffle, grid) instead of the library grid
+
+### Backlog corrections found
+- Line 49 (startup profile rule "Every Time" by default) contradicts Android's Automatic default; it is the open Profile Selection item under Settings parity
+- "Rows of collections … not yet on the console" is out of date (verified on 0.1.687); "Switch Server now opens the saved-server list" is out of date (Change Account replaced it)
+- docs/player-controls.md "What Bale has today" predates the Up Next button and the Auto-play row
 
 ## From upstream reviews
 
