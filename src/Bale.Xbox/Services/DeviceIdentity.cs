@@ -38,6 +38,18 @@ internal static partial class DeviceIdentity
         catch { return false; }
     }
 
+    /// <summary>
+    /// X-Silo-Client-Channel and app_channel: how this build reached the console. silo-server stores it verbatim and
+    /// leaves "release", the assumed channel, out of its labels (docs/settings-api.md: release, beta, sideload, dev); the
+    /// official clients send "release" from their stores and "sideload" otherwise (silo-android androidApp/build.gradle.kts
+    /// siloReleaseChannel, silo-apple AppleDeviceIdentity.buildChannel). Debug-server builds are only ever sideloaded.
+    /// </summary>
+#if DEBUG_SERVER
+    internal const string Channel = "sideload";
+#else
+    internal const string Channel = "release";
+#endif
+
     public static ClientIdentity Current()
     {
         var info = new EasClientDeviceInformation();
@@ -54,7 +66,7 @@ internal static partial class DeviceIdentity
             ClientName: "Bale",
             ClientVersion: $"{version.Major}.{version.Minor}.{version.Build}",
             ClientBuild: version.Build.ToString(),
-            ClientChannel: "sideload",
+            ClientChannel: Channel,
             ClientFamily: xbox ? "tv" : "desktop",
             DeviceModel: xbox ? product : null);
     }

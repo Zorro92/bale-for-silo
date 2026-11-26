@@ -187,8 +187,10 @@ not `goto`.
 
 **Verify every UI or behavior change on the console** by driving it with `bale-debug.sh` and taking a
 screenshot. Don't report a change as working from a successful build alone. The debug server
-(`Services/DebugServer.cs`, port 8790) is compiled into development builds only; build anything
-shipped with `-p:BaleDebugServer=false`.
+(`Services/DebugServer.cs`, port 8790, unauthenticated and reachable from the whole LAN) is compiled only into
+builds that opt in with `-p:BaleDebugServer=true`: CI's debug-server package (the one `deploy-xbox.sh` installs)
+and `scripts/check-cswinrt.sh`. The default build is the shipping one (no debug server, no `inputInjectionBrokered`,
+channel `release`); never install a debug-server build on someone else's console. Store items: docs/store-readiness.md.
 
 ## Focus building blocks (use them on every page)
 

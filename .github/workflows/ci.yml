@@ -413,17 +413,21 @@ jobs:
             native/bale-gpu/target
           key: ${{ steps.rust.outputs.key }}
 
-      # Every build gets a higher version so the Xbox accepts it as an update: a new run bumps the
-      # third part, and a re-run ("Re-run jobs" keeps the run number) bumps the fourth. Never
+      # Debug-server builds: every build gets a higher version so the Xbox accepts it as an update: a new run
+      # bumps the third part, and a re-run ("Re-run jobs" keeps the run number) bumps the fourth. Never
       # reinstall the installed version: it blocks Bale's inbound networking until a newer build
-      # (verify-on-xbox skill). Sideloaded only, so the Store's "revision must be 0" rule doesn't apply.
+      # (verify-on-xbox skill). Production: 0.1.<run>.0, because the Store reserves the fourth part and
+      # needs it 0; every submission must also be higher than the last, so a Store package comes from a new
+      # run, never a re-run (docs/store-readiness.md). check-production-package.ps1 refuses another revision.
       - name: Stamp version
         shell: pwsh
         run: |
           $path = Resolve-Path 'src/Bale.Xbox/Package.appxmanifest'
           [xml]$manifest = Get-Content $path
-          $manifest.Package.Identity.Version = "0.1.${{ github.run_number }}.$([int]'${{ github.run_attempt }}' - 1)"
+          $revision = if ('${{ matrix.debug_server }}' -eq 'true') { [int]'${{ github.run_attempt }}' - 1 } else { 0 }
+          $manifest.Package.Identity.Version = "0.1.${{ github.run_number }}.$revision"
           $manifest.Save($path)
+          "Package version: $($manifest.Package.Identity.Version)"
 
       # Throwaway certificate for sideloading, left in the runner's store for the build to sign with.
       # The deploy script installs Bale.cer on the console.

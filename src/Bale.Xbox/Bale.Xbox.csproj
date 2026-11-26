@@ -22,8 +22,10 @@
     <!-- The generated vtables use unsafe code; without this CsWinRT silently skips them (CsWinRT1030). -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <CsWinRTAotWarningLevel>2</CsWinRTAotWarningLevel>
-    <!-- Development control channel (Services/DebugServer.cs). Build with -p:BaleDebugServer=false for anything shipped. -->
-    <BaleDebugServer Condition="'$(BaleDebugServer)' == ''">true</BaleDebugServer>
+    <!-- Development control channel (Services/DebugServer.cs, unauthenticated, LAN-wide). Off by default: the plain build
+         is the shipping one, and debug builds opt in with -p:BaleDebugServer=true (CI's debug_server matrix entry,
+         scripts/check-cswinrt.sh). It also adds the debug-only inputInjectionBrokered capability (Build/FFmpegManifest.xslt). -->
+    <BaleDebugServer Condition="'$(BaleDebugServer)' == ''">false</BaleDebugServer>
     <DefineConstants Condition="'$(BaleDebugServer)' == 'true'">$(DefineConstants);DEBUG_SERVER</DefineConstants>
     <AppxBundle>Never</AppxBundle>
     <UapAppxPackageBuildMode>SideloadOnly</UapAppxPackageBuildMode>
@@ -80,13 +82,18 @@
   </ItemGroup>
 
   <!-- The net6 CsWinRT projection does not register the native component with UWP packaging.
-       Transform the stamped manifest in every build, preserving its identity. -->
+       Transform the stamped manifest in every build, preserving its identity; debug-server builds also get the
+       debug server's input-injection capability there. -->
   <Target Name="PrepareFFmpegManifest" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
       <_FFmpegManifest>$(IntermediateOutputPath)ffmpeg\Package.appxmanifest</_FFmpegManifest>
+      <!-- The stylesheet compares case-sensitively; MSBuild conditions do not. -->
+      <_BaleManifestDebugServer>false</_BaleManifestDebugServer>
+      <_BaleManifestDebugServer Condition="'$(BaleDebugServer)' == 'true'">true</_BaleManifestDebugServer>
     </PropertyGroup>
     <MakeDir Directories="$(IntermediateOutputPath)ffmpeg" />
-    <XslTransformation XmlInputPaths="Package.appxmanifest" XslInputPath="Build\FFmpegManifest.xslt" OutputPaths="$(_FFmpegManifest)" />
+    <XslTransformation XmlInputPaths="Package.appxmanifest" XslInputPath="Build\FFmpegManifest.xslt" OutputPaths="$(_FFmpegManifest)"
+      Parameters="&lt;Parameter Name='debugServer' Value='$(_BaleManifestDebugServer)' /&gt;" />
     <ItemGroup>
       <AppxManifest Remove="@(AppxManifest)" />
       <AppxManifest Include="$(_FFmpegManifest)" />

@@ -10,20 +10,23 @@
 # Never builds the real checkout: it rsyncs tracked + untracked (not ignored) files into a cache copy,
 # restores with the lock file redirected, and fetches the pinned FFmpegInteropX packages (SHA256-checked
 # against scripts/ffmpeginteropx-wrapper.json and scripts/ffmpeg-native.json) into the copy's own feed.
-# The debug-only WinUI 2 reference is dropped in the copy (its targets need Windows), so DEBUG_SERVER code
-# is still analysed.
+# It compiles the debug-server build (-p:BaleDebugServer=true; the project's default is the shipping build), which
+# holds nearly all code; --release compiles the shipping build instead. The debug-only WinUI 2 reference is dropped
+# in the copy (its targets need Windows), so DEBUG_SERVER code is still analysed.
 #
-# Usage: scripts/check-cswinrt.sh [--all|--self-test]
+# Usage: scripts/check-cswinrt.sh [--all|--self-test|--release]
 #   --all        also print the other error IDs and counts (expected noise)
 #   --self-test  plant a non-partial IDisposable class in the copy and require CsWinRT1028 (proves the check works)
+#   --release    analyse the shipping build (BaleDebugServer=false) instead of the debug-server build
 # Cache: ${BALE_CSWINRT_CACHE:-$HOME/.cache/bale-cswinrt-check} (keep it off exFAT; ~100 MB + NuGet cache)
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 cache=${BALE_CSWINRT_CACHE:-$HOME/.cache/bale-cswinrt-check}
 copy=$cache/src
 feed=$cache/feed
-show_all=0 self_test=0
-case "${1-}" in --all) show_all=1 ;; --self-test) self_test=1 ;; "") ;; *) echo "usage: $0 [--all|--self-test]" >&2; exit 2 ;; esac
+show_all=0 self_test=0 debug_server=true
+case "${1-}" in --all) show_all=1 ;; --self-test) self_test=1 ;; --release) debug_server=false ;; "") ;;
+  *) echo "usage: $0 [--all|--self-test|--release]" >&2; exit 2 ;; esac
 mkdir -p "$copy" "$feed"
 
 # 1. Pinned packages into the private feed (download once, verify every run).
@@ -61,7 +64,7 @@ fi
 # 3. Compile. Exit code is meaningless (the XAML pass is missing); only CsWinRT IDs count.
 log=$cache/build.log
 dotnet build "$proj" --nologo -v:q -clp:NoSummary \
-  -p:EnableWindowsTargeting=true -p:Platform=x64 -p:CsWinRTGenerateProjection=false \
+  -p:EnableWindowsTargeting=true -p:Platform=x64 -p:CsWinRTGenerateProjection=false -p:BaleDebugServer=$debug_server \
   -p:NuGetLockFilePath="$cache/packages.lock.json" -p:RestoreLockedMode=false \
   -p:TreatWarningsAsErrors=false -p:BaleCoreNativeLibrary= >"$log" 2>&1 || true
 

@@ -15,6 +15,7 @@ analyzers raise the errors that most often break CI's Xbox package build.
 scripts/check-cswinrt.sh              # exit 0 = no CsWinRT errors, 1 = errors (printed), 2 = setup failed
 scripts/check-cswinrt.sh --self-test  # plants a non-partial class under DEBUG_SERVER; must report CsWinRT1028
 scripts/check-cswinrt.sh --all        # also counts the other (expected) errors
+scripts/check-cswinrt.sh --release    # the shipping build (BaleDebugServer=false) instead of the debug-server build
 ```
 
 The pre-push hook runs it automatically when pushed commits touch `src/`, the build props, NuGet config or the script (exit 2, e.g. no network, only warns). Run it by hand while editing; it checks the working tree, including
@@ -29,6 +30,9 @@ script changed, to prove the check still sees errors.
   untouched (the copy restores with its lock file redirected).
 - Fetches the pinned FFmpegInteropX packages (from `scripts/ffmpeginteropx-wrapper.json` and
   `scripts/ffmpeg-native.json`) into the copy's own feed, checking their SHA256.
+- Compiles the debug-server build (`-p:BaleDebugServer=true`, which holds nearly all code) unless `--release` asks for
+  the shipping one; the project itself defaults to the shipping build. Run `--release` too when you add `#else` or
+  `#if !DEBUG_SERVER` code.
 - Drops the debug-only WinUI 2 reference and its one user (`DebugServer.WebViewTest.cs`) in the copy, so
   `DEBUG_SERVER` code is still analysed.
 - Reports **only CsWinRT diagnostics**. The compile itself "fails" with thousands of CS0103 errors, because

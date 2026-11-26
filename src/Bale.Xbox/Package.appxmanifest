@@ -6,7 +6,9 @@
   IgnorableNamespaces="uap rescap">
 
   <!-- Publisher must match the signing certificate's subject. CI signs with a throwaway
-       "CN=Bale Development" certificate; Version is stamped per build. -->
+       "CN=Bale Development" certificate; Version is stamped per build (ci.yml "Stamp version": production
+       0.1.<run>.0, as the Store needs revision 0; debug-server 0.1.<run>.<attempt - 1>). A Store upload needs the
+       reserved identity from Partner Center instead (docs/store-readiness.md, owner checklist). -->
   <Identity Name="Bale.ClientForSilo" Publisher="CN=Bale Development" Version="0.1.0.0" />
 
   <Properties>
@@ -16,7 +18,10 @@
   </Properties>
 
   <Dependencies>
-    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+    <!-- Xbox only (the Store offers the package to consoles alone). A family other than Windows.Universal gets no
+         values from the project, so these stay in step with TargetPlatformMinVersion/TargetPlatformVersion in
+         Bale.Xbox.csproj; Windows.Xbox needs at least 10.0.14393.0 (TargetDeviceFamily schema docs). -->
+    <TargetDeviceFamily Name="Windows.Xbox" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
   </Dependencies>
 
   <Resources>
@@ -46,7 +51,7 @@
     <!-- Xbox HDR10/4K requires this flag (Microsoft's UWP hevc-xbox guidance). It also opts
          into the media memory budget and suspends/closes the app when a game launches. -->
     <rescap:Capability Name="hevcPlayback" />
-    <!-- Development only: lets the debug server inject gamepad input (Services/DebugServer.cs). Remove for the Store. -->
-    <rescap:Capability Name="inputInjectionBrokered" />
+    <!-- Debug-server builds append rescap:inputInjectionBrokered here (Build/FFmpegManifest.xslt, debugServer=true) so
+         the debug server can inject gamepad input; the Store rejects it, and production packages never carry it. -->
   </Capabilities>
 </Package>

@@ -205,6 +205,9 @@
     <None Include="../../src/Bale.Xbox/Services/DebugFrameLogSwitch.cs" Link="DebugFrameLogSwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugFrameLog.cs" Link="DebugFrameLog.cs" />
     <None Include="../../scripts/xbox-logs.sh" Link="xbox-logs.sh" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Store readiness (StoreManifestTests): the client channel per build and the CsWinRT check's explicit debug build. -->
+    <None Include="../../src/Bale.Xbox/Services/DeviceIdentity.cs" Link="DeviceIdentity.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/check-cswinrt.sh" Link="check-cswinrt.sh" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugStreamAdapterSwitch.cs" Link="DebugStreamAdapterSwitch.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugPlayerBackendSwitch.cs" Link="DebugPlayerBackendSwitch.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugStartBudget.cs" Link="DebugStartBudget.cs" />

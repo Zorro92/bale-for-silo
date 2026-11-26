@@ -8,8 +8,9 @@ description: Build Bale in CI, install it on the Xbox, drive it with real contro
 Bale's Xbox app only builds on Windows (GitHub Actions), so verification happens on the real console.
 Never call a UI or behavior change done from a green build alone.
 
-Needs `XBOX_HOST` (the console IP; ask the user if unset), `gh` signed in, and a development build
-(the debug server on port 8790 is compiled in by default).
+Needs `XBOX_HOST` (the console IP; ask the user if unset), `gh` signed in, and a debug-server build
+(the debug server on port 8790): CI's push builds are one (`-p:BaleDebugServer=true`; the project default is the
+shipping build without it).
 
 ## 1. Know what "right" is before looking
 
