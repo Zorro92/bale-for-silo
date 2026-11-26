@@ -28,6 +28,12 @@ public sealed record IntegerSetting(int Value, bool DeviceOverride = false, bool
 public sealed record BufferingQualitySetting(BufferingQualityMode Value = BufferingQualityModes.Default,
     bool DeviceOverride = false, bool Supported = false);
 
+/// <summary><c>playback.intro_skip_mode</c> as the server resolves it for this profile and device.</summary>
+/// <param name="Value">The effective mode; the contract default (<c>ask</c>) before a read or for a value Bale does not know.</param>
+/// <param name="DeviceOverride">True when this device stores its own value (scope profile_device).</param>
+/// <param name="Known">False until a read succeeded.</param>
+public sealed record IntroSkipSetting(IntroSkipMode Value = IntroSkipModes.Default, bool DeviceOverride = false, bool Known = false);
+
 /// <summary>
 /// The playback settings the player uses, read from <c>/api/v2/settings/values/effective</c>.
 /// Writes follow the Android TV app (PlayerSettingsStore.kt): a change on the TV stores a
@@ -44,19 +50,42 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
 {
     public const string AutoPlayNextKey = "playback.auto_play_next";
     public const string NextUpPromptSecondsKey = "playback.next_up_prompt_seconds";
+    public const string IntroSkipModeKey = IntroSkipModes.Key;
+    public const string AutoSkipCreditsKey = "playback.auto_skip_credits";
     public const string BufferingQualityModeKey = BufferingQualityModes.Key;
     public const string DeviceScope = "profile_device";
+
+    /// <summary>
+    /// Read on every refresh. All of them predate the v2 settings API (auto-play, the Show Next Up lead and Skip
+    /// Credits came with the first manifest, Skip Intros with revision 7), so no server answers 404 for them.
+    /// </summary>
+    private static readonly string[] BaseKeys = [AutoPlayNextKey, NextUpPromptSecondsKey, IntroSkipModeKey, AutoSkipCreditsKey];
 
     private readonly object _sync = new();
     private readonly Func<string?>? _scope;
     private BooleanSetting _autoPlayNext = new(true);
     private IntegerSetting _nextUpPromptSeconds = new(NextUpPrompt.DefaultSeconds);
+    private IntroSkipSetting _introSkip = new();
+    private BooleanSetting _autoSkipCredits = new(false);
     private BufferingQualitySetting _bufferingQuality = new();
     private bool _bufferingRead;
     private int _generation;
 
     /// <summary>Last known auto-play value; defaults to on (the server's default) before a read.</summary>
     public BooleanSetting AutoPlayNext { get { lock (_sync) return _autoPlayNext; } }
+
+    /// <summary>
+    /// Last known Skip Intros mode (TvSettingsScreen.kt's picker); <c>ask</c>, the contract default, before a read, as
+    /// AndroidPlayerSettingsStore.kt's introSkipModeFlow starts. The player reads it on every tick, so a change made in
+    /// Settings or a read that lands mid-intro re-evaluates the intro at once (IntroAutoSkipController.kt).
+    /// </summary>
+    public IntroSkipSetting IntroSkip { get { lock (_sync) return _introSkip; } }
+
+    /// <summary>
+    /// Last known Skip Credits switch (<c>playback.auto_skip_credits</c>, default off): on, the player skips each
+    /// credits occurrence by itself once (silo-apple PlayerViewModel.swift CreditsAutoSkipPolicy).
+    /// </summary>
+    public BooleanSetting AutoSkipCredits { get { lock (_sync) return _autoSkipCredits; } }
 
     /// <summary>
     /// Last known Show Next Up lead: seconds before the end of the file the Up Next card opens (0 = only at the end).
@@ -118,15 +147,17 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
             _generation++;
             _autoPlayNext = new(true);
             _nextUpPromptSeconds = new(NextUpPrompt.DefaultSeconds);
+            _introSkip = new();
+            _autoSkipCredits = new(false);
             _bufferingQuality = new();
             _bufferingRead = false;
         }
     }
 
     /// <summary>
-    /// Reads the effective values of auto-play, the Show Next Up lead and the buffering-quality mode; a failed
-    /// read keeps the last known values. A server whose manifest lacks the mode answers 404 for the whole read,
-    /// so that is retried without it and the mode marked unsupported.
+    /// Reads the effective values of auto-play, the Show Next Up lead, Skip Intros, Skip Credits and the
+    /// buffering-quality mode; a failed read keeps the last known values. A server whose manifest lacks the mode
+    /// answers 404 for the whole read, so that is retried without it and the mode marked unsupported.
     /// </summary>
     public async Task<BooleanSetting> RefreshAsync(CancellationToken cancellationToken = default)
     {
@@ -136,14 +167,13 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
         try
         {
             collection = await api.Api.V2.Settings.Values.Effective.GetAsync(
-                c => c.QueryParameters.Keys = [AutoPlayNextKey, NextUpPromptSecondsKey, BufferingQualityModeKey],
-                cancellationToken).ConfigureAwait(false);
+                c => c.QueryParameters.Keys = [.. BaseKeys, BufferingQualityModeKey], cancellationToken).ConfigureAwait(false);
         }
         catch (Problem problem) when (problem.ResponseStatusCode == 404)
         {
             supported = false;
             collection = await api.Api.V2.Settings.Values.Effective.GetAsync(
-                c => c.QueryParameters.Keys = [AutoPlayNextKey, NextUpPromptSecondsKey], cancellationToken).ConfigureAwait(false);
+                c => c.QueryParameters.Keys = [.. BaseKeys], cancellationToken).ConfigureAwait(false);
         }
         var row = collection?.Items?.FirstOrDefault(item => item.Key == AutoPlayNextKey);
         var setting = row is null ? new BooleanSetting(true, Known: true)
@@ -151,6 +181,11 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
         var promptRow = collection?.Items?.FirstOrDefault(item => item.Key == NextUpPromptSecondsKey);
         var prompt = new IntegerSetting(Integer(promptRow?.Value) is { } seconds ? NextUpPrompt.Clamp(seconds) : NextUpPrompt.DefaultSeconds,
             promptRow?.Scope == DeviceScope, true);
+        var introRow = collection?.Items?.FirstOrDefault(item => item.Key == IntroSkipModeKey);
+        var intro = new IntroSkipSetting(IntroSkipModes.FromWire(Text(introRow?.Value)) ?? IntroSkipModes.Default,
+            introRow?.Scope == DeviceScope, true);
+        var creditsRow = collection?.Items?.FirstOrDefault(item => item.Key == AutoSkipCreditsKey);
+        var credits = new BooleanSetting(Boolean(creditsRow?.Value) ?? false, creditsRow?.Scope == DeviceScope, true);
         var modeRow = supported ? collection?.Items?.FirstOrDefault(item => item.Key == BufferingQualityModeKey) : null;
         var mode = supported
             ? new BufferingQualitySetting(BufferingQualityModes.FromWire(Text(modeRow?.Value)) ?? BufferingQualityModes.Default,
@@ -161,6 +196,8 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
             if (generation == _generation)
             {
                 _nextUpPromptSeconds = prompt;
+                _introSkip = intro;
+                _autoSkipCredits = credits;
                 _bufferingQuality = mode;
                 _bufferingRead = true;
                 Remember(mode);
@@ -181,10 +218,58 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
     /// <summary>Drops the device override so the profile's value applies again, then rereads it.</summary>
     public async Task<BooleanSetting> UseProfileSettingAsync(CancellationToken cancellationToken = default)
     {
-        await api.Api.V2.Settings.Values[AutoPlayNextKey].DeleteAsync(
-            c => c.QueryParameters.Scope = DeleteScopeQueryParameterType.Profile_device, cancellationToken).ConfigureAwait(false);
+        await DeleteDeviceValueAsync(AutoPlayNextKey, cancellationToken).ConfigureAwait(false);
         return await RefreshAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>Picking a mode on the TV stores a device override (TvSettingsScreen.kt PlaybackPicker.IntroSkipMode).</summary>
+    public async Task<IntroSkipSetting> SetIntroSkipModeAsync(IntroSkipMode mode, CancellationToken cancellationToken = default)
+    {
+        var generation = Generation();
+        await api.Api.V2.Settings.Values[IntroSkipModeKey].PutAsync(
+            new SettingValueWrite { Value = new UntypedString(IntroSkipModes.Wire(mode)) },
+            c => c.QueryParameters.Scope = PutScopeQueryParameterType.Profile_device, cancellationToken).ConfigureAwait(false);
+        var setting = new IntroSkipSetting(mode, true, true);
+        lock (_sync)
+        {
+            if (generation == _generation) _introSkip = setting;
+        }
+        return setting;
+    }
+
+    /// <summary>"Use profile setting" in the Skip Intros picker: drop this device's value, then reread.</summary>
+    public async Task<IntroSkipSetting> UseProfileIntroSkipModeAsync(CancellationToken cancellationToken = default)
+    {
+        await DeleteDeviceValueAsync(IntroSkipModeKey, cancellationToken).ConfigureAwait(false);
+        await RefreshAsync(cancellationToken).ConfigureAwait(false);
+        return IntroSkip;
+    }
+
+    /// <summary>The Skip Credits switch stores a device override (TvSettingsScreen.kt SettingsToggleRow).</summary>
+    public async Task<BooleanSetting> SetAutoSkipCreditsAsync(bool value, CancellationToken cancellationToken = default)
+    {
+        var generation = Generation();
+        await api.Api.V2.Settings.Values[AutoSkipCreditsKey].PutAsync(new SettingValueWrite { Value = new UntypedBoolean(value) },
+            c => c.QueryParameters.Scope = PutScopeQueryParameterType.Profile_device, cancellationToken).ConfigureAwait(false);
+        var setting = new BooleanSetting(value, true, true);
+        lock (_sync)
+        {
+            if (generation == _generation) _autoSkipCredits = setting;
+        }
+        return setting;
+    }
+
+    /// <summary>Skip Credits' "Use Profile Setting" row: drop this device's value, then reread.</summary>
+    public async Task<BooleanSetting> UseProfileAutoSkipCreditsAsync(CancellationToken cancellationToken = default)
+    {
+        await DeleteDeviceValueAsync(AutoSkipCreditsKey, cancellationToken).ConfigureAwait(false);
+        await RefreshAsync(cancellationToken).ConfigureAwait(false);
+        return AutoSkipCredits;
+    }
+
+    private Task DeleteDeviceValueAsync(string key, CancellationToken cancellationToken) =>
+        api.Api.V2.Settings.Values[key].DeleteAsync(
+            c => c.QueryParameters.Scope = DeleteScopeQueryParameterType.Profile_device, cancellationToken);
 
     /// <summary>Picking a mode on the TV stores a device override (TvSettingsScreen.kt's picker sheet).</summary>
     public async Task<BufferingQualitySetting> SetBufferingQualityModeAsync(BufferingQualityMode mode,
@@ -210,8 +295,7 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
     /// <summary>"Use profile setting" in the mode picker: drop this device's value, then reread.</summary>
     public async Task<BufferingQualitySetting> UseProfileBufferingQualityModeAsync(CancellationToken cancellationToken = default)
     {
-        await api.Api.V2.Settings.Values[BufferingQualityModeKey].DeleteAsync(
-            c => c.QueryParameters.Scope = DeleteScopeQueryParameterType.Profile_device, cancellationToken).ConfigureAwait(false);
+        await DeleteDeviceValueAsync(BufferingQualityModeKey, cancellationToken).ConfigureAwait(false);
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
         return BufferingQuality;
     }

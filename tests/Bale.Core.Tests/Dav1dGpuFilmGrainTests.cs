@@ -176,7 +176,7 @@ public sealed class Dav1dGpuFilmGrainTests
         Assert.Contains(pane.Nodes().OfType<XComment>(), comment => comment.Value.Contains("deviation from the official Silo apps", StringComparison.Ordinal));
         var code = Read("SettingsPage.cs.txt");
         var actions = code[code.IndexOf("private Control[] DetailActions", StringComparison.Ordinal)..code.IndexOf("private SettingsCategory CategoryOf", StringComparison.Ordinal)];
-        Assert.Contains("AutoPlayButton, AutoPlayProfileButton,\n                SdrBrightnessButton, Dav1dGpuFilmGrainButton,", actions);
+        Assert.Contains("AutoPlayButton, AutoPlayProfileButton,\n                IntroSkipButton, SkipCreditsButton, SkipCreditsProfileButton, SdrBrightnessButton, Dav1dGpuFilmGrainButton,", actions);
         Assert.Contains("FocusTarget(actions[Math.Clamp(index + vertical, 0, actions.Length - 1)]);", code);
         Assert.Contains("_returnTarget = Dav1dGpuFilmGrainButton;", code);
         Assert.Contains("AppSettings.Dav1dGpuFilmGrain = !AppSettings.Dav1dGpuFilmGrain;", code);

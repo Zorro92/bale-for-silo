@@ -128,6 +128,25 @@
                   <TextBlock Text="Use Profile Setting" Style="{StaticResource SkylineSettingsRowTextStyle}" />
                 </Button>
                 <TextBlock x:Name="AutoPlayDescription" Style="{StaticResource SkylineSettingsFooterStyle}" />
+                <!-- TvSettingsScreen.kt:1403: Skip Intros is three-way, so a value row and picker sheet (the schema's select),
+                     not a switch; its "Use profile setting" leads the picker. :1408: Skip Credits is a switch whose "Use
+                     Profile Setting" row shows while this Xbox has its own value. -->
+                <Button x:Name="IntroSkipButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnIntroSkipClick">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock x:Name="IntroSkipLabel" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                    <TextBlock x:Name="IntroSkipValue" Grid.Column="1" Style="{StaticResource SkylineSettingsValueTextStyle}" />
+                  </Grid>
+                </Button>
+                <Button x:Name="SkipCreditsButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnSkipCreditsClick">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock Text="Skip Credits" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                    <TextBlock x:Name="SkipCreditsValue" Grid.Column="1" Style="{StaticResource SkylineSettingsValueTextStyle}" />
+                  </Grid>
+                </Button>
+                <Button x:Name="SkipCreditsProfileButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnSkipCreditsProfileClick"
+                        Visibility="Collapsed" AutomationProperties.Name="Use profile setting for Skip Credits">
+                  <TextBlock Text="Use Profile Setting" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                </Button>
               </StackPanel>
               <!-- Owner-requested deviation from the official Silo apps (they never tone-map on the device): the SDR white of
                    the console tone map (Bale's stage and rav1g's display pass), a value row and picker like Buffering Quality's. -->
@@ -247,6 +266,41 @@
             </Button>
             <Button x:Name="BufferingAlwaysOption" Tag="always" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnBufferingOptionClick">
               <TextBlock x:Name="BufferingAlwaysOptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Grid>
+    <!-- TvSettingsScreen.kt PlaybackPicker.IntroSkipMode: "Use profile setting" leads, then the three modes. -->
+    <Grid x:Name="IntroSkipPicker" Visibility="Collapsed" Background="{StaticResource SkylineSettingsPickerScrim}">
+      <Border Style="{StaticResource SkylineSettingsPickerCardStyle}">
+        <StackPanel>
+          <Grid Style="{StaticResource SkylineSettingsPickerHeaderStyle}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <StackPanel Style="{StaticResource SkylineSettingsPickerTitleStyle}">
+              <TextBlock x:Name="IntroSkipPickerTitle" Style="{StaticResource SkylineSettingsPaneTitleStyle}" />
+              <TextBlock Text="Choose an option" Style="{StaticResource SkylineSettingsPickerHintTextStyle}" />
+            </StackPanel>
+            <Border Grid.Column="1" Style="{StaticResource SkylineSettingsPickerHintStyle}">
+              <StackPanel Style="{StaticResource SkylineSettingsPickerHintContentStyle}">
+                <Viewbox Style="{StaticResource SkylineSettingsPickerHintIconStyle}"><Path Style="{StaticResource SkylineSettingsGlyphStyle}" Opacity="{StaticResource SkylineSettingsHintOpacity}" Data="M12.5,8 C9.85,8 7.45,8.99 5.6,10.6 L2,7 V16 H11 L7.38,12.38 C8.77,11.22 10.54,10.5 12.5,10.5 C16.04,10.5 19.05,12.81 20.1,16 L22.47,15.22 C21.08,11.03 17.15,8 12.5,8 Z" /></Viewbox>
+                <TextBlock Text="Back to close" Style="{StaticResource SkylineSettingsPickerHintTextStyle}" />
+              </StackPanel>
+            </Border>
+          </Grid>
+          <Border Style="{StaticResource SkylineSettingsPickerDividerStyle}" />
+          <StackPanel Style="{StaticResource SkylineSettingsPickerOptionsStyle}">
+            <Button x:Name="IntroSkipProfileOption" Tag="profile" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnIntroSkipOptionClick">
+              <TextBlock x:Name="IntroSkipProfileOptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="IntroSkipNeverOption" Tag="never" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnIntroSkipOptionClick">
+              <TextBlock x:Name="IntroSkipNeverOptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="IntroSkipAskOption" Tag="ask" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnIntroSkipOptionClick">
+              <TextBlock x:Name="IntroSkipAskOptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="IntroSkipAlwaysOption" Tag="always" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnIntroSkipOptionClick">
+              <TextBlock x:Name="IntroSkipAlwaysOptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
             </Button>
           </StackPanel>
         </StackPanel>

@@ -28,6 +28,8 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     private bool _signingOut;
     private bool _autoPlayBusy;
     private CancellationTokenSource? _autoPlayRead;
+    // Skip Intros / Skip Credits (TvSettingsScreen.kt:1403, :1408): one write at a time, as for Auto-Play.
+    private bool _skipBusy;
     // Settings → Playback → Streaming / Connection (TvSettingsScreen.kt, TvConnectionSettings.kt).
     private readonly DispatcherTimer _connectionClock = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _testing;
@@ -49,6 +51,11 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         BufferingNeverOptionText.Text = BufferingQualityModes.Label(BufferingQualityMode.Never);
         BufferingAskOptionText.Text = BufferingQualityModes.Label(BufferingQualityMode.Ask);
         BufferingAlwaysOptionText.Text = BufferingQualityModes.Label(BufferingQualityMode.Always);
+        IntroSkipLabel.Text = IntroSkipPickerTitle.Text = IntroSkipModes.Title;
+        IntroSkipProfileOptionText.Text = ConnectionSettings.UseProfileSetting;
+        IntroSkipNeverOptionText.Text = IntroSkipModes.Label(IntroSkipMode.Never);
+        IntroSkipAskOptionText.Text = IntroSkipModes.Label(IntroSkipMode.Ask);
+        IntroSkipAlwaysOptionText.Text = IntroSkipModes.Label(IntroSkipMode.Always);
         // One label for the row's value and each option (SdrBrightness.Label); an option's Tag is its nits.
         foreach (var (option, label) in new (Button, TextBlock)[]
         {
@@ -93,6 +100,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         ConnectionSpeedService.Changed += OnConnectionChanged;
         _connectionClock.Start();
         UpdateAutoPlay();
+        UpdateSkipSettings();
         UpdateDav1dGpuFilmGrain();
         UpdateSdrBrightness();
         UpdateConnection();
@@ -121,6 +129,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         DetachFocusBoundary();
         ProfilePicker.Visibility = Visibility.Collapsed;
         BufferingPicker.Visibility = Visibility.Collapsed;
+        IntroSkipPicker.Visibility = Visibility.Collapsed;
         SdrBrightnessPicker.Visibility = Visibility.Collapsed;
         SignOutPrompt.Hide();
         base.OnNavigatedFrom(e);
@@ -209,7 +218,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         SettingsCategory.Playback => new Control[]
             {
                 BufferingQualityButton, LearnedLimitButton, ConnectionSpeedButton, AutoPlayButton, AutoPlayProfileButton,
-                SdrBrightnessButton, Dav1dGpuFilmGrainButton,
+                IntroSkipButton, SkipCreditsButton, SkipCreditsProfileButton, SdrBrightnessButton, Dav1dGpuFilmGrainButton,
             }.Where(item => item.Visibility == Visibility.Visible).ToArray(),
         SettingsCategory.Server => [AccountsButton],
         _ => [ProfileSelectionButton, HomeSectionsButton],
@@ -251,6 +260,11 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             CloseBufferingPicker();
             return true;
         }
+        if (IntroSkipPicker.Visibility == Visibility.Visible)
+        {
+            CloseIntroSkipPicker();
+            return true;
+        }
         if (SdrBrightnessPicker.Visibility == Visibility.Visible)
         {
             CloseSdrBrightnessPicker();
@@ -284,6 +298,18 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             if (vertical != 0)
             {
                 var options = BufferingOptions;
+                var index = Array.FindIndex(options, option => SettingsInput.IsWithin(focused, option));
+                options[Math.Clamp(index + vertical, 0, options.Length - 1)].Focus(FocusState.Keyboard);
+                e.Handled = true;
+            }
+            if (horizontal != 0 || e.Key == VirtualKey.Tab) e.Handled = true;
+            return;
+        }
+        if (IntroSkipPicker.Visibility == Visibility.Visible)
+        {
+            if (vertical != 0)
+            {
+                var options = IntroSkipOptions;
                 var index = Array.FindIndex(options, option => SettingsInput.IsWithin(focused, option));
                 options[Math.Clamp(index + vertical, 0, options.Length - 1)].Focus(FocusState.Keyboard);
                 e.Handled = true;
@@ -360,6 +386,10 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             if (OwnsSettings && BufferingPicker.Visibility == Visibility.Visible && !SettingsInput.IsWithin(e.NewFocusedElement, BufferingPicker))
             {
                 if (!e.TrySetNewFocusedElement(SelectedBufferingOption)) e.Cancel = true;
+            }
+            else if (OwnsSettings && IntroSkipPicker.Visibility == Visibility.Visible && !SettingsInput.IsWithin(e.NewFocusedElement, IntroSkipPicker))
+            {
+                if (!e.TrySetNewFocusedElement(SelectedIntroSkipOption)) e.Cancel = true;
             }
             else if (OwnsSettings && SdrBrightnessPicker.Visibility == Visibility.Visible && !SettingsInput.IsWithin(e.NewFocusedElement, SdrBrightnessPicker))
             {
@@ -444,6 +474,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             if (OwnsSettings && !read.IsCancellationRequested && client.ProfileId == profileId)
             {
                 UpdateAutoPlay();
+                UpdateSkipSettings();
                 UpdateConnection();
             }
         }
@@ -590,6 +621,118 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             _autoPlayBusy = false;
             if (OwnsSettings && client.ProfileId == profileId)
             {
+                UpdateAutoPlay();
+                UpdateSkipSettings();
+                UpdateConnection();
+            }
+        }
+    }
+
+    /// <summary>
+    /// TvSettingsScreen.kt:1403/:1408: Skip Intros shows the effective mode's label, Skip Credits On/Off, and Skip Credits'
+    /// "Use Profile Setting" row only while this Xbox has its own value (focus moves up to the switch when it leaves).
+    /// </summary>
+    private void UpdateSkipSettings()
+    {
+        IntroSkipValue.Text = IntroSkipModes.Label(_client?.Settings.IntroSkip.Value ?? IntroSkipModes.Default);
+        var credits = _client?.Settings.AutoSkipCredits ?? new BooleanSetting(false);
+        SkipCreditsValue.Text = credits.Value ? "On" : "Off";
+        if (!credits.DeviceOverride && SettingsInput.IsWithin(FocusManager.GetFocusedElement() as DependencyObject, SkipCreditsProfileButton))
+            FocusTarget(SkipCreditsButton);
+        SkipCreditsProfileButton.Visibility = credits.DeviceOverride ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private Button[] IntroSkipOptions => [IntroSkipProfileOption, IntroSkipNeverOption, IntroSkipAskOption, IntroSkipAlwaysOption];
+
+    /// <summary>"Use profile setting" is the checked choice while this Xbox has no value of its own (profileLayered).</summary>
+    private Button SelectedIntroSkipOption
+    {
+        get
+        {
+            var setting = _client?.Settings.IntroSkip ?? new IntroSkipSetting();
+            if (!setting.DeviceOverride) return IntroSkipProfileOption;
+            return setting.Value switch
+            {
+                IntroSkipMode.Never => IntroSkipNeverOption,
+                IntroSkipMode.Always => IntroSkipAlwaysOption,
+                _ => IntroSkipAskOption,
+            };
+        }
+    }
+
+    /// <summary>The Buffering Quality picker's pattern: the checked option takes focus, Back or a choice returns to the row.</summary>
+    private void OnIntroSkipClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings) return;
+        _returnTarget = IntroSkipButton;
+        var selected = SelectedIntroSkipOption;
+        foreach (var option in IntroSkipOptions)
+        {
+            option.ApplyTemplate();
+            VisualStateManager.GoToState(option, ReferenceEquals(option, selected) ? "Selected" : "Unselected", false);
+        }
+        IntroSkipPicker.Visibility = Visibility.Visible;
+        FocusRetry.Until(this, () => !OwnsSettings || IntroSkipPicker.Visibility != Visibility.Visible || selected.Focus(FocusState.Programmatic));
+    }
+
+    private void CloseIntroSkipPicker()
+    {
+        IntroSkipPicker.Visibility = Visibility.Collapsed;
+        FocusTarget(IntroSkipButton);
+    }
+
+    /// <summary>A mode stores this Xbox's own value (profile_device); "Use profile setting" deletes it and rereads.</summary>
+    private async void OnIntroSkipOptionClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _client is not { } client) return;
+        var choice = (sender as FrameworkElement)?.Tag as string;
+        CloseIntroSkipPicker();
+        await ChangeSkipSettingAsync(client, "Skip Intros", () => choice == "profile"
+            ? client.Settings.UseProfileIntroSkipModeAsync()
+            : IntroSkipModes.FromWire(choice) is { } mode ? client.Settings.SetIntroSkipModeAsync(mode) : Task.CompletedTask);
+    }
+
+    /// <summary>TvSettingsScreen.kt SettingsToggleRow: the switch stores a value for this device (scope profile_device).</summary>
+    private async void OnSkipCreditsClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _client is not { } client) return;
+        _returnTarget = SkipCreditsButton;
+        await ChangeSkipSettingAsync(client, "Skip Credits", () => client.Settings.SetAutoSkipCreditsAsync(!client.Settings.AutoSkipCredits.Value));
+    }
+
+    /// <summary>UseProfileSettingRow: focus goes back to the switch above before the row leaves (skipCreditsFocus).</summary>
+    private async void OnSkipCreditsProfileClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _client is not { } client) return;
+        FocusTarget(SkipCreditsButton);
+        await ChangeSkipSettingAsync(client, "Skip Credits", () => client.Settings.UseProfileAutoSkipCreditsAsync());
+    }
+
+    private async Task ChangeSkipSettingAsync(SiloClient client, string name, Func<Task> change)
+    {
+        if (_skipBusy) return;
+        _skipBusy = true;
+        var profileId = _profileId;
+        try
+        {
+            await change();
+            if (OwnsSettings && client.ProfileId == profileId) PlaybackError.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception error)
+        {
+            Log.Error("Settings " + name + " write", error);
+            if (OwnsSettings && client.ProfileId == profileId)
+            {
+                PlaybackError.Text = "Bale couldn’t save " + name + " on the server. Try again.";
+                PlaybackError.Visibility = Visibility.Visible;
+            }
+        }
+        finally
+        {
+            _skipBusy = false;
+            if (OwnsSettings && client.ProfileId == profileId)
+            {
+                UpdateSkipSettings();
                 UpdateAutoPlay();
                 UpdateConnection();
             }

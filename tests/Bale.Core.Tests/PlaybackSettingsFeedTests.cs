@@ -84,6 +84,94 @@ public class PlaybackSettingsFeedTests
     }
 
     [Fact]
+    public async Task ReadsSkipIntrosAndSkipCreditsWithAutoPlay()
+    {
+        // playback.intro_skip_mode: never/ask/always, default ask; playback.auto_skip_credits: boolean, default off
+        // (settings manifest; TvSettingsScreen.kt:1403, :1408).
+        var handler = new StubHandler()
+            .Enqueue("""
+                {"items":[{"key":"playback.intro_skip_mode","value":"always","scope":"profile_device","source":"stored"},
+                {"key":"playback.auto_skip_credits","value":true,"scope":"profile","source":"stored"}],"revision":30}
+                """)
+            .Enqueue("""
+                {"items":[{"key":"playback.intro_skip_mode","value":"never","scope":"profile"},
+                {"key":"playback.auto_skip_credits","value":true,"scope":"profile_device"}],"revision":30}
+                """)
+            .Enqueue("""{"items":[{"key":"playback.intro_skip_mode","value":"sometimes","scope":"profile"}],"revision":30}""")
+            .Enqueue("""{"items":[],"revision":30}""");
+        using var connection = Connect(handler);
+        var feed = new PlaybackSettingsFeed(connection.Api);
+        Assert.Equal(new IntroSkipSetting(IntroSkipMode.Ask), feed.IntroSkip);
+        Assert.Equal(new BooleanSetting(false), feed.AutoSkipCredits);
+        await feed.RefreshAsync();
+        Assert.Equal(new IntroSkipSetting(IntroSkipMode.Always, true, true), feed.IntroSkip);
+        Assert.Equal(new BooleanSetting(true, false, true), feed.AutoSkipCredits);
+        var query = handler.Requests[0].RequestUri!.Query;
+        Assert.Contains("keys=playback.intro_skip_mode", query);
+        Assert.Contains("keys=playback.auto_skip_credits", query);
+        await feed.RefreshAsync();
+        Assert.Equal(new IntroSkipSetting(IntroSkipMode.Never, false, true), feed.IntroSkip);
+        Assert.Equal(new BooleanSetting(true, true, true), feed.AutoSkipCredits);
+        // A mode Bale does not know is the contract default; a key the server leaves out is its default too.
+        await feed.RefreshAsync();
+        Assert.Equal(new IntroSkipSetting(IntroSkipMode.Ask, false, true), feed.IntroSkip);
+        Assert.Equal(new BooleanSetting(false, false, true), feed.AutoSkipCredits);
+        await feed.RefreshAsync();
+        Assert.Equal(new IntroSkipSetting(IntroSkipMode.Ask, false, true), feed.IntroSkip);
+        feed.Reset();
+        Assert.Equal(new IntroSkipSetting(), feed.IntroSkip);
+        Assert.Equal(new BooleanSetting(false), feed.AutoSkipCredits);
+    }
+
+    [Fact]
+    public async Task SkipIntrosAndSkipCreditsWriteDeviceValuesAndUseProfileSettingDeletesThem()
+    {
+        var handler = new StubHandler()
+            .Enqueue("""{"key":"playback.intro_skip_mode","value":"never","scope":"profile_device","revision":31}""")
+            .Enqueue(HttpStatusCode.NoContent, "")
+            .Enqueue("""{"items":[{"key":"playback.intro_skip_mode","value":"always","scope":"profile"}],"revision":32}""")
+            .Enqueue("""{"key":"playback.auto_skip_credits","value":true,"scope":"profile_device","revision":33}""")
+            .Enqueue(HttpStatusCode.NoContent, "")
+            .Enqueue("""{"items":[{"key":"playback.auto_skip_credits","value":false,"scope":"default"}],"revision":34}""");
+        using var connection = Connect(handler);
+        var feed = new PlaybackSettingsFeed(connection.Api);
+        Assert.Equal(new IntroSkipSetting(IntroSkipMode.Never, true, true), await feed.SetIntroSkipModeAsync(IntroSkipMode.Never));
+        Assert.Equal(IntroSkipMode.Never, feed.IntroSkip.Value);
+        Assert.Equal(new IntroSkipSetting(IntroSkipMode.Always, false, true), await feed.UseProfileIntroSkipModeAsync());
+        Assert.Equal(new BooleanSetting(true, true, true), await feed.SetAutoSkipCreditsAsync(true));
+        Assert.True(feed.AutoSkipCredits.Value);
+        Assert.Equal(new BooleanSetting(false, false, true), await feed.UseProfileAutoSkipCreditsAsync());
+
+        Assert.Equal(HttpMethod.Put, handler.Requests[0].Method);
+        Assert.Equal("/silo/api/v2/settings/values/playback.intro_skip_mode", handler.Requests[0].RequestUri!.AbsolutePath);
+        Assert.Contains("scope=profile_device", handler.Requests[0].RequestUri!.Query);
+        Assert.Equal("""{"value":"never"}""", handler.RequestBodies[0]);
+        Assert.Equal(HttpMethod.Delete, handler.Requests[1].Method);
+        Assert.Equal("/silo/api/v2/settings/values/playback.intro_skip_mode", handler.Requests[1].RequestUri!.AbsolutePath);
+        Assert.Contains("scope=profile_device", handler.Requests[1].RequestUri!.Query);
+        Assert.Equal(HttpMethod.Put, handler.Requests[3].Method);
+        Assert.Equal("/silo/api/v2/settings/values/playback.auto_skip_credits", handler.Requests[3].RequestUri!.AbsolutePath);
+        Assert.Contains("scope=profile_device", handler.Requests[3].RequestUri!.Query);
+        Assert.Equal("""{"value":true}""", handler.RequestBodies[3]);
+        Assert.Equal(HttpMethod.Delete, handler.Requests[4].Method);
+        Assert.Equal("/silo/api/v2/settings/values/playback.auto_skip_credits", handler.Requests[4].RequestUri!.AbsolutePath);
+        Assert.Contains("scope=profile_device", handler.Requests[4].RequestUri!.Query);
+    }
+
+    [Fact]
+    public void IntroSkipModesRoundTripTheirWireValuesAndLabels()
+    {
+        Assert.Equal(["never", "ask", "always"], IntroSkipModes.All.Select(IntroSkipModes.Wire));
+        Assert.Equal(["Never", "Ask to skip", "Skip automatically"], IntroSkipModes.All.Select(IntroSkipModes.Label));
+        foreach (var mode in IntroSkipModes.All) Assert.Equal(mode, IntroSkipModes.FromWire(IntroSkipModes.Wire(mode)));
+        Assert.Null(IntroSkipModes.FromWire("countdown"));
+        Assert.Null(IntroSkipModes.FromWire(null));
+        Assert.Equal(IntroSkipMode.Ask, IntroSkipModes.Default);
+        Assert.Equal("playback.intro_skip_mode", IntroSkipModes.Key);
+        Assert.Equal("Skip Intros", IntroSkipModes.Title);
+    }
+
+    [Fact]
     public async Task AFailedReadKeepsTheLastValueAndResetDropsIt()
     {
         var handler = new StubHandler()
@@ -176,8 +264,11 @@ public class BufferingQualitySettingTests
         Assert.Equal(new BooleanSetting(false, false, true), await feed.RefreshAsync());
         Assert.Equal(new BufferingQualitySetting(), feed.BufferingQuality);
         Assert.DoesNotContain("buffering_quality_mode", handler.Requests[1].RequestUri!.Query);
-        // The Show Next Up lead came with the first settings manifest, as auto-play did, so the retry keeps it.
+        // The Show Next Up lead came with the first settings manifest, as auto-play did, so the retry keeps it; Skip
+        // Credits did too, and Skip Intros (revision 7) predates the v2 settings API.
         Assert.Contains("keys=playback.next_up_prompt_seconds", handler.Requests[1].RequestUri!.Query);
+        Assert.Contains("keys=playback.intro_skip_mode", handler.Requests[1].RequestUri!.Query);
+        Assert.Contains("keys=playback.auto_skip_credits", handler.Requests[1].RequestUri!.Query);
     }
 
     [Fact]
