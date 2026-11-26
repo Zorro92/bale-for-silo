@@ -805,6 +805,16 @@ public sealed partial class PlayerPage
     {
         try
         {
+#if DEBUG_SERVER
+            // play-url: a debug file has no Silo catalog (its synthetic detail lists no audio tracks) and its plan names no
+            // track, so there is no ordinal to map, and the rule below (audio_selection.rs resolve_index) refuses every file
+            // with audio. It keeps the wrapper's default stream instead. Real Silo plays have no DebugUrl and keep the rule.
+            if (attempt.DebugUrl is not null && planIndex is null)
+            {
+                Log.Info("player: debug file keeps the default audio stream");
+                return;
+            }
+#endif
             if (attempt.Plan?.Delivery != "original_http" || media.Player is not { } player)
                 throw new PlaybackAudioSelectionException();
             var fileId = attempt.Plan.Source?.MediaFileId ?? attempt.Plan.EffectiveMediaFileId;

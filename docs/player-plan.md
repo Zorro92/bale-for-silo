@@ -2519,6 +2519,12 @@ URLs and credentials are redacted from Bale logs, command logs and `play-url` ou
 
 This session has no Silo headers, bearer/profile refresh, progress/scrobble/stop/journal reporting,
 plan-summary reporting, quality/lower-version/server recovery, server track replan, sidecars or Up Next.
+Nor has it an audio catalog: the synthetic detail lists no audio tracks and the plan names none, so the original's
+catalog-to-mounted audio mapping (`PlaybackOriginalAudioSelection`, `audio_selection.rs`), which refuses a mounted audio
+track it cannot map, would fail every file with audio (`player: opened type=PlaybackAudioSelectionException`, then
+`Debug file: player pipeline failed`, 0.1.790). A debug-file attempt keeps the wrapper's default audio stream instead
+(`player: debug file keeps the default audio stream`); the rule is unchanged for every real Silo play, and the bypass
+exists only in `DEBUG_SERVER` builds.
 Pipeline failures stop visibly; Retry can open the same URL again. The transport uses a separate
 HTTP client and supplies empty native headers even after a 401. No release-build factory can open
 these URLs, and the authenticated Silo media URL boundary is unchanged.

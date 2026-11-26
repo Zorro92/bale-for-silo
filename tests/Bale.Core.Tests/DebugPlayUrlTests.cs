@@ -141,6 +141,40 @@ public class DebugPlayUrlTests
         Assert.Throws<ArgumentException>(() => PlaybackMedia.OpenDebugFile(request.Url, plan));
     }
 
+    [Fact]
+    public void ADebugFileKeepsTheWrappersDefaultAudioStreamWhileSiloPlaysKeepTheStrictRule()
+    {
+        // play-url's synthetic detail has no audio catalog and its plan names no audio track: Silo's rule, which maps the
+        // plan's catalog ordinal onto the mounted streams, refuses any file with audio ("player: opened
+        // type=PlaybackAudioSelectionException"). The rule itself stays as it is for every real Silo play.
+        var request = new DebugPlayUrlRequest(new("https://example.invalid/clip.mkv"), null);
+        var probe = Facts("h264", 1920, 1080, 30, "bt709");
+        var plan = request.Plan(probe);
+        var catalog = request.Detail(probe).Versions.Single(version => version.FileId == plan.Source!.MediaFileId).AudioTracks;
+        Assert.Equal("original_http", plan.Delivery);
+        Assert.Null(plan.SelectedTracks?.Audio?.Index);
+        Assert.True(catalog is null or { Count: 0 });
+        MountedPlaybackAudioTrack[] mounted = [new(1, "en", "aac", 2, null, true)];
+        Assert.Throws<PlaybackAudioSelectionException>(() => PlaybackOriginalAudioSelection.ResolveIndex(null, catalog, mounted, ffmpeg: true));
+        Assert.Throws<PlaybackAudioSelectionException>(() => PlaybackOriginalAudioSelection.ResolveIndex(null, catalog, mounted, ffmpeg: false));
+        // So a debug-file attempt, in DEBUG_SERVER builds only, keeps the wrapper's default stream before the mapping runs.
+        var media = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "PlayerPage.Media.cs.txt")).ReplaceLineEndings("\n");
+        var start = media.IndexOf("private void SelectOriginalAudioTrack(", StringComparison.Ordinal);
+        var end = media.IndexOf("private void OnAudioTrackOpenFailed(", start, StringComparison.Ordinal);
+        Assert.True(start > 0 && end > start);
+        var select = media[start..end];
+        var at = -1;
+        foreach (var part in new[] { "#if DEBUG_SERVER", "if (attempt.DebugUrl is not null && planIndex is null)",
+            "Log.Info(\"player: debug file keeps the default audio stream\");", "return;", "#endif",
+            "PlaybackOriginalAudioSelection.Select(planIndex, catalog, mounted, ffmpeg is not null," })
+        {
+            var next = select.IndexOf(part, at + 1, StringComparison.Ordinal);
+            Assert.True(next > at, "out of order or missing: " + part);
+            at = next;
+        }
+        Assert.Equal(1, select.Split("#if DEBUG_SERVER").Length - 1);
+    }
+
     internal static DebugFileProbe Facts(string codec, int width, int height, double fps, string transfer) => new("matroska", new VideoTrack
     {
         Codec = codec, Width = width, Height = height, BitDepth = 10, Profile = codec == "hevc" ? "Main 10" : "Main",
