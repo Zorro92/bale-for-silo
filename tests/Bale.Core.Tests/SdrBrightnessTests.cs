@@ -311,7 +311,7 @@ public sealed class SdrBrightnessTests
         // The row: Up/Down walk the pane's rows only and stop at its ends (never sideways); Left goes back to the rail.
         var actions = code[code.IndexOf("private Control[] DetailActions", StringComparison.Ordinal)..
             code.IndexOf("private SettingsCategory CategoryOf", StringComparison.Ordinal)];
-        Assert.Contains("AutoPlayButton, AutoPlayProfileButton,\n                IntroSkipButton, SkipCreditsButton, SkipCreditsProfileButton, SdrBrightnessButton, Dav1dGpuFilmGrainButton,", actions);
+        Assert.Contains("AutoPlayButton, AutoPlayProfileButton,\n                NextUpButton, IntroSkipButton, SkipCreditsButton, SkipCreditsProfileButton, SdrBrightnessButton, Dav1dGpuFilmGrainButton,", actions);
         Assert.Contains("FocusTarget(actions[Math.Clamp(index + vertical, 0, actions.Length - 1)]);", code);
         Assert.Contains("_returnTarget = SdrBrightnessButton;", code);
         // The sheet: the checked option takes focus; Up/Down stop at its ends; Left/Right/Tab do nothing; focus can't leave it.

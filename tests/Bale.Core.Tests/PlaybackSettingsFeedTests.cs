@@ -159,6 +159,67 @@ public class PlaybackSettingsFeedTests
     }
 
     [Fact]
+    public async Task ShowNextUpWritesADeviceValueAndUseProfileSettingDeletesIt()
+    {
+        // TvSettingsScreen.kt PlaybackPicker.NextUpPrompt: a pick stores this device's value; "Use profile setting" deletes it.
+        var handler = new StubHandler()
+            .Enqueue("""{"key":"playback.next_up_prompt_seconds","value":60,"scope":"profile_device","revision":31}""")
+            .Enqueue(HttpStatusCode.NoContent, "")
+            .Enqueue("""{"items":[{"key":"playback.next_up_prompt_seconds","value":10,"scope":"profile"}],"revision":32}""")
+            .Enqueue("""{"key":"playback.next_up_prompt_seconds","value":120,"scope":"profile_device","revision":33}""");
+        using var connection = Connect(handler);
+        var feed = new PlaybackSettingsFeed(connection.Api);
+        Assert.Equal(new IntegerSetting(60, true, true), await feed.SetNextUpPromptSecondsAsync(60));
+        Assert.Equal(new IntegerSetting(60, true, true), feed.NextUpPromptSeconds);
+        Assert.Equal(new IntegerSetting(10, false, true), await feed.UseProfileNextUpPromptSecondsAsync());
+        Assert.Equal(new IntegerSetting(10, false, true), feed.NextUpPromptSeconds);
+        // The contract's range is 0–120 s.
+        Assert.Equal(new IntegerSetting(120, true, true), await feed.SetNextUpPromptSecondsAsync(600));
+
+        Assert.Equal(HttpMethod.Put, handler.Requests[0].Method);
+        Assert.Equal("/silo/api/v2/settings/values/playback.next_up_prompt_seconds", handler.Requests[0].RequestUri!.AbsolutePath);
+        Assert.Contains("scope=profile_device", handler.Requests[0].RequestUri!.Query);
+        Assert.Equal("""{"value":60}""", handler.RequestBodies[0]);
+        Assert.Equal(HttpMethod.Delete, handler.Requests[1].Method);
+        Assert.Equal("/silo/api/v2/settings/values/playback.next_up_prompt_seconds", handler.Requests[1].RequestUri!.AbsolutePath);
+        Assert.Contains("scope=profile_device", handler.Requests[1].RequestUri!.Query);
+        Assert.Equal(HttpMethod.Get, handler.Requests[2].Method);
+        Assert.Equal("""{"value":120}""", handler.RequestBodies[3]);
+    }
+
+    [Fact]
+    public void ShowNextUpOffersTheTvChoicesWithTheirLabels()
+    {
+        // TvSettingsScreen.kt NextUpPromptOptions and nextUpPromptLabel (settings_nextUp_atEnd and the plurals).
+        Assert.Equal([0, 10, 30, 60, 120], NextUpPromptChoices.Seconds);
+        Assert.Equal(["At end", "10 seconds before end", "30 seconds before end", "1 minute before end", "2 minutes before end"],
+            NextUpPromptChoices.Seconds.Select(NextUpPromptChoices.Label));
+        Assert.Equal("1 second before end", NextUpPromptChoices.Label(1));
+        Assert.Equal("45 seconds before end", NextUpPromptChoices.Label(45));
+        Assert.Equal("1 minute before end", NextUpPromptChoices.Label(90));
+        Assert.Equal("At end", NextUpPromptChoices.Label(-5));
+        Assert.Equal("Show Next Up", NextUpPromptChoices.Title);
+        Assert.Equal(30, NextUpPromptChoices.Default);
+    }
+
+    [Fact]
+    public void ShowNextUpChecksUseProfileSettingUntilThisDeviceHasItsOwnChoice()
+    {
+        Assert.Equal("profile", NextUpPromptChoices.SelectedId(new IntegerSetting(30)));
+        Assert.Equal("profile", NextUpPromptChoices.SelectedId(new IntegerSetting(60, false, true)));
+        Assert.Equal("60", NextUpPromptChoices.SelectedId(new IntegerSetting(60, true, true)));
+        Assert.Equal("0", NextUpPromptChoices.SelectedId(new IntegerSetting(0, true, true)));
+        // A device value set elsewhere that is not a choice checks none (the sheet focuses its first row).
+        Assert.Null(NextUpPromptChoices.SelectedId(new IntegerSetting(45, true, true)));
+        Assert.Equal(120, NextUpPromptChoices.FromId("120"));
+        Assert.Equal(0, NextUpPromptChoices.FromId("0"));
+        Assert.Null(NextUpPromptChoices.FromId("profile"));
+        Assert.Null(NextUpPromptChoices.FromId("45"));
+        Assert.Null(NextUpPromptChoices.FromId("-10"));
+        Assert.Null(NextUpPromptChoices.FromId(null));
+    }
+
+    [Fact]
     public void IntroSkipModesRoundTripTheirWireValuesAndLabels()
     {
         Assert.Equal(["never", "ask", "always"], IntroSkipModes.All.Select(IntroSkipModes.Wire));

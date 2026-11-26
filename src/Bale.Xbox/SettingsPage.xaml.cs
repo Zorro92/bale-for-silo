@@ -28,8 +28,8 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     private bool _signingOut;
     private bool _autoPlayBusy;
     private CancellationTokenSource? _autoPlayRead;
-    // Skip Intros / Skip Credits (TvSettingsScreen.kt:1403, :1408): one write at a time, as for Auto-Play.
-    private bool _skipBusy;
+    // Show Next Up / Skip Intros / Skip Credits (TvSettingsScreen.kt:1395, :1403, :1408): one write at a time, as for Auto-Play.
+    private bool _episodeBusy;
     // Settings → Playback → Streaming / Connection (TvSettingsScreen.kt, TvConnectionSettings.kt).
     private readonly DispatcherTimer _connectionClock = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _testing;
@@ -51,6 +51,15 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         BufferingNeverOptionText.Text = BufferingQualityModes.Label(BufferingQualityMode.Never);
         BufferingAskOptionText.Text = BufferingQualityModes.Label(BufferingQualityMode.Ask);
         BufferingAlwaysOptionText.Text = BufferingQualityModes.Label(BufferingQualityMode.Always);
+        NextUpLabel.Text = NextUpPickerTitle.Text = NextUpPromptChoices.Title;
+        NextUpProfileOptionText.Text = ConnectionSettings.UseProfileSetting;
+        // One label for the row's value and each option (NextUpPromptChoices.Label); an option's Tag is its id.
+        foreach (var (option, label) in new (Button, TextBlock)[]
+        {
+            (NextUpAtEndOption, NextUpAtEndOptionText), (NextUp10Option, NextUp10OptionText), (NextUp30Option, NextUp30OptionText),
+            (NextUp60Option, NextUp60OptionText), (NextUp120Option, NextUp120OptionText),
+        })
+            label.Text = NextUpPromptChoices.FromId(option.Tag as string) is { } seconds ? NextUpPromptChoices.Label(seconds) : string.Empty;
         IntroSkipLabel.Text = IntroSkipPickerTitle.Text = IntroSkipModes.Title;
         IntroSkipProfileOptionText.Text = ConnectionSettings.UseProfileSetting;
         IntroSkipNeverOptionText.Text = IntroSkipModes.Label(IntroSkipMode.Never);
@@ -100,7 +109,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         ConnectionSpeedService.Changed += OnConnectionChanged;
         _connectionClock.Start();
         UpdateAutoPlay();
-        UpdateSkipSettings();
+        UpdateEpisodeSettings();
         UpdateDav1dGpuFilmGrain();
         UpdateSdrBrightness();
         UpdateConnection();
@@ -129,6 +138,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         DetachFocusBoundary();
         ProfilePicker.Visibility = Visibility.Collapsed;
         BufferingPicker.Visibility = Visibility.Collapsed;
+        NextUpPicker.Visibility = Visibility.Collapsed;
         IntroSkipPicker.Visibility = Visibility.Collapsed;
         SdrBrightnessPicker.Visibility = Visibility.Collapsed;
         SignOutPrompt.Hide();
@@ -218,7 +228,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         SettingsCategory.Playback => new Control[]
             {
                 BufferingQualityButton, LearnedLimitButton, ConnectionSpeedButton, AutoPlayButton, AutoPlayProfileButton,
-                IntroSkipButton, SkipCreditsButton, SkipCreditsProfileButton, SdrBrightnessButton, Dav1dGpuFilmGrainButton,
+                NextUpButton, IntroSkipButton, SkipCreditsButton, SkipCreditsProfileButton, SdrBrightnessButton, Dav1dGpuFilmGrainButton,
             }.Where(item => item.Visibility == Visibility.Visible).ToArray(),
         SettingsCategory.Server => [AccountsButton],
         _ => [ProfileSelectionButton, HomeSectionsButton],
@@ -260,6 +270,11 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             CloseBufferingPicker();
             return true;
         }
+        if (NextUpPicker.Visibility == Visibility.Visible)
+        {
+            CloseNextUpPicker();
+            return true;
+        }
         if (IntroSkipPicker.Visibility == Visibility.Visible)
         {
             CloseIntroSkipPicker();
@@ -298,6 +313,18 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             if (vertical != 0)
             {
                 var options = BufferingOptions;
+                var index = Array.FindIndex(options, option => SettingsInput.IsWithin(focused, option));
+                options[Math.Clamp(index + vertical, 0, options.Length - 1)].Focus(FocusState.Keyboard);
+                e.Handled = true;
+            }
+            if (horizontal != 0 || e.Key == VirtualKey.Tab) e.Handled = true;
+            return;
+        }
+        if (NextUpPicker.Visibility == Visibility.Visible)
+        {
+            if (vertical != 0)
+            {
+                var options = NextUpOptions;
                 var index = Array.FindIndex(options, option => SettingsInput.IsWithin(focused, option));
                 options[Math.Clamp(index + vertical, 0, options.Length - 1)].Focus(FocusState.Keyboard);
                 e.Handled = true;
@@ -387,6 +414,10 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             {
                 if (!e.TrySetNewFocusedElement(SelectedBufferingOption)) e.Cancel = true;
             }
+            else if (OwnsSettings && NextUpPicker.Visibility == Visibility.Visible && !SettingsInput.IsWithin(e.NewFocusedElement, NextUpPicker))
+            {
+                if (!e.TrySetNewFocusedElement(NextUpFocusOption)) e.Cancel = true;
+            }
             else if (OwnsSettings && IntroSkipPicker.Visibility == Visibility.Visible && !SettingsInput.IsWithin(e.NewFocusedElement, IntroSkipPicker))
             {
                 if (!e.TrySetNewFocusedElement(SelectedIntroSkipOption)) e.Cancel = true;
@@ -474,7 +505,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             if (OwnsSettings && !read.IsCancellationRequested && client.ProfileId == profileId)
             {
                 UpdateAutoPlay();
-                UpdateSkipSettings();
+                UpdateEpisodeSettings();
                 UpdateConnection();
             }
         }
@@ -622,24 +653,74 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             if (OwnsSettings && client.ProfileId == profileId)
             {
                 UpdateAutoPlay();
-                UpdateSkipSettings();
+                UpdateEpisodeSettings();
                 UpdateConnection();
             }
         }
     }
 
     /// <summary>
-    /// TvSettingsScreen.kt:1403/:1408: Skip Intros shows the effective mode's label, Skip Credits On/Off, and Skip Credits'
-    /// "Use Profile Setting" row only while this Xbox has its own value (focus moves up to the switch when it leaves).
+    /// TvSettingsScreen.kt:1395/:1403/:1408: Show Next Up and Skip Intros show the effective value's label, Skip Credits
+    /// On/Off, and Skip Credits' "Use Profile Setting" row only while this Xbox has its own value (focus moves up to the
+    /// switch when it leaves).
     /// </summary>
-    private void UpdateSkipSettings()
+    private void UpdateEpisodeSettings()
     {
+        NextUpValue.Text = NextUpPromptChoices.Label(_client?.Settings.NextUpPromptSeconds.Value ?? NextUpPromptChoices.Default);
         IntroSkipValue.Text = IntroSkipModes.Label(_client?.Settings.IntroSkip.Value ?? IntroSkipModes.Default);
         var credits = _client?.Settings.AutoSkipCredits ?? new BooleanSetting(false);
         SkipCreditsValue.Text = credits.Value ? "On" : "Off";
         if (!credits.DeviceOverride && SettingsInput.IsWithin(FocusManager.GetFocusedElement() as DependencyObject, SkipCreditsProfileButton))
             FocusTarget(SkipCreditsButton);
         SkipCreditsProfileButton.Visibility = credits.DeviceOverride ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private Button[] NextUpOptions => [NextUpProfileOption, NextUpAtEndOption, NextUp10Option, NextUp30Option, NextUp60Option, NextUp120Option];
+
+    /// <summary>The checked option (NextUpPromptChoices.SelectedId); none for a device value that is not a choice.</summary>
+    private Button? SelectedNextUpOption
+    {
+        get
+        {
+            var selected = NextUpPromptChoices.SelectedId(_client?.Settings.NextUpPromptSeconds ?? new IntegerSetting(NextUpPromptChoices.Default));
+            return NextUpOptions.FirstOrDefault(option => option.Tag as string == selected);
+        }
+    }
+
+    /// <summary>TvSettingsPickerSheet: the checked option takes focus, else the first row.</summary>
+    private Button NextUpFocusOption => SelectedNextUpOption ?? NextUpProfileOption;
+
+    /// <summary>The Skip Intros picker's pattern: the checked option takes focus, Back or a choice returns to the row.</summary>
+    private void OnNextUpClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings) return;
+        _returnTarget = NextUpButton;
+        var selected = SelectedNextUpOption;
+        foreach (var option in NextUpOptions)
+        {
+            option.ApplyTemplate();
+            VisualStateManager.GoToState(option, ReferenceEquals(option, selected) ? "Selected" : "Unselected", false);
+        }
+        var focus = NextUpFocusOption;
+        NextUpPicker.Visibility = Visibility.Visible;
+        FocusRetry.Until(this, () => !OwnsSettings || NextUpPicker.Visibility != Visibility.Visible || focus.Focus(FocusState.Programmatic));
+    }
+
+    private void CloseNextUpPicker()
+    {
+        NextUpPicker.Visibility = Visibility.Collapsed;
+        FocusTarget(NextUpButton);
+    }
+
+    /// <summary>A lead stores this Xbox's own value (profile_device); "Use profile setting" deletes it and rereads.</summary>
+    private async void OnNextUpOptionClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _client is not { } client) return;
+        var choice = (sender as FrameworkElement)?.Tag as string;
+        CloseNextUpPicker();
+        await ChangeEpisodeSettingAsync(client, "Show Next Up", () => choice == NextUpPromptChoices.UseProfileId
+            ? client.Settings.UseProfileNextUpPromptSecondsAsync()
+            : NextUpPromptChoices.FromId(choice) is { } seconds ? client.Settings.SetNextUpPromptSecondsAsync(seconds) : Task.CompletedTask);
     }
 
     private Button[] IntroSkipOptions => [IntroSkipProfileOption, IntroSkipNeverOption, IntroSkipAskOption, IntroSkipAlwaysOption];
@@ -687,7 +768,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         if (!OwnsSettings || _client is not { } client) return;
         var choice = (sender as FrameworkElement)?.Tag as string;
         CloseIntroSkipPicker();
-        await ChangeSkipSettingAsync(client, "Skip Intros", () => choice == "profile"
+        await ChangeEpisodeSettingAsync(client, "Skip Intros", () => choice == "profile"
             ? client.Settings.UseProfileIntroSkipModeAsync()
             : IntroSkipModes.FromWire(choice) is { } mode ? client.Settings.SetIntroSkipModeAsync(mode) : Task.CompletedTask);
     }
@@ -697,7 +778,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     {
         if (!OwnsSettings || _client is not { } client) return;
         _returnTarget = SkipCreditsButton;
-        await ChangeSkipSettingAsync(client, "Skip Credits", () => client.Settings.SetAutoSkipCreditsAsync(!client.Settings.AutoSkipCredits.Value));
+        await ChangeEpisodeSettingAsync(client, "Skip Credits", () => client.Settings.SetAutoSkipCreditsAsync(!client.Settings.AutoSkipCredits.Value));
     }
 
     /// <summary>UseProfileSettingRow: focus goes back to the switch above before the row leaves (skipCreditsFocus).</summary>
@@ -705,13 +786,13 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     {
         if (!OwnsSettings || _client is not { } client) return;
         FocusTarget(SkipCreditsButton);
-        await ChangeSkipSettingAsync(client, "Skip Credits", () => client.Settings.UseProfileAutoSkipCreditsAsync());
+        await ChangeEpisodeSettingAsync(client, "Skip Credits", () => client.Settings.UseProfileAutoSkipCreditsAsync());
     }
 
-    private async Task ChangeSkipSettingAsync(SiloClient client, string name, Func<Task> change)
+    private async Task ChangeEpisodeSettingAsync(SiloClient client, string name, Func<Task> change)
     {
-        if (_skipBusy) return;
-        _skipBusy = true;
+        if (_episodeBusy) return;
+        _episodeBusy = true;
         var profileId = _profileId;
         try
         {
@@ -729,10 +810,10 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         }
         finally
         {
-            _skipBusy = false;
+            _episodeBusy = false;
             if (OwnsSettings && client.ProfileId == profileId)
             {
-                UpdateSkipSettings();
+                UpdateEpisodeSettings();
                 UpdateAutoPlay();
                 UpdateConnection();
             }

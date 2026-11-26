@@ -128,6 +128,14 @@
                   <TextBlock Text="Use Profile Setting" Style="{StaticResource SkylineSettingsRowTextStyle}" />
                 </Button>
                 <TextBlock x:Name="AutoPlayDescription" Style="{StaticResource SkylineSettingsFooterStyle}" />
+                <!-- TvSettingsScreen.kt:1395: Show Next Up, a value row and picker sheet (NextUpPromptOptions) whose "Use profile
+                     setting" leads, between Auto-Play and Skip Intros. -->
+                <Button x:Name="NextUpButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnNextUpClick">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock x:Name="NextUpLabel" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                    <TextBlock x:Name="NextUpValue" Grid.Column="1" Style="{StaticResource SkylineSettingsValueTextStyle}" />
+                  </Grid>
+                </Button>
                 <!-- TvSettingsScreen.kt:1403: Skip Intros is three-way, so a value row and picker sheet (the schema's select),
                      not a switch; its "Use profile setting" leads the picker. :1408: Skip Credits is a switch whose "Use
                      Profile Setting" row shows while this Xbox has its own value. -->
@@ -266,6 +274,48 @@
             </Button>
             <Button x:Name="BufferingAlwaysOption" Tag="always" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnBufferingOptionClick">
               <TextBlock x:Name="BufferingAlwaysOptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Grid>
+    <!-- TvSettingsScreen.kt PlaybackPicker.NextUpPrompt: "Use profile setting" leads, then NextUpPromptOptions. Each Tag is
+         the choice's id (NextUpPromptChoices.Id: its seconds before the end). -->
+    <Grid x:Name="NextUpPicker" Visibility="Collapsed" Background="{StaticResource SkylineSettingsPickerScrim}">
+      <Border Style="{StaticResource SkylineSettingsPickerCardStyle}">
+        <StackPanel>
+          <Grid Style="{StaticResource SkylineSettingsPickerHeaderStyle}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <StackPanel Style="{StaticResource SkylineSettingsPickerTitleStyle}">
+              <TextBlock x:Name="NextUpPickerTitle" Style="{StaticResource SkylineSettingsPaneTitleStyle}" />
+              <TextBlock Text="Choose an option" Style="{StaticResource SkylineSettingsPickerHintTextStyle}" />
+            </StackPanel>
+            <Border Grid.Column="1" Style="{StaticResource SkylineSettingsPickerHintStyle}">
+              <StackPanel Style="{StaticResource SkylineSettingsPickerHintContentStyle}">
+                <Viewbox Style="{StaticResource SkylineSettingsPickerHintIconStyle}"><Path Style="{StaticResource SkylineSettingsGlyphStyle}" Opacity="{StaticResource SkylineSettingsHintOpacity}" Data="M12.5,8 C9.85,8 7.45,8.99 5.6,10.6 L2,7 V16 H11 L7.38,12.38 C8.77,11.22 10.54,10.5 12.5,10.5 C16.04,10.5 19.05,12.81 20.1,16 L22.47,15.22 C21.08,11.03 17.15,8 12.5,8 Z" /></Viewbox>
+                <TextBlock Text="Back to close" Style="{StaticResource SkylineSettingsPickerHintTextStyle}" />
+              </StackPanel>
+            </Border>
+          </Grid>
+          <Border Style="{StaticResource SkylineSettingsPickerDividerStyle}" />
+          <StackPanel Style="{StaticResource SkylineSettingsPickerOptionsStyle}">
+            <Button x:Name="NextUpProfileOption" Tag="profile" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnNextUpOptionClick">
+              <TextBlock x:Name="NextUpProfileOptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="NextUpAtEndOption" Tag="0" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnNextUpOptionClick">
+              <TextBlock x:Name="NextUpAtEndOptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="NextUp10Option" Tag="10" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnNextUpOptionClick">
+              <TextBlock x:Name="NextUp10OptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="NextUp30Option" Tag="30" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnNextUpOptionClick">
+              <TextBlock x:Name="NextUp30OptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="NextUp60Option" Tag="60" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnNextUpOptionClick">
+              <TextBlock x:Name="NextUp60OptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+            </Button>
+            <Button x:Name="NextUp120Option" Tag="120" Style="{StaticResource SkylineSettingsPickerOptionStyle}" Click="OnNextUpOptionClick">
+              <TextBlock x:Name="NextUp120OptionText" Style="{StaticResource SkylineSettingsRowTextStyle}" />
             </Button>
           </StackPanel>
         </StackPanel>

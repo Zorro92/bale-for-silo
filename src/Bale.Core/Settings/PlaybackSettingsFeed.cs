@@ -267,6 +267,32 @@ public sealed class PlaybackSettingsFeed(SiloApiClient api)
         return AutoSkipCredits;
     }
 
+    /// <summary>
+    /// Picking a lead in Show Next Up stores a device override (TvSettingsScreen.kt PlaybackPicker.NextUpPrompt,
+    /// onNextUpPromptSecondsChanged); the player reads it on its next tick.
+    /// </summary>
+    public async Task<IntegerSetting> SetNextUpPromptSecondsAsync(int seconds, CancellationToken cancellationToken = default)
+    {
+        var value = NextUpPrompt.Clamp(seconds);
+        var generation = Generation();
+        await api.Api.V2.Settings.Values[NextUpPromptSecondsKey].PutAsync(new SettingValueWrite { Value = new UntypedInteger(value) },
+            c => c.QueryParameters.Scope = PutScopeQueryParameterType.Profile_device, cancellationToken).ConfigureAwait(false);
+        var setting = new IntegerSetting(value, true, true);
+        lock (_sync)
+        {
+            if (generation == _generation) _nextUpPromptSeconds = setting;
+        }
+        return setting;
+    }
+
+    /// <summary>"Use profile setting" in the Show Next Up picker: drop this device's value, then reread.</summary>
+    public async Task<IntegerSetting> UseProfileNextUpPromptSecondsAsync(CancellationToken cancellationToken = default)
+    {
+        await DeleteDeviceValueAsync(NextUpPromptSecondsKey, cancellationToken).ConfigureAwait(false);
+        await RefreshAsync(cancellationToken).ConfigureAwait(false);
+        return NextUpPromptSeconds;
+    }
+
     private Task DeleteDeviceValueAsync(string key, CancellationToken cancellationToken) =>
         api.Api.V2.Settings.Values[key].DeleteAsync(
             c => c.QueryParameters.Scope = DeleteScopeQueryParameterType.Profile_device, cancellationToken);
