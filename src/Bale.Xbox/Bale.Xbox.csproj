@@ -101,6 +101,19 @@
     </ItemGroup>
   </Target>
 
+  <!-- The packaging tooling adds Windows.Universal to the generated AppxManifest.xml beside Package.appxmanifest's
+       Windows.Xbox (CI's package check saw both, 2026-11-26). Strip it after generation so the package targets Xbox alone;
+       scripts/check-production-package.ps1 verifies the result. -->
+  <Target Name="BaleXboxOnlyFamily" AfterTargets="_GenerateCurrentProjectAppxManifest" Condition="'$(FinalAppxManifestName)' != '' And Exists('$(FinalAppxManifestName)')">
+    <XslTransformation XmlInputPaths="$(FinalAppxManifestName)" XslInputPath="Build\XboxOnlyFamily.xslt" OutputPaths="$(FinalAppxManifestName).xboxonly" />
+    <Copy SourceFiles="$(FinalAppxManifestName).xboxonly" DestinationFiles="$(FinalAppxManifestName)" />
+    <Delete Files="$(FinalAppxManifestName).xboxonly" />
+    <Message Importance="high" Text="Bale: $(FinalAppxManifestName) targets Windows.Xbox alone" />
+  </Target>
+  <Target Name="BaleXboxOnlyFamilyMissing" AfterTargets="_GenerateCurrentProjectAppxManifest" Condition="'$(FinalAppxManifestName)' == '' Or !Exists('$(FinalAppxManifestName)')">
+    <Message Importance="high" Text="Bale: the generated AppxManifest.xml was not found (FinalAppxManifestName='$(FinalAppxManifestName)'); Windows.Universal stays and the package check will refuse it" />
+  </Target>
+
   <Import Project="Build\FfmpegWrapperVersion.targets" />
 
 </Project>

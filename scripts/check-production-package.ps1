@@ -47,7 +47,8 @@ $build = if ($production) { 'production' } else { 'debug-server' }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $PackagePath).Path)
 try {
-    [xml]$manifest = [System.Text.Encoding]::UTF8.GetString((Read-Entry $zip 'AppxManifest.xml'))
+    # The packaged manifest starts with a UTF-8 byte-order mark, which the [xml] cast refuses.
+    [xml]$manifest = [System.Text.Encoding]::UTF8.GetString((Read-Entry $zip 'AppxManifest.xml')).TrimStart([char]0xFEFF)
 
     $capabilities = @($manifest.SelectNodes('//*[local-name()="Capabilities"]/*') | ForEach-Object { $_.GetAttribute('Name') })
     $expected = if ($production) { $StoreCapabilities } else { $StoreCapabilities + $DebugCapability }
