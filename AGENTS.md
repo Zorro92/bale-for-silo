@@ -419,7 +419,10 @@ For Bale, a normal app with hevcPlayback on the Series X:
   sidecar, packaged artifact, burn-in or a `.sup` window fetch; with the budget spent, play on without subtitles.
   In-band CEA-608 closed captions (A/53 `cc_data` in H.264/HEVC SEI and MPEG-2 user data) are decoded by bale_gpu
   `subs::cc` from the fork's packet tap (`bale_cc_sink`, caption ABI `bale_cc_*`) into a live track on the same overlay
-  (`ClosedCaptions`, `SubtitleOverlay.AttachCaptions`); not wired into the player yet (docs/closed-captions.md).
+  (`ClosedCaptions`, `SubtitleOverlay.AttachCaptions`). Every FFmpeg mount of those codecs gets its own decoder and
+  token; the subtitle menus list one CC row (CC1) once captions are seen, and picking it is client-only (no replan,
+  nothing remembered, a server subtitle turned Off first) and survives remounts (`PlaybackClosedCaptions`,
+  `PlayerPage.Captions.cs`, docs/closed-captions.md "In the player"); console check pending.
 - FFmpeg audio selection must honor the server's ordinal, not FFmpeg's reordered default:
   map `AudioStreams[].StreamIndex` back to demux order, then set the item's AudioTracks.SelectedIndex
   before Play. Fail closed if the selected stream is missing.
