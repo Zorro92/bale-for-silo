@@ -402,6 +402,9 @@ fn check_rich_styles(cues: &[Cue]) {
     .map(|&(text, colour)| (text.to_owned(), colour))
     .collect();
     assert_eq!(colours, want);
+    // Flash On before "flashing text": the row's characters flash, the next row's do not.
+    assert!(row(a, 14).segments.iter().all(|s| s.style.flash));
+    assert!(row(a, 15).segments.iter().all(|s| !s.style.flash));
     let underline = runs(row(a, 13));
     assert_eq!(
         underline,
@@ -469,7 +472,11 @@ fn the_cea608_clips_decode_to_their_captions() {
             RICH_LATER,
             check_rich_styles,
         ),
-        ("15-mp4-cea608-split.mp4", SPLIT, &[], |_| {}),
+        ("15-mp4-cea608-split.mp4", SPLIT, &[], |cues| {
+            let flash = find(cues, 7500);
+            assert!(row(flash, 14).segments.iter().all(|s| s.style.flash));
+            assert!(row(flash, 15).segments.iter().all(|s| !s.style.flash));
+        }),
     ];
     let mut rich_source = None;
     for (name, shown, samples, styles) in clips {

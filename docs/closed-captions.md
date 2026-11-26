@@ -29,7 +29,8 @@ Broadcast recordings, US TV episodes and many WEB-DLs carry them without a separ
   draw plain text; the player never passes `FLAG_PLAIN`. In the player: a row for each channel found, CC1 to CC4 (one row
   "CC" while CC1 is the only one), picked on the client and kept across remounts with its channel ("In the player").
   Deliberate deviation (owner, 2026-11-26): every channel the stream carries is offered, where Android TV and AetherEngine
-  show one CC1 track.
+  show one CC1 track. Deliberate deviation (owner, 2026-11-26: captions as authored): flashing characters blink once a
+  second, where Media3, FFmpeg and AetherEngine draw flash steady ("ass.rs" below).
 
 ## How it runs
 
@@ -102,9 +103,10 @@ two 15×32 memories, a cursor and a pen.
   roll-up command erases a pop-on or paint-on caption), paint-on (RDC writes into displayed memory).
 - PACs (15 rows, indents 0-28, colours, italics, underline; 10 60-7F is unassigned), mid-row codes (colour turns
   italics off, italics keeps the colour, a space in the old style), Tab Offsets (non-destructive), Backspace, DER,
-  EDM, ENM, Flash On (a spacing attribute, drawn steady), background attributes and black text (non-spacing, as
-  Media3, FFmpeg and AetherEngine treat them), the special and extended sets (an extended character replaces the
-  standard one sent before it), the basic set's 608 replacements; column 32 is overwritten past the end.
+  EDM, ENM, Flash On (a spacing attribute; the characters after it blink, "ass.rs" below), background attributes and
+  black text (non-spacing, as Media3, FFmpeg and AetherEngine treat them), the special and extended sets (an extended
+  character replaces the standard one sent before it), the basic set's 608 replacements; column 32 is overwritten past
+  the end.
 - Media3's handling of the byte stream: odd parity and `cc_valid` (a channel turning invalid drops what is being
   built), the repeated copy of a control code dropped (a third copy acts), the data channel bit, Text mode (TR,
   RTD) until a caption command, XDS packets in field 2 (a caption control code ends one); field 2 accepts 15/1D for
@@ -145,6 +147,17 @@ or the top by the middle; a block that would then overlap the next one towards t
   black colours its box (`\4c`/`\4a`, semi-transparent is half), and only then is black text drawn black; otherwise
   black text takes the text colour, so it stays readable. The appearance's position (bottom, lower third, top) does
   not apply, as on Android TV.
+- Flash blinks (owner, 2026-11-26: captions as authored; Media3, FFmpeg and AetherEngine draw it steady, which the plain
+  flag keeps). 47 CFR 15.119 (h)(2): "The flash attribute will be displayed by causing the character to blink from the
+  display at least once per second"; Flash On leaves colour, italics and underline as they are, and a colour or italics
+  mid-row code (or the next row's PAC) ends it. Bale blinks at 1 Hz, the usual decoder rhythm: the characters show for
+  half a second and are gone for half a second, on the media timeline (even half seconds shown), so every flashing run
+  blinks together however often a roll-up caption changes and a seek lands in phase. Only the characters go (their
+  fill, outline and shadow); the rule names only the character, so the row's background stays. The text event carries
+  the blink as `\t(t,t,...)` steps of `\1a`/`\3a`/`\4a` over its own time and restores the appearance's alphas after the
+  run; libass applies such a step at once at `t`. Since steps cover only the time they were written for, a caption with
+  flashing text that stays past its provisional 30 s gets a new text event from where the last one's steps end (the
+  steady events are extended as before), and an attach replays a long one in stretches of at most 30 s.
 
 **The overlay's live track.** `Overlay::begin_live` replaces the track with an empty one (`ass_new_track` +
 `ass_process_codec_private`, duplicate check off) and returns its generation and a `LiveSink`. The decoder hands
@@ -166,6 +179,9 @@ that slows the CPU about a quarter, about 1.2 GB of usable memory):
   cores are slower, and slower again when idle, which leaves it far below anything that matters).
 - **Render thread:** one libass event per row, two with the box (its background and its text); a roll-up caption
   changes every frame it types, which is one re-render per change (the converters' rendering cost, no animation).
+  Flashing text renders twice a second, at its steps: the overlay's schedule takes a `\t` that takes no time as one
+  more boundary instead of an animation (`schedule::motion`), so the render thread sleeps between steps rather than
+  asking libass every frame. A flashing row's event carries at most 60 steps (30 s, about 2.7 KB).
   A three-row roll-up typing about ten changes a second keeps some 3600 events in the live track at the minute's
   retention (about 1 MB), whose schedule each batch of changes scans once (well under 1% of a core).
 - **Memory:** two 15×32 memories (about 12 KiB) per decoder, at most 1024 kept cues, the overlay's queue at most
@@ -308,7 +324,11 @@ closed captions off`.
   at the doubled alpha of overlapping boxes), each starting at its own row's indent.
 - `src/subs/cc/ass_tests.rs`: the layout on Linux, read back from the generated events: every row's box band meets the
   next at every appearance size (Small to XX-Large) with indented rows, whole pixels, the text centred on its band and
-  as wide as its box; 608's grid for small text, blocks kept apart for large text.
+  as wide as its box; 608's grid for small text, blocks kept apart for large text. Flash: steps every half second of
+  the media clock (an odd start begins hidden, no step at 0), the restore after the run, the box event and plain
+  steady, and the schedule reading the steps as boundaries. `cc::tests` follows a flashing caption up 50 s through
+  two extensions and a late attach: exactly one text event at any time, in phase throughout. `cc_warp.rs` also draws a
+  flashing caption on WARP: its characters gone in an odd half second and back in the next, its box the same band.
 - `tests/cc_abi.rs` (every platform): the caption ABI without an overlay: one stream with CC1 in field 1 and CC3 and
   CC4 in field 2 (data channels 1 and 2), each picked with `bale_cc_select` and decoding only its own caption; a pick
   drops what the previous channel showed; out of range channels and 708 services refused.
@@ -337,7 +357,10 @@ closed captions off`.
      6–10 s, italics 11–15 s, yellow 16–20 s, the top row 21–25 s, the last 26–29 s), in the appearance's font, size
      and box; the rich clips' colours, italics, underline and backgrounds (13, 14) and the split clip (15). Screenshots.
      Each row's box meets the next with no darker band and no gap, indented and tab-offset rows included (13 at 5.5,
-     9.3, 15 and 17 s; 15 at 8.6, 13 and 17.4 s), also at Small and XX-Large (rows then a line height apart).
+     9.3, 15 and 17 s; 15 at 8.6, 13 and 17.4 s), also at Small and XX-Large (rows then a line height apart). "flashing
+     text" (13 at 4–9 s, 15 at 7.5–10 s) blinks about once a second, half on and half off, its box steady; meanwhile
+     `bale-debug.sh suboverlay` shows Renders growing by about three a second (the two steps and the clock's
+     once-a-second push), not sixty.
   3. A seek on each container (`seek 17`, `key l`, `key j`): the old caption goes at once, the next caption loaded after
      the keyframe the seek decodes from shows at its time, `flushes` counts up; Off from the menu ends them
      (`picked=no attached=no`).
@@ -350,7 +373,7 @@ closed captions off`.
      caption goes at once, CC3's next caption shows, `picked=cc3 channel=cc3`), a seek and `fault playback` staying on
      CC3, Off then CC3 again.
 - **CEA-708** (DTVCC): `bale_cc_select`'s service number and `SEEN_DTVCC` are there; the decoder is not.
-- Not handled: 608 Text mode (T1-T4) and XDS content are skipped, flash is drawn steady, a background change
+- Not handled: 608 Text mode (T1-T4) and XDS content are skipped, a background change
   inside a row (the box takes the row's first background), MPEG-2's other caption formats (SCTE 20, DVD) and
   QuickTime `c608` caption tracks (a subtitle stream, not video; AetherEngine reads them). In the player: a menu or
   panel already open when a channel is found lists its row only when it next opens; a channel switch shows the new

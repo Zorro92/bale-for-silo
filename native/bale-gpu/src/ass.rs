@@ -13,7 +13,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use crate::png;
-use crate::subs::schedule::{Event, Schedule, is_animated};
+use crate::subs::schedule::{Event, Schedule, motion};
 
 #[repr(C)]
 struct Library {
@@ -499,7 +499,7 @@ impl Track<'_> {
         Schedule::new(events.iter().map(|event| Event {
             start_ms: event.start,
             duration_ms: event.duration,
-            animated: is_animated(bytes(event.text), bytes(event.effect)),
+            motion: motion(bytes(event.text), bytes(event.effect)),
         }))
     }
 }

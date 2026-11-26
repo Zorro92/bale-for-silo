@@ -3,12 +3,14 @@
 
 use super::cea608::{Background, COLUMNS, Color, Memory, Mode};
 
-/// What a run of text looks like (608 flash is drawn steady, as Media3 and FFmpeg draw it).
+/// What a run of text looks like.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct CueStyle {
     pub foreground: Color,
     pub italic: bool,
     pub underline: bool,
+    /// The characters blink (608 Flash On; `ass` draws it, where Media3 and FFmpeg draw it steady).
+    pub flash: bool,
     pub background: Background,
 }
 
@@ -94,6 +96,7 @@ pub fn displayed_rows(memory: &Memory) -> Vec<CueRow> {
                         foreground: cell.pen.foreground,
                         italic: cell.pen.italic,
                         underline: cell.pen.underline,
+                        flash: cell.pen.flash,
                         background: cell.pen.background,
                     },
                 ),
@@ -158,6 +161,25 @@ mod tests {
                 ("  e", Color::White)
             ]
         );
+    }
+
+    #[test]
+    fn flashing_characters_are_a_run_of_their_own() {
+        let mut memory = Memory::EMPTY;
+        let flash = Pen {
+            flash: true,
+            ..Pen::default()
+        };
+        put(&mut memory, 15, 0, "now ", Pen::default());
+        put(&mut memory, 15, 4, "flash", flash);
+        put(&mut memory, 15, 9, " off", Pen::default());
+        let rows = displayed_rows(&memory);
+        let runs: Vec<(&str, bool)> = rows[0]
+            .segments
+            .iter()
+            .map(|s| (s.text.as_str(), s.style.flash))
+            .collect();
+        assert_eq!(runs, [("now ", false), ("flash", true), (" off", false)]);
     }
 
     #[test]

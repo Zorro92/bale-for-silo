@@ -29,6 +29,13 @@
 //!   [`FLAG_PLAIN`] does. With the box a row's 608 background that is not the default opaque black
 //!   colours its box (`\4c`, `\4a`; semi-transparent is half), and only then is black text drawn
 //!   black: without a box it takes the text colour so that it stays readable.
+//! - Flashing characters (608 Flash On) blink, as captions are authored: 15.119 (h)(2) has the
+//!   character "blink from the display at least once per second", so they show for half a second
+//!   and are gone for half a second, on the media timeline (even half seconds on), so that every
+//!   flashing run blinks together however often a roll-up caption changes. Only the characters go
+//!   (fill, outline and shadow, `\t` steps of `\1a`, `\3a`, `\4a` written over the event's
+//!   time); their row's background stays, as the rule names only the character. Media3 and FFmpeg
+//!   draw flash steady, which [`FLAG_PLAIN`] keeps.
 //!
 //! How a box event covers exactly its band (libass 0.17.5, `ass_render.c`): border style 4 draws one
 //! rectangle per event, the text's bounding box padded by the shadow (`add_background`), and ignores
@@ -64,6 +71,12 @@ const BOX_STYLE: &str = "Box";
 const TRANSPARENT: u32 = 0xFF00_0000;
 /// `\fscy` of a box event's text: its glyphs keep their advances and lose their height.
 const FLAT: &str = "0.001";
+/// Half of 608's flash cycle: shown for this long, then gone for as long.
+pub const FLASH_HALF_MS: i64 = 500;
+/// Alpha of every part of a character that a flash hides: fill, outline and shadow.
+const FLASH_OFF: &str = "\\1a&HFF&\\3a&HFF&\\4a&HFF&";
+/// The most blink steps one event carries (an hour).
+const MAX_FLASH_STEPS: usize = 7200;
 
 /// The fraction of the picture outside the safe caption area on each side.
 const SAFE_MARGIN: f32 = 0.1;
@@ -86,6 +99,9 @@ pub struct Event {
     pub layer: i32,
     /// The event text, overrides included.
     pub text: String,
+    /// It blinks flashing characters, written for the time it was made for: a longer stretch needs
+    /// another event from where this one's steps end.
+    pub flashes: bool,
 }
 
 /// The script header a live caption track starts from: the `Default` style the text is drawn in,
@@ -104,7 +120,7 @@ pub fn script(cues: &[Cue], opts: &ConvertOptions, flags: u32, open_ms: i64) -> 
                 .end_ms
                 .unwrap_or(cue.start_ms.saturating_add(open_ms))
                 .max(0) as u64;
-            events(cue, opts, flags)
+            events(cue, opts, flags, start as i64, end as i64)
                 .into_iter()
                 .map(move |event| ScriptCue {
                     start_ms: start,
@@ -156,10 +172,24 @@ fn box_options(opts: &ConvertOptions) -> Option<ConvertOptions> {
     })
 }
 
-/// The events that draw `cue`: with a box, one box event per row (on [`BOX_LAYER`], first), then
-/// one text event per row (on [`TEXT_LAYER`]).
-pub fn events(cue: &Cue, opts: &ConvertOptions, flags: u32) -> Vec<Event> {
+/// The events that draw `cue` from `start_ms` to `end_ms` (the tap's timeline): with a box, one box
+/// event per row (on [`BOX_LAYER`], first), then one text event per row (on [`TEXT_LAYER`]). Only
+/// flashing text depends on the times (its blink steps cover them).
+pub fn events(
+    cue: &Cue,
+    opts: &ConvertOptions,
+    flags: u32,
+    start_ms: i64,
+    end_ms: i64,
+) -> Vec<Event> {
     let plain = flags & FLAG_PLAIN != 0;
+    // Plain draws the appearance alone, as Media3 and FFmpeg draw flash: steady.
+    let flash = cue
+        .rows
+        .iter()
+        .flat_map(|row| &row.segments)
+        .any(|segment| segment.style.flash);
+    let blink = (flash && !plain).then(|| Blink::new(&text_options(opts), start_ms, end_ms));
     let anchor = match cue.kind {
         CueKind::PopOn => cue
             .rows
@@ -190,13 +220,14 @@ pub fn events(cue: &Cue, opts: &ConvertOptions, flags: u32) -> Vec<Event> {
             .filter(|background| boxed && !plain && *background != Background::default());
         let mut line = Line::new(opts);
         line.raw_block(&format!("{{{position}}}"));
-        write_row(&mut line, row, plain, background.is_some());
+        let flashes = write_row(&mut line, row, plain, background.is_some(), blink.as_ref());
         let Some(text) = line.finish() else {
             continue;
         };
         texts.push(Event {
             layer: TEXT_LAYER,
             text,
+            flashes,
         });
         if !boxed {
             continue;
@@ -218,7 +249,8 @@ pub fn events(cue: &Cue, opts: &ConvertOptions, flags: u32) -> Vec<Event> {
         block.push('}');
         let mut line = Line::new(opts);
         line.raw_block(&block);
-        write_row(&mut line, row, plain, background.is_some());
+        // The background stays while its characters blink.
+        write_row(&mut line, row, plain, background.is_some(), None);
         line.raw_block(&format!(
             "{{\\fscy100\\p1}}m 0 0 n 0 {}{{\\p0}}",
             bottom - top
@@ -227,6 +259,7 @@ pub fn events(cue: &Cue, opts: &ConvertOptions, flags: u32) -> Vec<Event> {
             boxes.push(Event {
                 layer: BOX_LAYER,
                 text,
+                flashes: false,
             });
         }
     }
@@ -234,12 +267,71 @@ pub fn events(cue: &Cue, opts: &ConvertOptions, flags: u32) -> Vec<Event> {
     boxes
 }
 
-/// The row's styled runs.
-fn write_row(line: &mut Line<'_>, row: &CueRow, plain: bool, coloured_box: bool) {
+/// The row's styled runs, flashing ones blinking with `blink`; whether any did.
+fn write_row(
+    line: &mut Line<'_>,
+    row: &CueRow,
+    plain: bool,
+    coloured_box: bool,
+    blink: Option<&Blink>,
+) -> bool {
+    let mut flashing = false;
+    let mut flashed = false;
     for segment in &row.segments {
+        if let Some(blink) = blink
+            && segment.style.flash != flashing
+        {
+            flashing = segment.style.flash;
+            flashed |= flashing;
+            line.raw_block(if flashing { &blink.steps } else { &blink.on });
+        }
         line.set_style(style(&segment.style, plain, coloured_box));
         for ch in segment.text.chars() {
             line.ch(ch);
+        }
+    }
+    flashed
+}
+
+/// The override blocks that make a run blink from `start_ms` to `end_ms`, and end it.
+struct Blink {
+    /// The run's state at the start, then a `\t` step at every half second of the media timeline
+    /// in between (libass applies `\t(t,t,...)` at once at `t` after the event's start).
+    steps: String,
+    /// Back to the text style's alphas, after the run.
+    on: String,
+}
+
+impl Blink {
+    fn new(text: &ConvertOptions, start_ms: i64, end_ms: i64) -> Blink {
+        let alpha = |colour: u32| colour >> 24;
+        let on = format!(
+            "\\1a&H{:02X}&\\3a&H{:02X}&\\4a&H{:02X}&",
+            alpha(text.primary_colour),
+            alpha(text.outline_colour),
+            alpha(text.back_colour)
+        );
+        let shown = |half: i64| half.rem_euclid(2) == 0;
+        let mut steps = String::from("{");
+        let mut half = start_ms.div_euclid(FLASH_HALF_MS);
+        if !shown(half) {
+            steps.push_str(FLASH_OFF);
+        }
+        half += 1;
+        // Every step is after the start (a \t at 0 would run over the whole event). The live track
+        // asks for at most PROVISIONAL_MS at a time; the cap only bounds a pathological span.
+        for _ in 0..MAX_FLASH_STEPS {
+            let Some(at) = half.checked_mul(FLASH_HALF_MS).filter(|&at| at < end_ms) else {
+                break;
+            };
+            let state = if shown(half) { on.as_str() } else { FLASH_OFF };
+            let _ = write!(steps, "\\t({0},{0},{state})", at.saturating_sub(start_ms));
+            half += 1;
+        }
+        steps.push('}');
+        Blink {
+            steps,
+            on: format!("{{{on}}}"),
         }
     }
 }

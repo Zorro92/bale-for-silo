@@ -369,6 +369,114 @@ fn a_long_caption_is_extended_while_it_stays() {
     assert!(recorder.visible(90_000).is_empty());
 }
 
+/// Whether the flashing run of a text event that started at `start` shows at `t`: its blink block's
+/// first state, then each `\t` step reached.
+fn flash_shown(text: &str, start: i64, t: i64) -> bool {
+    let first_step = text.find("\\t(").expect("a step");
+    let block = &text[text[..first_step].rfind('{').expect("block")..];
+    let block = &block[1..block.find('}').expect("block end")];
+    let hidden = |state: &str| state.starts_with("\\1a&HFF&");
+    let mut shown = !hidden(block);
+    for step in block.split("\\t(").skip(1) {
+        let (at, rest) = step.split_once(',').expect("at");
+        let state = rest.split_once(',').expect("state").1;
+        if t - start >= at.parse::<i64>().expect("number") {
+            shown = !hidden(state);
+        }
+    }
+    shown
+}
+
+#[test]
+fn a_flashing_caption_blinks_for_as_long_as_it_stays() {
+    // A pop-on caption with Flash On before "CD", up for 50 s (longer than an event's provisional
+    // 30 s, so it is extended twice), then erased.
+    let slots = schedule(&[
+        (
+            0,
+            [
+                code(RCL),
+                code(ROW15),
+                text("AB"),
+                code([0x14, 0x28]),
+                text("CD"),
+                code(EOC),
+            ]
+            .concat(),
+        ),
+        (1500, code(EDM)),
+    ]);
+    let captions = Captions::new();
+    let recorder = Recorder::new(5);
+    captions.attach(recorder.sink(), 5, ConvertOptions::default(), 0);
+    run(&captions, &slots, &(0..1800).collect::<Vec<_>>(), 4, 0);
+    let cue = captions.cues().into_iter().next().expect("the caption");
+    assert_eq!(cue.text(), "AB CD");
+    let (start, end) = (cue.start_ms, cue.end_ms.expect("erased"));
+    assert_eq!(end, to_ms(1500 * FRAME));
+    // One event a stretch: the first, then one from each extension's end.
+    assert!(recorder.events() >= 3, "{}", recorder.events());
+    check_blinking(&recorder, start, end);
+    // An overlay attached later gets the kept caption in stretches of its own.
+    let late = Recorder::new(6);
+    captions.attach(late.sink(), 6, ConvertOptions::default(), 0);
+    check_blinking(&late, start, end);
+}
+
+/// Exactly one text event shows from `start` to `end` and nothing after, its flashing run shown in
+/// even half seconds of the clock.
+fn check_blinking(recorder: &Recorder, start: i64, end: i64) {
+    let track = recorder.0.lock().unwrap();
+    for t in (start..end + 1000).step_by(50) {
+        let showing: Vec<&(i64, i64, String)> = track
+            .events
+            .values()
+            .filter(|(from, until, _)| *from <= t && t < *until)
+            .collect();
+        if t >= end {
+            assert!(showing.is_empty(), "{t}: still shown");
+            continue;
+        }
+        // Exactly one text event at a time: no gap and no overlap between stretches.
+        let [(from, _, text)] = showing[..] else {
+            panic!("{t}: {} events", showing.len());
+        };
+        assert!(text.contains("AB {"), "{text}");
+        // Shown in even half seconds of the clock, gone in odd ones, across every stretch.
+        assert_eq!(
+            flash_shown(text, *from, t),
+            (t / 500) % 2 == 0,
+            "{t}: {text}"
+        );
+    }
+}
+
+#[test]
+fn a_caption_goes_on_after_the_stream_skips_past_its_provisional_end() {
+    // Frames up to 2 s, then none until 35 s: past the caption's first 30 s, which the next frame
+    // extends from where it was, steady text and blinking text alike.
+    let slots = schedule(&[(
+        0,
+        [
+            code(RCL),
+            code(ROW15),
+            text("AB"),
+            code([0x14, 0x28]),
+            text("CD"),
+            code(EOC),
+        ]
+        .concat(),
+    )]);
+    let captions = Captions::new();
+    let recorder = Recorder::new(8);
+    captions.attach(recorder.sink(), 8, ConvertOptions::default(), 0);
+    let order: Vec<usize> = (0..60).chain(1050..1080).collect();
+    run(&captions, &slots, &order, 4, 0);
+    for t in [1_000, 29_000, 31_000, 36_000, 50_000] {
+        assert_eq!(recorder.visible(t).len(), 1, "{t}");
+    }
+}
+
 #[test]
 fn channels_are_selected_and_seen() {
     // CC3 is field 2 (its misc codes may use 15 for the first byte).

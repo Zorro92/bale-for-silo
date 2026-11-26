@@ -3,6 +3,12 @@ use crate::subs::cc::cue::Segment;
 use crate::subs::convert::TextStyle;
 use crate::subs::convert::ass_writer::write_script;
 
+/// `super::events` over the cue's own time (an open cue for five seconds).
+fn events(cue: &Cue, opts: &ConvertOptions, flags: u32) -> Vec<Event> {
+    let end = cue.end_ms.unwrap_or(cue.start_ms + 5000);
+    super::events(cue, opts, flags, cue.start_ms, end)
+}
+
 fn row(row: u8, first: u8, segments: &[(&str, CueStyle)]) -> CueRow {
     let len: usize = segments.iter().map(|(text, _)| text.chars().count()).sum();
     CueRow {
@@ -528,4 +534,99 @@ fn script_lines(script: &str) -> Vec<&str> {
         .lines()
         .filter(|line| line.starts_with("Dialogue:"))
         .collect()
+}
+
+/// A row of "now " and " off" around flashing "flash".
+fn flashing_row() -> CueRow {
+    let flash = CueStyle {
+        flash: true,
+        ..CueStyle::default()
+    };
+    row(
+        15,
+        0,
+        &[
+            ("now ", CueStyle::default()),
+            ("flash", flash),
+            (" off", CueStyle::default()),
+        ],
+    )
+}
+
+#[test]
+fn flashing_text_blinks_every_half_second_of_the_media_clock() {
+    let opts = ConvertOptions::default();
+    let cue = cue(CueKind::PopOn, vec![flashing_row()]);
+    // The default style: text and outline opaque, the shadow at 0x80.
+    let on = "\\1a&H00&\\3a&H00&\\4a&H80&";
+    let off = "\\1a&HFF&\\3a&HFF&\\4a&HFF&";
+    // From 1000 (an even half second: shown) to 3200: steps at 1500 (gone), 2000 (back), 2500,
+    // 3000, written after the event's start.
+    let drawn = super::events(&cue, &opts, 0, 1000, 3200);
+    assert_eq!(drawn.len(), 1);
+    assert!(drawn[0].flashes);
+    assert_eq!(
+        drawn[0].text,
+        format!(
+            "{{\\an4\\pos(192,942)}}now {{\\t(500,500,{off})\\t(1000,1000,{on})\\t(1500,1500,{off})\
+             \\t(2000,2000,{on})}}flash{{{on}}} off"
+        )
+    );
+    // A stretch that starts in an odd half second starts hidden, and its first step is where the
+    // half second ends, never at 0 (libass runs a \t from 0 over the whole event).
+    let late = super::events(&cue, &opts, 0, 1700, 2600);
+    assert_eq!(
+        late[0].text,
+        format!(
+            "{{\\an4\\pos(192,942)}}now {{{off}\\t(300,300,{on})\\t(800,800,{off})}}flash{{{on}}} off"
+        )
+    );
+    // The overlay sleeps between steps instead of rendering every frame.
+    assert_eq!(
+        crate::subs::schedule::motion(drawn[0].text.as_bytes(), b""),
+        crate::subs::schedule::Motion::Steps(vec![500, 1000, 1500, 2000])
+    );
+    let exact = super::events(&cue, &opts, 0, 2000, 2400);
+    assert!(exact[0].text.contains("now {}flash"), "{}", exact[0].text);
+    // Plain draws it steady, as Media3 and FFmpeg do.
+    let plain = super::events(&cue, &opts, FLAG_PLAIN, 1000, 3200);
+    assert_eq!(plain[0].text, "{\\an4\\pos(192,942)}now flash off");
+    assert!(!plain[0].flashes);
+}
+
+#[test]
+fn only_the_characters_blink_and_their_background_stays() {
+    let mut opts = boxed();
+    // Text at 80% (alpha 0x33) with an outline: the restore brings back the appearance's alphas.
+    opts.primary_colour = 0x33FF_FFFF;
+    let cue = cue(CueKind::RollUp, vec![flashing_row()]);
+    let drawn = super::events(&cue, &opts, 0, 1000, 2000);
+    let boxes = texts(&drawn, BOX_LAYER);
+    assert_eq!(boxes.len(), 1);
+    assert!(!boxes[0].contains("\\t("), "{}", boxes[0]);
+    assert!(
+        drawn
+            .iter()
+            .filter(|event| event.layer == BOX_LAYER)
+            .all(|event| !event.flashes)
+    );
+    let text = texts(&drawn, TEXT_LAYER)[0];
+    assert!(
+        text.contains(
+            "\\t(500,500,\\1a&HFF&\\3a&HFF&\\4a&HFF&)}flash{\\1a&H33&\\3a&H00&\\4a&H40&} off"
+        ),
+        "{text}"
+    );
+    // A caption without flashing text has no steps at all.
+    let steady = cue_with(vec![plain_row(15, 0, "steady")]);
+    let drawn = super::events(&steady, &opts, 0, 1000, 60_000);
+    assert!(
+        drawn
+            .iter()
+            .all(|event| !event.flashes && !event.text.contains("\\t("))
+    );
+}
+
+fn cue_with(rows: Vec<CueRow>) -> Cue {
+    cue(CueKind::PopOn, rows)
 }

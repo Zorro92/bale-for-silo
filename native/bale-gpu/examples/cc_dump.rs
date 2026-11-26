@@ -57,6 +57,9 @@ fn describe(row: &CueRow) -> String {
             if style.underline {
                 tags.push("underline".to_owned());
             }
+            if style.flash {
+                tags.push("flash".to_owned());
+            }
             if style.background != Default::default() {
                 tags.push(format!(
                     "on {:?} {:?}",

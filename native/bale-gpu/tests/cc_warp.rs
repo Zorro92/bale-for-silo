@@ -278,3 +278,96 @@ fn rows_with_different_indents_have_backgrounds_that_meet_without_overlapping() 
     unsafe { bale_cc_destroy(captions) };
     assert_eq!(overlay.clear(), S_OK);
 }
+
+/// The field-1 pair of `frame` for a pop-on caption on row 15 whose "CD" flashes: "AB", Flash On
+/// (a space), "CD", shown at frame 20.
+fn flashing_at(frame: i64) -> [u8; 2] {
+    let [a, b] = match frame {
+        0 | 1 => [0x14, 0x20],
+        2 | 3 => [0x14, 0x60],
+        4 => *b"AB",
+        // Flash On.
+        5 | 6 => [0x14, 0x28],
+        7 => *b"CD",
+        20 | 21 => [0x14, 0x2F],
+        _ => return [0x80, 0x80],
+    };
+    [parity(a), if b == 0 { 0x80 } else { parity(b) }]
+}
+
+#[test]
+fn flashing_characters_blink_and_their_box_stays() {
+    const SIZE: u32 = 1920;
+    const LINES: u32 = 1080;
+    const FLASH_TOKEN: u64 = 0xCC_0003;
+    // SAFETY: a null panel renders offscreen.
+    let overlay = unsafe {
+        Overlay::create_with_driver(std::ptr::null_mut(), SIZE, LINES, D3D_DRIVER_TYPE_WARP)
+    }
+    .expect("create overlay on WARP");
+    assert_eq!(overlay.set_layout(Layout::full(SIZE, LINES)), S_OK);
+    let style = TextStyle {
+        font_size: 60,
+        primary_colour: 0x00FF_FFFF,
+        outline_colour: 0,
+        back_colour: 0x80FF_0000,
+        border_style: 4,
+        outline: 0.0,
+        shadow: 7.5,
+        alignment: 2,
+        margin_v: 54,
+    };
+    let mut captions: *const Captions = std::ptr::null();
+    // SAFETY: as in the test above.
+    unsafe {
+        assert_eq!(bale_cc_create(&mut captions), S_OK);
+        assert_eq!(bale_cc_register(captions, FLASH_TOKEN), S_OK);
+        let overlay = (&*overlay as *const Overlay).cast_mut();
+        assert_eq!(
+            bale_cc_attach(captions, overlay, &style, std::ptr::null(), 0, 0),
+            S_OK
+        );
+    }
+    for frame in 0..40 {
+        let data = packet_with(flashing_at(frame));
+        // SAFETY: `data` is live for the call and as long as declared.
+        let hr =
+            unsafe { bale_cc_push(FLASH_TOKEN, data.as_ptr(), data.len(), frame * FRAME, 1, 4) };
+        assert_eq!(hr, S_OK, "frame {frame}");
+    }
+    let white = |capture: &Capture| {
+        (0..LINES)
+            .flat_map(|y| (0..SIZE).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                let [_, green, red, _] = pixel(capture, x, y);
+                green > 200 && red > 200
+            })
+            .count()
+    };
+    let box_rows = |capture: &Capture| {
+        (0..LINES)
+            .filter(|&y| (0..SIZE).any(|x| is_box(pixel(capture, x, y))))
+            .count()
+    };
+    // The caption is up from about 667 ms. 1250 ms is in an even half second (shown), 1750 ms in
+    // an odd one (its flashing characters gone).
+    assert_eq!(overlay.set_clock(1250, 1.0, false), S_OK);
+    let shown = overlay.capture().expect("capture shown");
+    assert_eq!(overlay.set_clock(1750, 1.0, false), S_OK);
+    let hidden = overlay.capture().expect("capture hidden");
+    assert_eq!(overlay.set_clock(2250, 1.0, false), S_OK);
+    let again = overlay.capture().expect("capture shown again");
+    let (on, off) = (white(&shown), white(&hidden));
+    assert!(off > 0, "AB stays");
+    assert!(
+        on > off + off / 2,
+        "CD blinks: {on} white pixels shown, {off} hidden"
+    );
+    assert_eq!(white(&again), on);
+    // The background does not blink: the same band either way.
+    assert_eq!(box_rows(&shown), 60);
+    assert_eq!(box_rows(&hidden), 60);
+    // SAFETY: the handle is not used again.
+    unsafe { bale_cc_destroy(captions) };
+    assert_eq!(overlay.clear(), S_OK);
+}

@@ -1,44 +1,101 @@
 //! When the subtitle picture can change on its own. Most lines are static: between an event's
 //! start and end libass returns the same images, so the render thread sleeps until the next
 //! boundary instead of asking libass every frame. Only events whose look depends on the time
-//! (fades, moves, transforms, karaoke, scrolling effects) need a render per frame.
+//! (fades, moves, transforms, karaoke, scrolling effects) need a render per frame; a transform that
+//! takes no time (`\t(t,t,...)`, a caption's blink) changes the picture only at its own time,
+//! which is one more boundary.
 
 use std::time::Duration;
 
 use super::Clock;
 
 /// One event of the track, as libass will show it: active for `start_ms <= t < start_ms + duration_ms`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Event {
     pub start_ms: i64,
     pub duration_ms: i64,
-    /// Its images change while it is shown (see [`is_animated`]).
-    pub animated: bool,
+    /// How its images change while it is shown (see [`motion`]).
+    pub motion: Motion,
 }
 
-/// Whether an event with this `Text` and `Effect` changes while it is shown.
+/// How an event's images change while it is shown.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Motion {
+    /// Never.
+    Still,
+    /// At once at these times after its start, and only then.
+    Steps(Vec<i64>),
+    /// All the time.
+    Animated,
+}
+
+/// How an event with this `Text` and `Effect` changes while it is shown.
 ///
 /// Override tags are matched as libass does (`parse_tags` in ass_parse.c): after the backslash
 /// and optional blanks, case-sensitively and by prefix, so `\kf`, `\ko`, `\kt` and anything else
 /// starting with `k`, `K` or `t` counts. A false positive only costs renders; a false negative
-/// would freeze an animation, so text outside override blocks is searched too.
-pub fn is_animated(text: &[u8], effect: &[u8]) -> bool {
+/// would freeze an animation, so text outside override blocks is searched too. The one `\t` that
+/// is a step is `\t(t,t,...)` with the same whole `t` > 0 twice and tags after it: libass applies
+/// it fully from `t` on and not at all before (`k` is 0 or 1); a `t` of 0 means the event's end.
+pub fn motion(text: &[u8], effect: &[u8]) -> Motion {
     // libass knows Banner, Scroll up and Scroll down; anything else non-empty is treated alike.
     if !effect.is_empty() {
-        return true;
+        return Motion::Animated;
     }
+    let mut steps = Vec::new();
     let mut rest = text;
     while let Some(at) = rest.iter().position(|&byte| byte == b'\\') {
         rest = &rest[at + 1..];
         let name = rest.trim_ascii_start();
         if name.starts_with(b"fad")
             || name.starts_with(b"move")
-            || matches!(name.first(), Some(b't' | b'k' | b'K'))
+            || matches!(name.first(), Some(b'k' | b'K'))
         {
-            return true;
+            return Motion::Animated;
+        }
+        if name.first() == Some(&b't') {
+            match step(&name[1..]) {
+                Some(at) => steps.push(at),
+                None => return Motion::Animated,
+            }
         }
     }
-    false
+    if steps.is_empty() {
+        Motion::Still
+    } else {
+        Motion::Steps(steps)
+    }
+}
+
+/// Whether an event with this `Text` and `Effect` changes all the time while it is shown.
+pub fn is_animated(text: &[u8], effect: &[u8]) -> bool {
+    motion(text, effect) == Motion::Animated
+}
+
+/// The time of a `\t` that takes none, from what follows its name: `(t,t,` then its tags.
+fn step(arguments: &[u8]) -> Option<i64> {
+    let number = |bytes: &[u8]| -> Option<(i64, usize)> {
+        let skipped = bytes.len() - bytes.trim_ascii_start().len();
+        let digits = bytes[skipped..]
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count();
+        // Whole milliseconds that libass reads alike either way it parses them (up to 2^31).
+        if digits == 0 || digits > 9 {
+            return None;
+        }
+        let value = std::str::from_utf8(&bytes[skipped..skipped + digits])
+            .ok()?
+            .parse()
+            .ok()?;
+        Some((value, skipped + digits))
+    };
+    let rest = arguments.trim_ascii_start().strip_prefix(b"(")?;
+    let (first, used) = number(rest)?;
+    let rest = rest[used..].trim_ascii_start().strip_prefix(b",")?;
+    let (second, used) = number(rest)?;
+    rest[used..].trim_ascii_start().strip_prefix(b",")?;
+    (first == second && first > 0).then_some(first)
 }
 
 /// What the render thread does after a render at some media time.
@@ -73,8 +130,15 @@ impl Schedule {
             }
             let end = event.start_ms.saturating_add(event.duration_ms);
             boundaries.extend([event.start_ms, end]);
-            if event.animated {
-                spans.push((event.start_ms, end));
+            match event.motion {
+                Motion::Still => {}
+                Motion::Steps(steps) => boundaries.extend(
+                    steps
+                        .into_iter()
+                        .filter(|&at| at > 0 && at < event.duration_ms)
+                        .map(|at| event.start_ms.saturating_add(at)),
+                ),
+                Motion::Animated => spans.push((event.start_ms, end)),
             }
         }
         boundaries.sort_unstable();
@@ -145,7 +209,11 @@ mod tests {
         Event {
             start_ms,
             duration_ms,
-            animated,
+            motion: if animated {
+                Motion::Animated
+            } else {
+                Motion::Still
+            },
         }
     }
 
@@ -199,6 +267,79 @@ mod tests {
         ] {
             assert!(!is_animated(text.as_bytes(), b""), "{text}");
         }
+    }
+
+    #[test]
+    fn transforms_that_take_no_time_are_steps() {
+        let off = r"\1a&HFF&";
+        assert_eq!(
+            motion(format!(r"{{\t(500,500,{off})}}x").as_bytes(), b""),
+            Motion::Steps(vec![500])
+        );
+        // A caption's blink: one block of steps, then a block that restores.
+        assert_eq!(
+            motion(
+                format!(
+                    r"{{\an4}}now {{\t(500,500,{off})\t(1000,1000,\1a&H00&)}}flash{{\1a&H00&}}"
+                )
+                .as_bytes(),
+                b""
+            ),
+            Motion::Steps(vec![500, 1000])
+        );
+        // Blanks as libass skips them, and an acceleration (which a step ignores).
+        assert_eq!(
+            motion(br"{\ t ( 750 , 750 , \1a&HFF&)}x", b""),
+            Motion::Steps(vec![750])
+        );
+        assert_eq!(
+            motion(br"{\t(750,750,2,\1a&HFF&)}x", b""),
+            Motion::Steps(vec![750])
+        );
+        // Anything that takes time, or that libass reads otherwise, animates: 0 means the event's
+        // end, two arguments are an acceleration, decimals and signs are not read here.
+        for text in [
+            r"{\t(0,0,\1a&HFF&)}x",
+            r"{\t(500,600,\1a&HFF&)}x",
+            r"{\t(500,500)}x",
+            r"{\t(500.5,500.5,\1a&HFF&)}x",
+            r"{\t(-5,-5,\1a&HFF&)}x",
+            r"{\t(5000000000,5000000000,\1a&HFF&)}x",
+            r"{\t(500,500,\1a&HFF&)\fad(100,100)}x",
+            r"{\t(500,500,\1a&HFF&)}x{\k20}y",
+        ] {
+            assert_eq!(motion(text.as_bytes(), b""), Motion::Animated, "{text}");
+        }
+        assert_eq!(motion(b"plain", b""), Motion::Still);
+        assert_eq!(
+            motion(br"{\t(500,500,\1a&HFF&)}x", b"Banner;30"),
+            Motion::Animated
+        );
+    }
+
+    #[test]
+    fn steps_inside_an_event_are_boundaries_without_rendering_every_frame() {
+        let schedule = Schedule::new([Event {
+            start_ms: 1000,
+            duration_ms: 2000,
+            // 2500 is past the event's end, 0 is its start.
+            motion: Motion::Steps(vec![500, 1500, 2500, 0]),
+        }]);
+        let mut seen = Vec::new();
+        let mut t = 0;
+        while let Some(next) = schedule.next_boundary(t) {
+            seen.push(next);
+            t = next;
+        }
+        assert_eq!(seen, [1000, 1500, 2500, 3000]);
+        assert!(!schedule.animated_at(1600));
+        assert_eq!(
+            schedule.next(1600, &playing(1600, 1.0)),
+            Next::Boundary {
+                at_ms: 2500,
+                wall: Duration::from_millis(900)
+            }
+        );
     }
 
     #[test]

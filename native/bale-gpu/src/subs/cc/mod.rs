@@ -163,9 +163,19 @@ struct Live {
 /// The caption on screen now, with the live events that draw it.
 struct Open {
     cue: Cue,
-    ids: Vec<i32>,
-    /// Where those events end until extended or ended.
+    events: Vec<LiveEvent>,
+    /// Where its events end until extended or ended.
     until_ms: i64,
+}
+
+/// One live event of the shown caption.
+struct LiveEvent {
+    id: i32,
+    /// Where it ends now: the caption's provisional end, or for blinking text that an event after
+    /// it carries on from, the end of its own stretch.
+    end_ms: i64,
+    /// It blinks flashing text (`ass::Event::flashes`), written for its stretch of time only.
+    flashes: bool,
 }
 
 struct Inner {
@@ -343,7 +353,7 @@ impl Captions {
         let live = {
             let mut inner = self.lock();
             if let Some(open) = &mut inner.open {
-                open.ids.clear();
+                open.events.clear();
             }
             inner.live.take()
         };
@@ -472,8 +482,12 @@ impl Inner {
         };
         self.stats.cues += 1;
         let until_ms = t.saturating_add(PROVISIONAL_MS);
-        let ids = self.add_events(&cue, until_ms);
-        self.open = Some(Open { cue, ids, until_ms });
+        let events = self.add_events(&cue, t, until_ms, true);
+        self.open = Some(Open {
+            cue,
+            events,
+            until_ms,
+        });
     }
 
     fn end_open(&mut self, t: i64) {
@@ -481,8 +495,12 @@ impl Inner {
             return;
         };
         if self.live.is_some() {
-            for &id in &open.ids {
-                self.commands.push(LiveCommand::SetEnd { id, end_ms: t });
+            // An event still to come (blinking text's next stretch) ends before it starts.
+            for event in open.events.iter().filter(|event| event.end_ms > t) {
+                self.commands.push(LiveCommand::SetEnd {
+                    id: event.id,
+                    end_ms: t,
+                });
             }
         }
         let mut cue = open.cue;
@@ -498,7 +516,8 @@ impl Inner {
         }
     }
 
-    /// Keeps the shown caption's events running while it stays.
+    /// Keeps the shown caption's events running while it stays: steady ones are extended, and
+    /// blinking text, whose steps end with its stretch, goes on in a new event from there.
     fn extend(&mut self, t: i64) {
         let Some(open) = &mut self.open else {
             return;
@@ -506,38 +525,92 @@ impl Inner {
         if t.saturating_add(EXTEND_BEFORE_MS) < open.until_ms {
             return;
         }
-        open.until_ms = t.saturating_add(PROVISIONAL_MS);
-        if self.live.is_some() {
-            for &id in &open.ids {
+        let (from, until) = (open.until_ms, t.saturating_add(PROVISIONAL_MS));
+        open.until_ms = until;
+        if self.live.is_none() {
+            return;
+        }
+        let mut blinks = false;
+        // Earlier stretches of blinking text are over; the running events (also ones the clock
+        // passed when the stream skipped ahead) go on.
+        open.events
+            .retain(|event| event.end_ms == from || event.end_ms > t);
+        for event in open.events.iter_mut().filter(|event| event.end_ms == from) {
+            if event.flashes {
+                blinks = true;
+            } else {
+                event.end_ms = until;
                 self.commands.push(LiveCommand::SetEnd {
-                    id,
-                    end_ms: open.until_ms,
+                    id: event.id,
+                    end_ms: until,
                 });
+            }
+        }
+        if blinks {
+            let cue = open.cue.clone();
+            let next = self.add_events(&cue, from, until, false);
+            if let Some(open) = &mut self.open {
+                open.events.extend(next);
             }
         }
     }
 
-    /// Queues `cue`'s events for the attached overlay, ending at `end_ms`; their ids.
-    fn add_events(&mut self, cue: &Cue, end_ms: i64) -> Vec<i32> {
+    /// Queues `cue`'s events from `start_ms` to `end_ms` for the attached overlay (only its
+    /// blinking text when `steady` is false); what was queued. Blinking text has its steps written
+    /// for its own stretch, so it takes one event per [`PROVISIONAL_MS`] at most, one after
+    /// another, those that can no longer be on screen (ended more than [`RETAIN_MS`] before the
+    /// newest frame, as the kept cues) left out.
+    fn add_events(
+        &mut self,
+        cue: &Cue,
+        start_ms: i64,
+        end_ms: i64,
+        steady: bool,
+    ) -> Vec<LiveEvent> {
         let Some(live) = &self.live else {
             return Vec::new();
         };
-        let events = ass::events(cue, &live.options, live.flags);
-        let mut ids = Vec::with_capacity(events.len());
-        for event in events {
-            // ReadOrder is a C int; ids only have to be unique among the track's events.
-            let id = (self.next_id & 0x7FFF_FFFF) as i32;
-            self.next_id = self.next_id.wrapping_add(1);
-            ids.push(id);
-            self.commands.push(LiveCommand::Add {
-                id,
-                layer: event.layer,
-                start_ms: cue.start_ms,
-                end_ms,
-                text: event.text,
-            });
+        let (options, flags) = (live.options.clone(), live.flags);
+        let past = self
+            .last_ms
+            .map_or(i64::MIN, |t| t.saturating_sub(RETAIN_MS));
+        let mut added = Vec::new();
+        let mut from = start_ms;
+        loop {
+            let to = end_ms.min(from.saturating_add(PROVISIONAL_MS));
+            let mut blinks = false;
+            for event in ass::events(cue, &options, flags, from, to) {
+                blinks |= event.flashes;
+                let wanted = if event.flashes {
+                    to > past
+                } else {
+                    steady && from == start_ms
+                };
+                if !wanted {
+                    continue;
+                }
+                // ReadOrder is a C int; ids only have to be unique among the track's events.
+                let id = (self.next_id & 0x7FFF_FFFF) as i32;
+                self.next_id = self.next_id.wrapping_add(1);
+                let end = if event.flashes { to } else { end_ms };
+                added.push(LiveEvent {
+                    id,
+                    end_ms: end,
+                    flashes: event.flashes,
+                });
+                self.commands.push(LiveCommand::Add {
+                    id,
+                    layer: event.layer,
+                    start_ms: from,
+                    end_ms: end,
+                    text: event.text,
+                });
+            }
+            if !blinks || to >= end_ms {
+                return added;
+            }
+            from = to;
         }
-        ids
     }
 
     /// A new attachment starts from the kept cues and the shown one.
@@ -547,12 +620,12 @@ impl Inner {
         let history: Vec<Cue> = self.history.iter().cloned().collect();
         for cue in &history {
             if let Some(end) = cue.end_ms {
-                self.add_events(cue, end);
+                self.add_events(cue, cue.start_ms, end, true);
             }
         }
         if let Some(open) = self.open.take() {
-            let ids = self.add_events(&open.cue, open.until_ms);
-            self.open = Some(Open { ids, ..open });
+            let events = self.add_events(&open.cue, open.cue.start_ms, open.until_ms, true);
+            self.open = Some(Open { events, ..open });
         }
     }
 
@@ -573,7 +646,7 @@ impl Inner {
         if delivered != Some(S_OK) {
             self.live = None;
             if let Some(open) = &mut self.open {
-                open.ids.clear();
+                open.events.clear();
             }
         }
     }

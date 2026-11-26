@@ -74,6 +74,9 @@ unchanged. Gap analysis and phases: docs/apple-playback-parity.md.
 - **Closed caption channels:** the subtitle menus offer every CEA-608 channel the stream carries, a row each (CC1 to
   CC4; a stream with CC1 alone keeps one "CC" row), where Android TV and AetherEngine show one CC1 track (owner,
   2026-11-26; `PlaybackClosedCaptions`, docs/closed-captions.md).
+- **Closed caption flash:** 608 flashing characters blink, half a second shown and half a second gone with their row's
+  background steady (47 CFR 15.119 (h)(2)), where Android TV (Media3) and AetherEngine draw flash steady (owner,
+  2026-11-26: captions as authored; `subs::cc::ass`, docs/closed-captions.md).
 
 **Unit mapping.** Xbox lays out at 960×540 effective pixels, the same canvas as Android TV's dp, so
 Android geometry maps 1:1 (`88.dp` → `88`). Android text is `sp × 0.86` (the TV app's
