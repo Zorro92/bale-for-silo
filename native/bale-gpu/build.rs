@@ -3,47 +3,68 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// (output name, source name, profile, preprocessor define). The zero-copy compute shaders are
+/// (output name, source name, profile, preprocessor defines). The zero-copy compute shaders are
 /// built a second time with `BALE_8BIT` for 8-bit pictures; their 10-bit builds take no define. The
-/// tone-map plane shaders are built again with `BALE_STAGED` for the downscale path.
-const SHADERS: [(&str, &str, &str, Option<&str>); 15] = [
-    ("fullscreen_vs", "fullscreen_vs", "vs_5_0", None),
-    ("tonemap_luma_ps", "tonemap_luma_ps", "ps_5_0", None),
-    ("tonemap_chroma_ps", "tonemap_chroma_ps", "ps_5_0", None),
+/// tone-map plane shaders are built again with `BALE_STAGED` for the downscale path, and both of
+/// those again with `BALE_DITHER_R2` for rav1g's NV12 threshold (debug `r2dither`, 2026-11-26).
+const SHADERS: [(&str, &str, &str, &[&str]); 19] = [
+    ("fullscreen_vs", "fullscreen_vs", "vs_5_0", &[]),
+    ("tonemap_luma_ps", "tonemap_luma_ps", "ps_5_0", &[]),
+    ("tonemap_chroma_ps", "tonemap_chroma_ps", "ps_5_0", &[]),
     // Downscale: one area pass into an fp32 intermediate, then plane passes that read it.
-    ("tonemap_area_ps", "tonemap_area_ps", "ps_5_0", None),
+    ("tonemap_area_ps", "tonemap_area_ps", "ps_5_0", &[]),
     (
         "tonemap_luma_staged_ps",
         "tonemap_luma_ps",
         "ps_5_0",
-        Some("BALE_STAGED=1"),
+        &["BALE_STAGED=1"],
     ),
     (
         "tonemap_chroma_staged_ps",
         "tonemap_chroma_ps",
         "ps_5_0",
-        Some("BALE_STAGED=1"),
+        &["BALE_STAGED=1"],
     ),
-    ("grain_luma_ps", "grain_luma_ps", "ps_5_0", None),
-    ("grain_chroma_ps", "grain_chroma_ps", "ps_5_0", None),
-    ("repack_zc_cs", "repack_zc_cs", "cs_5_0", None),
+    // The same four plane shaders with rav1g's R2 dither threshold instead of Bayer.
     (
-        "repack_zc8_cs",
-        "repack_zc_cs",
-        "cs_5_0",
-        Some("BALE_8BIT=1"),
+        "tonemap_luma_r2_ps",
+        "tonemap_luma_ps",
+        "ps_5_0",
+        &["BALE_DITHER_R2=1"],
     ),
-    ("repack_grain_zc_cs", "repack_grain_zc_cs", "cs_5_0", None),
+    (
+        "tonemap_chroma_r2_ps",
+        "tonemap_chroma_ps",
+        "ps_5_0",
+        &["BALE_DITHER_R2=1"],
+    ),
+    (
+        "tonemap_luma_staged_r2_ps",
+        "tonemap_luma_ps",
+        "ps_5_0",
+        &["BALE_STAGED=1", "BALE_DITHER_R2=1"],
+    ),
+    (
+        "tonemap_chroma_staged_r2_ps",
+        "tonemap_chroma_ps",
+        "ps_5_0",
+        &["BALE_STAGED=1", "BALE_DITHER_R2=1"],
+    ),
+    ("grain_luma_ps", "grain_luma_ps", "ps_5_0", &[]),
+    ("grain_chroma_ps", "grain_chroma_ps", "ps_5_0", &[]),
+    ("repack_zc_cs", "repack_zc_cs", "cs_5_0", &[]),
+    ("repack_zc8_cs", "repack_zc_cs", "cs_5_0", &["BALE_8BIT=1"]),
+    ("repack_grain_zc_cs", "repack_grain_zc_cs", "cs_5_0", &[]),
     (
         "repack_grain_zc8_cs",
         "repack_grain_zc_cs",
         "cs_5_0",
-        Some("BALE_8BIT=1"),
+        &["BALE_8BIT=1"],
     ),
     // Subtitle overlay (`subs::overlay`).
-    ("sub_vs", "sub_vs", "vs_5_0", None),
-    ("sub_ps", "sub_ps", "ps_5_0", None),
-    ("sub_rgba_ps", "sub_rgba_ps", "ps_5_0", None),
+    ("sub_vs", "sub_vs", "vs_5_0", &[]),
+    ("sub_ps", "sub_ps", "ps_5_0", &[]),
+    ("sub_rgba_ps", "sub_rgba_ps", "ps_5_0", &[]),
 ];
 
 fn main() {
@@ -74,12 +95,12 @@ fn main() {
     }
     let fxc = fxc.unwrap_or_else(find_fxc);
     let shaders = Path::new("shaders");
-    for (name, source, profile, define) in SHADERS {
+    for (name, source, profile, defines) in SHADERS {
         let blob = out.join(format!("{name}.cso"));
         let result = Command::new(&fxc)
             .args(["/nologo", "/O3", "/WX", "/Qstrip_debug", "/Qstrip_reflect"])
             .args(["/T", profile, "/E", "main"])
-            .args(define.into_iter().flat_map(|define| ["/D", define]))
+            .args(defines.iter().flat_map(|define| ["/D", define]))
             .arg("/I")
             .arg(shaders)
             .arg("/Fo")

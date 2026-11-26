@@ -21,6 +21,13 @@ const AREA_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_area_ps
 const Y_STAGED_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_luma_staged_ps.cso"));
 const UV_STAGED_PS: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_chroma_staged_ps.cso"));
+// The same plane shaders built with BALE_DITHER_R2: rav1g's NV12 threshold (debug `r2dither`).
+const Y_R2_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_luma_r2_ps.cso"));
+const UV_R2_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_chroma_r2_ps.cso"));
+const Y_STAGED_R2_PS: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_luma_staged_r2_ps.cso"));
+const UV_STAGED_R2_PS: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_chroma_staged_r2_ps.cso"));
 /// Downscale intermediate: area_value's float3 per output pixel (the unclipped linear average, or
 /// its encoded Y'CbCr under the legacy math), exact fp32 (16 B/pixel).
 const STAGED_FORMAT: DXGI_FORMAT = DXGI_FORMAT_R32G32B32A32_FLOAT;
@@ -40,6 +47,38 @@ struct Scratch {
     texture: ID3D11Texture2D,
     views: [ID3D11ShaderResourceView; 2],
 }
+/// The luma and chroma pass shaders of one NV12 dither, per-plane and staged (the area pass has no
+/// quantisation). Only the stage's own dither is created: a dither is a shader permutation, not a
+/// cbuffer bit, so neither pays for the other (P010 output is the same in both).
+struct PlaneShaders {
+    dither: cpu::Dither,
+    y: ID3D11PixelShader,
+    uv: ID3D11PixelShader,
+    y_staged: ID3D11PixelShader,
+    uv_staged: ID3D11PixelShader,
+}
+
+impl PlaneShaders {
+    fn create(device: &ID3D11Device1, dither: cpu::Dither) -> Result<Self> {
+        let blobs = match dither {
+            cpu::Dither::Bayer => [Y_PS, UV_PS, Y_STAGED_PS, UV_STAGED_PS],
+            cpu::Dither::R2 => [Y_R2_PS, UV_R2_PS, Y_STAGED_R2_PS, UV_STAGED_R2_PS],
+        };
+        let [y, uv, y_staged, uv_staged] = blobs.map(|blob| {
+            let mut shader = None;
+            // SAFETY: embedded fxc bytecode; local output slot on the retained device.
+            unsafe { device.CreatePixelShader(blob, None, Some(&mut shader)) }
+                .and_then(|()| shader.ok_or_else(|| E_FAIL.into()))
+        });
+        Ok(Self {
+            dither,
+            y: y?,
+            uv: uv?,
+            y_staged: y_staged?,
+            uv_staged: uv_staged?,
+        })
+    }
+}
 /// Output-sized fp32 intermediate of the downscale path, created and released with the stage.
 struct Staged {
     width: u32,
@@ -56,17 +95,16 @@ pub struct ToneMapGpu {
     /// None under the debug `nostate` switch: explicit save/restore of our bindings instead.
     state: Option<ID3DDeviceContextState>,
     vs: ID3D11VertexShader,
-    y_ps: ID3D11PixelShader,
-    uv_ps: ID3D11PixelShader,
     area_ps: ID3D11PixelShader,
-    y_staged_ps: ID3D11PixelShader,
-    uv_staged_ps: ID3D11PixelShader,
+    /// The plane passes of `options.dither`.
+    planes: PlaneShaders,
     constants: ID3D11Buffer,
     scratch: Option<Scratch>,
     /// Present when the configured output is smaller than the visible source and the debug
     /// `nostaged` switch is off: one area pass per output pixel instead of one per plane read.
     staged: Option<Staged>,
-    /// Current math, or the debug A/B words (`gammachroma`, `fixedpeak`, `bilinearchroma`).
+    /// Current math, or the debug A/B words (`gammachroma`, `fixedpeak`, `bilinearchroma`,
+    /// `r2dither`).
     options: cpu::Options,
     /// The cubic's co-sited fast path (`cpu::cosited_bits`); off only in a test comparing both.
     cosited_fast_path: bool,
@@ -85,6 +123,26 @@ pub struct ToneMapGpu {
 
 impl ToneMapGpu {
     pub(super) fn create(device: &ID3D11Device, config: BaleToneMapConfig) -> Result<Self> {
+        Self::create_with(device, config, DebugSwitches::read())
+    }
+
+    /// Test and bench hook: [`create`](Self::create) with the debug switch words `words` (the syntax
+    /// of BALE_TONEMAP_DEBUG) instead of the process environment's, so that a WARP test can create an
+    /// `r2dither` stage, its create self-test included, without changing what other tests read.
+    #[doc(hidden)]
+    pub fn create_with_switches(
+        device: &ID3D11Device,
+        config: BaleToneMapConfig,
+        words: &str,
+    ) -> Result<Self> {
+        Self::create_with(device, config, DebugSwitches::parse(words))
+    }
+
+    fn create_with(
+        device: &ID3D11Device,
+        config: BaleToneMapConfig,
+        debug: DebugSwitches,
+    ) -> Result<Self> {
         config.validate().map_err(HRESULT)?;
         if cfg!(bale_grain_no_shaders) {
             return Err(E_NOTIMPL.into());
@@ -98,14 +156,10 @@ impl ToneMapGpu {
         }
         let context = unsafe { device.GetImmediateContext()? };
         let device: ID3D11Device1 = device.cast()?;
-        let debug = DebugSwitches::read();
+        let options = debug.options();
         let mut state = None;
         let mut vs = None;
-        let mut y_ps = None;
-        let mut uv_ps = None;
         let mut area_ps = None;
-        let mut y_staged_ps = None;
-        let mut uv_staged_ps = None;
         let mut constants = None;
         // SAFETY: valid bytecode/initialized descriptor, local output slots, retained device.
         unsafe {
@@ -120,11 +174,7 @@ impl ToneMapGpu {
                 )?;
             }
             device.CreateVertexShader(VS, None, Some(&mut vs))?;
-            device.CreatePixelShader(Y_PS, None, Some(&mut y_ps))?;
-            device.CreatePixelShader(UV_PS, None, Some(&mut uv_ps))?;
             device.CreatePixelShader(AREA_PS, None, Some(&mut area_ps))?;
-            device.CreatePixelShader(Y_STAGED_PS, None, Some(&mut y_staged_ps))?;
-            device.CreatePixelShader(UV_STAGED_PS, None, Some(&mut uv_staged_ps))?;
             device.CreateBuffer(
                 &D3D11_BUFFER_DESC {
                     ByteWidth: size_of::<Constants>() as u32,
@@ -138,6 +188,7 @@ impl ToneMapGpu {
         }
         let constants = constants.ok_or(E_FAIL)?;
         crate::memledger::track_buffer(&constants, crate::memledger::TONE_MAP)?;
+        let planes = PlaneShaders::create(&device, options.dither)?;
         let staged = match !debug.no_staged && downscales(&config) {
             true => Some(Staged::create(&device, config.width, config.height)?),
             false => None,
@@ -151,23 +202,12 @@ impl ToneMapGpu {
                 (false, None) => return Err(E_FAIL.into()),
             },
             vs: vs.ok_or(E_FAIL)?,
-            y_ps: y_ps.ok_or(E_FAIL)?,
-            uv_ps: uv_ps.ok_or(E_FAIL)?,
             area_ps: area_ps.ok_or(E_FAIL)?,
-            y_staged_ps: y_staged_ps.ok_or(E_FAIL)?,
-            uv_staged_ps: uv_staged_ps.ok_or(E_FAIL)?,
+            planes,
             constants,
             scratch: None,
             staged,
-            options: cpu::Options {
-                method: if debug.gamma_chroma {
-                    cpu::Method::Legacy
-                } else {
-                    cpu::Method::Linear
-                },
-                fixed_peak: debug.fixed_peak,
-                bilinear_chroma: debug.bilinear_chroma,
-            },
+            options,
             cosited_fast_path: true,
             uploaded: None,
             uploads: 0,
@@ -239,10 +279,21 @@ impl ToneMapGpu {
         self.options.method = method;
     }
 
-    /// Test hook: all debug A/B options at once (`gammachroma`, `fixedpeak`, `bilinearchroma`).
+    /// Test hook: all debug A/B options at once (`gammachroma`, `fixedpeak`, `bilinearchroma`,
+    /// `r2dither`). Another dither creates that dither's plane shaders.
     #[doc(hidden)]
-    pub fn set_options(&mut self, options: cpu::Options) {
+    pub fn set_options(&mut self, options: cpu::Options) -> Result<()> {
+        if options.dither != self.planes.dither {
+            self.planes = PlaneShaders::create(&self.device, options.dither)?;
+        }
         self.options = options;
+        Ok(())
+    }
+
+    /// The stage's NV12 dither (tests).
+    #[doc(hidden)]
+    pub fn dither(&self) -> cpu::Dither {
+        self.planes.dither
     }
 
     /// Test hook: turn the cubic's co-sited fast path off, so a WARP test can check that it gives
@@ -350,8 +401,8 @@ impl ToneMapGpu {
             .filter(|s| s.width == config.width && s.height == config.height && downscales(config))
             .map(|s| (s.target.clone(), s.view.clone()));
         let shaders = match staged {
-            Some(_) => [&self.y_staged_ps, &self.uv_staged_ps],
-            None => [&self.y_ps, &self.uv_ps],
+            Some(_) => [&self.planes.y_staged, &self.planes.uv_staged],
+            None => [&self.planes.y, &self.planes.uv],
         };
         let constants = Constants {
             geometry: [source_width, source_height, src.Width, src.Height],
@@ -743,7 +794,8 @@ mod tests {
 /// encoded Cb/Cr ([`cpu::Method::Legacy`]); `fixedpeak` (2026-11-24, A/B) tone-maps PQ from the
 /// config's source peak as before, not from the stream's MaxCLL / mastering metadata;
 /// `bilinearchroma` (2026-11-24, quality/cost A/B) upsamples the input chroma bilinearly as before
-/// instead of with Catmull-Rom.
+/// instead of with Catmull-Rom; `r2dither` (2026-11-26, cost A/B before it becomes the default)
+/// dithers NV12 output with rav1g's R2 threshold instead of Bayer ([`cpu::Dither::R2`]).
 #[derive(Clone, Copy, Default)]
 struct DebugSwitches {
     no_self_test: bool,
@@ -752,6 +804,7 @@ struct DebugSwitches {
     gamma_chroma: bool,
     fixed_peak: bool,
     bilinear_chroma: bool,
+    r2_dither: bool,
 }
 
 impl DebugSwitches {
@@ -770,10 +823,29 @@ impl DebugSwitches {
                 "gammachroma" => switches.gamma_chroma = true,
                 "fixedpeak" => switches.fixed_peak = true,
                 "bilinearchroma" => switches.bilinear_chroma = true,
+                "r2dither" => switches.r2_dither = true,
                 _ => {}
             }
         }
         switches
+    }
+
+    /// The stage math these words choose (the self-test checks the same).
+    fn options(&self) -> cpu::Options {
+        cpu::Options {
+            method: if self.gamma_chroma {
+                cpu::Method::Legacy
+            } else {
+                cpu::Method::Linear
+            },
+            fixed_peak: self.fixed_peak,
+            bilinear_chroma: self.bilinear_chroma,
+            dither: if self.r2_dither {
+                cpu::Dither::R2
+            } else {
+                cpu::Dither::Bayer
+            },
+        }
     }
 }
 
@@ -921,5 +993,18 @@ mod debug_switch_tests {
         let chroma = DebugSwitches::parse("bilinearchroma,gammachroma");
         assert!(chroma.bilinear_chroma && chroma.gamma_chroma && !chroma.fixed_peak);
         assert!(!peak.bilinear_chroma);
+        // Bayer unless `r2dither` is given; the word combines with the others.
+        assert_eq!(chroma.options().dither, super::cpu::Dither::Bayer);
+        assert_eq!(none.options(), super::cpu::Options::default());
+        let r2 = DebugSwitches::parse("nostaged r2dither");
+        assert!(r2.r2_dither && r2.no_staged && !r2.bilinear_chroma);
+        assert_eq!(
+            r2.options(),
+            super::cpu::Options {
+                dither: super::cpu::Dither::R2,
+                ..Default::default()
+            }
+        );
+        assert!(!DebugSwitches::parse("r2,dither,R2dither").r2_dither);
     }
 }

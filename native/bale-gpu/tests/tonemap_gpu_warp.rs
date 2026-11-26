@@ -52,6 +52,19 @@ impl Warp {
         assert!(!handle.is_null());
         Handle(handle)
     }
+    /// A stage created with debug switch words (BALE_TONEMAP_DEBUG's syntax, e.g. `r2dither`), its
+    /// create self-test included, without touching the environment other tests read.
+    fn create_with(&self, config: &BaleToneMapConfig, words: &str) -> Handle {
+        let gpu =
+            ToneMapGpu::create_with_switches(&self.device, *config, words).unwrap_or_else(|e| {
+                panic!(
+                    "create '{words}' + self-test HRESULT=0x{:08x}",
+                    e.code().0 as u32
+                )
+            });
+        // The handle bale_tonemap_create would return: Handle's drop gives it to bale_tonemap_destroy.
+        Handle(Box::into_raw(Box::new(gpu)))
+    }
     fn texture(&self, desc: &D3D11_TEXTURE2D_DESC, data: Option<&[u16]>) -> ID3D11Texture2D {
         let initial = data.map(|bytes| D3D11_SUBRESOURCE_DATA {
             pSysMem: bytes.as_ptr().cast(),
@@ -321,6 +334,310 @@ fn nv12_output_is_dithered_like_the_reference_and_p010_is_unchanged() {
     }
 }
 
+/// rav1g's display-pass threshold, transcribed on its own from rav1g (testing/display_pass/model.py
+/// `threshold`: wide products masked to 32 bits; libav1/dx/shaders/display_pass.hlsl `threshold`:
+/// `mad(t8, 1/256, 0.5/256)`), not taken from bale_gpu.
+fn rav1g_threshold(x: u32, y: u32) -> f32 {
+    let sum = u128::from(x) * 0xc13f_a9a9 + u128::from(y) * 0x91e1_0da6;
+    (((sum & 0xffff_ffff) >> 24) as f32).mul_add(1.0 / 256.0, 0.5 / 256.0)
+}
+
+/// rav1g's last NV12 quantisation (display_pass.hlsl `luma_code`, `chroma_code`) of the value `v`
+/// (16 + 219 Y', or 128 + 224 C) with threshold `t`: the code, and how far `v + t` lies from the
+/// nearest step that would change it (0.5 where the clamp gives both sides the same code).
+fn rav1g_round(v: f32, t: f32, lo: f32, hi: f32) -> (u8, f32) {
+    let sum = v + t;
+    let step = sum.round();
+    let margin = if (step - 1.0).clamp(lo, hi) == step.clamp(lo, hi) {
+        0.5
+    } else {
+        (sum - step).abs()
+    };
+    (sum.floor().clamp(lo, hi) as u8, margin)
+}
+
+/// The NV12 codes rav1g's pass writes for the reference's encoded values: luma at its pixel, Cb at
+/// its chroma sample, Cr at the transposed sample; with each code's margin ([`rav1g_round`]).
+fn rav1g_nv12(encoded: &cpu::Encoded) -> (Vec<u8>, Vec<f32>) {
+    let (w, h) = (encoded.width, encoded.height);
+    let mut codes = vec![0; w * h * 3 / 2];
+    let mut margins = vec![0.0; w * h * 3 / 2];
+    for y in 0..h {
+        for x in 0..w {
+            let v = 16.0 + 219.0 * encoded.luma[y * w + x];
+            let t = rav1g_threshold(x as u32, y as u32);
+            (codes[y * w + x], margins[y * w + x]) = rav1g_round(v, t, 16.0, 235.0);
+        }
+    }
+    for y in 0..h / 2 {
+        for x in 0..w / 2 {
+            let [cb, cr] = encoded.chroma[y * (w / 2) + x];
+            let (tb, tr) = (
+                rav1g_threshold(x as u32, y as u32),
+                rav1g_threshold(y as u32, x as u32),
+            );
+            let at = w * h + y * w + 2 * x;
+            (codes[at], margins[at]) = rav1g_round(128.0 + 224.0 * cb, tb, 16.0, 240.0);
+            (codes[at + 1], margins[at + 1]) = rav1g_round(128.0 + 224.0 * cr, tr, 16.0, 240.0);
+        }
+    }
+    (codes, margins)
+}
+
+/// Where NV12 byte `i` of a `w` x `h` picture is, for failure messages.
+fn nv12_position(i: usize, w: usize, h: usize) -> String {
+    if i < w * h {
+        format!("luma ({}, {})", i % w, i / w)
+    } else {
+        let c = i - w * h;
+        let plane = if c.is_multiple_of(2) { "Cb" } else { "Cr" };
+        format!("{plane} ({}, {})", c % w / 2, c / w)
+    }
+}
+
+/// A uniform limited-range P010 picture: every luma word `luma << 6`, every chroma pair `cb, cr`.
+fn uniform_p010(w: u32, h: u32, luma: u16, cb: u16, cr: u16) -> Vec<u16> {
+    let (w, h) = (w as usize, h as usize);
+    let mut data = vec![luma << 6; w * h];
+    for _ in 0..w * h / 4 {
+        data.extend([cb << 6, cr << 6]);
+    }
+    data
+}
+
+/// Debug `r2dither`: NV12 output takes rav1g's display-pass threshold and rounding (`floor(v + t)`;
+/// luma at the pixel, Cb at the chroma sample, Cr transposed) code for code, from the stage's own
+/// value `v`; P010 stays bit-identical to the Bayer stage's.
+///
+/// Exact everywhere on uniform BT.709 SDR frames at 1:1: each value is a quarter code (a 10-bit
+/// code over 4) and each threshold an odd multiple of 1/512, so `v + t` lies at least 1/512 from a
+/// step, about six times the largest WARP-vs-CPU float difference expected from D3D11's exp/log
+/// precision (~3e-4 of a code). Three frames give each plane the fractions 1/4, 1/2 and 3/4, so every
+/// position is checked against the cuts 3/4, 1/2 and 1/4 of its threshold, over a 128x128 picture (a
+/// 64x64 chroma tile), a 3840-wide strip and a 2160-tall strip; two more frames hit the luma clamps.
+/// Downscaled ramps reach every threshold level (arbitrary fractions): exact wherever the value
+/// lies more than one threshold level (1/256) from a step, one code at most otherwise, on the
+/// staged and the per-plane path. Prints `r2 rounding:` lines.
+#[test]
+fn r2_nv12_rounds_like_rav1g_code_for_code() {
+    let warp = Warp::new();
+    let srv = D3D11_BIND_SHADER_RESOURCE.0 as u32;
+    let r2 = cpu::Options {
+        dither: cpu::Dither::R2,
+        ..cpu::Options::default()
+    };
+    let sdr = BaleToneMapFrameInfo {
+        transfer: 1,
+        primaries: 1,
+        matrix: 1,
+        ..Default::default()
+    };
+    for (w, h) in [(128u32, 128u32), (3840, 16), (16, 2160)] {
+        let c = BaleToneMapConfig {
+            width: w,
+            height: h,
+            ..config(1)
+        };
+        let handle = warp.create_with(&c, "r2dither");
+        // SAFETY: the test owns the live handle; no apply is in flight.
+        assert_eq!(unsafe { (*handle.0).dither() }, cpu::Dither::R2);
+        let output = warp.texture(&output_desc(&c), None);
+        // (luma, Cb, Cr) 10-bit codes: luma 64 + 4n + r and chroma 512 + 4n + r have fraction r/4.
+        for (luma, cb, cr) in [
+            (465, 554, 435),
+            (466, 555, 433),
+            (467, 553, 434),
+            // Luma 15.5 and 235.5: every code clamps to 16 / 235.
+            (62, 512, 512),
+            (942, 512, 512),
+        ] {
+            let input = uniform_p010(w, h, luma, cb, cr);
+            let source = warp.texture(&desc(w, h, DXGI_FORMAT_P010, srv), Some(&input));
+            assert_eq!(handle.apply(&warp, &source, 0, &output, &sdr), S_OK);
+            let actual = warp.readback(&output);
+            let encoded = cpu::reference_encoded(&c, &sdr, &input, w, h, r2).unwrap();
+            let (model, margins) = rav1g_nv12(&encoded);
+            let case = format!("{w}x{h} uniform ({luma}, {cb}, {cr})");
+            // The premise of an exact comparison: no value within 1/1024 of a step on the CPU.
+            if let Some(i) = margins.iter().position(|&m| m < 1.0 / 1024.0) {
+                panic!(
+                    "{case}: {} is {} from a step",
+                    nv12_position(i, w as usize, h as usize),
+                    margins[i]
+                );
+            }
+            assert_eq!(
+                cpu::reference_with(&c, &sdr, &input, w, h, r2).unwrap(),
+                model,
+                "{case}: the CPU reference rounds like rav1g"
+            );
+            let differing = actual.iter().zip(&model).filter(|(a, b)| a != b).count();
+            if let Some(i) = actual.iter().zip(&model).position(|(a, b)| a != b) {
+                panic!(
+                    "{case}: {differing} codes differ from rav1g's rounding, first {}: GPU {}, model {}",
+                    nv12_position(i, w as usize, h as usize),
+                    actual[i],
+                    model[i]
+                );
+            }
+            println!(
+                "r2 rounding: {case}: all {} codes equal rav1g's model",
+                actual.len()
+            );
+        }
+    }
+    // Downscaled smooth SDR ramps (staged and per-plane): area averages in linear light have any
+    // fraction, so the comparison reaches every threshold level.
+    const NEAR: f32 = 1.0 / 256.0;
+    for (sw, sh, w, h) in [
+        (512u32, 32u32, 256u32, 16u32),
+        (384, 24, 256, 16),
+        (600, 40, 250, 16),
+    ] {
+        let c = BaleToneMapConfig {
+            width: w,
+            height: h,
+            reserved: [sw, sh, 0, 0],
+            ..config(1)
+        };
+        let input = cpu::sdr_ramp(sw, sh, 100.0, 900.0);
+        let source = warp.texture(&desc(sw, sh, DXGI_FORMAT_P010, srv), Some(&input));
+        let encoded = cpu::reference_encoded(&c, &sdr, &input, sw, sh, r2).unwrap();
+        let (model, margins) = rav1g_nv12(&encoded);
+        assert_eq!(
+            cpu::reference_with(&c, &sdr, &input, sw, sh, r2).unwrap(),
+            model
+        );
+        let handle = warp.create_with(&c, "r2dither");
+        let output = warp.texture(&output_desc(&c), None);
+        for staged in [true, false] {
+            // SAFETY: the test owns the live handle; no apply is in flight.
+            unsafe { (*handle.0).set_staged_downscale(staged) }.unwrap();
+            assert_eq!(handle.apply(&warp, &source, 0, &output, &sdr), S_OK);
+            let actual = warp.readback(&output);
+            let case = format!("{sw}x{sh}->{w}x{h} ramp staged={staged}");
+            let (mut exact, mut near, mut near_differing) = (0usize, 0usize, 0usize);
+            for (i, ((&a, &b), &m)) in actual.iter().zip(&model).zip(&margins).enumerate() {
+                let at = || nv12_position(i, w as usize, h as usize);
+                if m >= NEAR {
+                    assert_eq!(a, b, "{case} {} (margin {m}): GPU {a}, model {b}", at());
+                    exact += 1;
+                } else {
+                    assert!(a.abs_diff(b) <= 1, "{case} {}: GPU {a}, model {b}", at());
+                    near += 1;
+                    near_differing += usize::from(a != b);
+                }
+            }
+            assert!(
+                exact * 100 >= actual.len() * 97,
+                "{case}: only {exact} of {} codes away from a step",
+                actual.len()
+            );
+            println!(
+                "r2 rounding: {case}: {exact} codes equal rav1g's model, {near} within 1/256 of a step ({near_differing} of them one code apart)"
+            );
+        }
+    }
+    // Against the Bayer stage on the same frames: P010 bit-identical (the permutations differ only
+    // in the 8-bit threshold), NV12 within one code and not the same picture. Switching the dither of
+    // a live handle (set_options) gives exactly a created R2 stage's output. PQ keeps the tone map's
+    // usual tolerance against the reference (3 codes; saturated edges).
+    let pq = BaleToneMapFrameInfo {
+        transfer: 16,
+        primaries: 9,
+        matrix: 9,
+        ..Default::default()
+    };
+    for (f, reserved, input, (iw, ih)) in [
+        (
+            &sdr,
+            [512, 32, 0, 0],
+            cpu::sdr_ramp(512, 32, 100.0, 900.0),
+            (512, 32),
+        ),
+        (
+            &pq,
+            [0; 4],
+            cpu::test_pattern(256, 16, true, false),
+            (256, 16),
+        ),
+        (
+            &pq,
+            [512, 32, 0, 0],
+            mixed_pattern(512, 32, true),
+            (512, 32),
+        ),
+    ] {
+        let c = BaleToneMapConfig {
+            width: 256,
+            height: 16,
+            reserved,
+            ..config(1)
+        };
+        let case = format!("transfer {} {iw}x{ih}->256x16", f.transfer);
+        let source = warp.texture(&desc(iw, ih, DXGI_FORMAT_P010, srv), Some(&input));
+        let render = |handle: &Handle, format: DXGI_FORMAT| {
+            let output = warp.texture(&output_desc_as(&c, format), None);
+            assert_eq!(handle.apply(&warp, &source, 0, &output, f), S_OK);
+            if format == DXGI_FORMAT_P010 {
+                warp.readback_p010(&output)
+            } else {
+                warp.readback(&output).into_iter().map(u16::from).collect()
+            }
+        };
+        let (bayer_stage, r2_stage) = (warp.create(&c), warp.create_with(&c, "r2dither"));
+        // SAFETY: the test owns the live handle; no apply is in flight.
+        assert_eq!(unsafe { (*bayer_stage.0).dither() }, cpu::Dither::Bayer);
+        let r2_nv12 = render(&r2_stage, DXGI_FORMAT_NV12);
+        let bayer_nv12 = render(&bayer_stage, DXGI_FORMAT_NV12);
+        assert_eq!(
+            render(&r2_stage, DXGI_FORMAT_P010),
+            render(&bayer_stage, DXGI_FORMAT_P010),
+            "{case}: P010 must not depend on the dither"
+        );
+        assert!(
+            r2_nv12
+                .iter()
+                .zip(&bayer_nv12)
+                .all(|(a, b)| a.abs_diff(*b) <= 1),
+            "{case}: R2 and Bayer more than a code apart"
+        );
+        let differing = r2_nv12
+            .iter()
+            .zip(&bayer_nv12)
+            .filter(|(a, b)| a != b)
+            .count();
+        assert!(differing > 0, "{case}: the R2 stage wrote Bayer's codes");
+        let reference = cpu::reference_with(&c, f, &input, iw, ih, r2).unwrap();
+        let tolerance = if f.transfer == 1 { 1 } else { 3 };
+        for (i, (&a, &b)) in r2_nv12.iter().zip(&reference).enumerate() {
+            assert!(
+                a.abs_diff(u16::from(b)) <= tolerance,
+                "{case} {}: GPU {a}, CPU {b}",
+                nv12_position(i, 256, 16)
+            );
+        }
+        // SAFETY: the test owns the live handle; no apply is in flight.
+        unsafe { (*bayer_stage.0).set_options(r2) }.unwrap();
+        assert_eq!(unsafe { (*bayer_stage.0).dither() }, cpu::Dither::R2);
+        assert_eq!(
+            render(&bayer_stage, DXGI_FORMAT_NV12),
+            r2_nv12,
+            "{case}: set_options"
+        );
+        unsafe { (*bayer_stage.0).set_options(cpu::Options::default()) }.unwrap();
+        assert_eq!(
+            render(&bayer_stage, DXGI_FORMAT_NV12),
+            bayer_nv12,
+            "{case}: back to Bayer"
+        );
+        println!(
+            "r2 rounding: {case}: {differing} of {} NV12 codes differ from Bayer by one, P010 identical",
+            r2_nv12.len()
+        );
+    }
+}
+
 #[test]
 fn pq_to_nv12_matches_reference_for_both_curves_ranges_matrices_and_input_paths() {
     let warp = Warp::new();
@@ -427,7 +744,7 @@ fn area_downscale_matches_reference_at_two_to_one_and_uneven_ratios() {
                     ..Default::default()
                 };
                 // SAFETY: the test owns the live handle; no apply is in flight.
-                unsafe { (*handle.0).set_options(options) };
+                unsafe { (*handle.0).set_options(options) }.unwrap();
                 let expected = cpu::reference_with(&c, &f, &pattern, 28, 14, options).unwrap();
                 assert_eq!(handle.apply(&warp, &source, 0, &output, &f), S_OK);
                 let actual = warp.readback(&output);
@@ -574,7 +891,7 @@ fn cubic_chroma_fast_path_is_exact_and_both_filters_match_the_reference() {
                         let render = |options: cpu::Options, fast: bool| -> Vec<u16> {
                             // SAFETY: the test owns the live handle; no apply is in flight.
                             unsafe {
-                                (*handle.0).set_options(options);
+                                (*handle.0).set_options(options).unwrap();
                                 (*handle.0).set_cosited_fast_path(fast);
                             }
                             assert_eq!(handle.apply(&warp, &source, 0, &target, &f), S_OK);
@@ -871,7 +1188,7 @@ fn pq_peak_follows_the_stream_metadata_and_constants_upload_only_on_change() {
         fixed_peak: true,
         ..Default::default()
     };
-    unsafe { (*handle.0).set_options(fixed) };
+    unsafe { (*handle.0).set_options(fixed) }.unwrap();
     let actual = render(&bright);
     matches(
         &actual,
@@ -885,7 +1202,7 @@ fn pq_peak_follows_the_stream_metadata_and_constants_upload_only_on_change() {
     let newer = warp.create(&c);
     let newer_stage = unsafe { (*newer.0).peak_stage() };
     assert!(newer_stage > stage);
-    unsafe { (*handle.0).set_options(cpu::Options::default()) };
+    unsafe { (*handle.0).set_options(cpu::Options::default()) }.unwrap();
     render(&bright);
     assert_eq!((read().stage, read().changes), (newer_stage, 0));
 }

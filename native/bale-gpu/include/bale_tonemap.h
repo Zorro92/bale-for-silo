@@ -40,7 +40,8 @@ uint32_t bale_tonemap_abi_version(void); /* returns 1 */
 #define BALE_TONEMAP_SDR709 16u
 /* NV12_DITHERED (Bale 2026-11-19): NV12 output is ordered-dithered before the 8-bit quantisation, in
    luma and chroma, with a static 8x8 Bayer threshold at the output pixel (no per-frame change, so still
-   pictures stay still). P010 output is unchanged. Absent = NV12 is plainly rounded. */
+   pictures stay still; Bale's debug switch r2dither takes rav1g's display-pass R2 threshold instead,
+   2026-11-26). P010 output is unchanged. Absent = NV12 is plainly rounded. */
 #define BALE_TONEMAP_OUTPUT_NV12_DITHERED 32u
 /* Bit 64 is retired (Bale 2026-11-24) and stays unused: wrappers 2.1.0-bale.64 to bale.75 read it as
    permission for shader-readable decoder pools. apply always copies a decoder array slice first. */

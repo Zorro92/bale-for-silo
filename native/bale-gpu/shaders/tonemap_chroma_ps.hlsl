@@ -13,7 +13,8 @@ float2 main(float4 position : SV_Position) : SV_Target {
         acc += 0.125*AREA_VALUE(p+int2(1,dy));
     }
     float2 uv = legacy_math() ? acc.yz : encode_output(acc).yz;
-    // The dither pattern is indexed by the chroma sample's own position in its half-size plane.
+    // The dither pattern is indexed by the chroma sample's own position in its half-size plane (R2: Cr
+    // at the transposed position, as rav1g).
     return params.w > 0.5 ? quantize_chroma10(uv)*64.0/65535.0
-                          : quantize_chroma_dithered(uv, uint2(position.xy))/255.0;
+                          : quantize_chroma8(uv, uint2(position.xy))/255.0;
 }

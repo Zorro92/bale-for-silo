@@ -210,5 +210,27 @@ float2 quantize_chroma_dithered(float2 uv, uint2 p) {
     float2 t = float2(dither_threshold(v), dither_threshold(63u - v));
     return clamp(floor(128.0 + 224.0 * uv + t), 16.0, 240.0);
 }
+// Debug `r2dither` (2026-11-26): rav1g's display-pass threshold instead of Bayer, so that the stage writes
+// the 8-bit codes rav1g's pass writes for the same value (rav1g libav1/dx/shaders/display_pass.hlsl
+// `threshold`, `luma_code`, `chroma_code`; docs/integration.md "The dither"). The R2 sequence (M. Roberts,
+// "The unreasonable effectiveness of quasirandom sequences", 2018), frac(x / g + y / g^2) for the plastic
+// number g = 1.3247..., in 32-bit fixed point (uint arithmetic wraps mod 2^32, as rav1g's): its top 8 bits
+// t8, threshold (t8 + 1/2) / 256, exact in fp32; a code is floor(v + t), as with Bayer. Luma takes it at
+// the output pixel, Cb at its chroma sample, Cr at the transposed sample (x and y swapped), so that Cb and
+// Cr do not step together. Its 256 levels have mean 1/2 and no period; about 6 instructions a sample.
+// (t8 + 1/2) / 256 is spelled (2 t8 + 1) / 512, (sum >> 23) | 1 over 512: one exact product, which fxc
+// folds into the sum's single rounding. rav1g's mad(t8, 1/256, 1/512) fxc splits into a mad and an add.
+static const uint R2_X = 0xc13fa9a9u; // round(2^32 / g)
+static const uint R2_Y = 0x91e10da6u; // round(2^32 / g^2)
+float r2_threshold(uint2 p) {
+    return float(((p.x * R2_X + p.y * R2_Y) >> 23) | 1u) * (1.0 / 512.0);
+}
+float quantize_luma_r2(float y, uint2 p) {
+    return clamp(floor(16.0 + 219.0 * y + r2_threshold(p)), 16.0, 235.0);
+}
+float2 quantize_chroma_r2(float2 uv, uint2 p) {
+    float2 t = float2(r2_threshold(p), r2_threshold(p.yx));
+    return clamp(floor(128.0 + 224.0 * uv + t), 16.0, 240.0);
+}
 
 #endif

@@ -7,7 +7,9 @@ namespace Bale.Xbox.Services;
 /// <summary>Tone-map debug switches (debug builds only).</summary>
 internal static class DebugToneMapSwitches
 {
-    private static readonly string[] Known = ["noselftest", "nostate", "nostaged", "gammachroma", "fixedpeak", "bilinearchroma"];
+    // r2dither (2026-11-26): rav1g's R2 NV12 threshold in Bale's stage instead of Bayer, for the cost A/B before it
+    // becomes the default (docs/gpu-tone-map.md). rav1g's display pass needs no key for it: its NV12 is R2 already.
+    private static readonly string[] Known = ["noselftest", "nostate", "nostaged", "gammachroma", "fixedpeak", "bilinearchroma", "r2dither"];
 
     /// <summary>The known words, comma-separated, for usage messages.</summary>
     public static string Words { get; } = string.Join(',', Known);

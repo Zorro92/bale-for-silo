@@ -147,3 +147,14 @@ float3 staged_value(int2 o) {
 #else
 #define AREA_VALUE area_value
 #endif
+// The NV12 plane passes' 8-bit quantisation: the static 8x8 Bayer threshold, or rav1g's R2 threshold in the
+// permutation built with BALE_DITHER_R2 (debug `r2dither`, 2026-11-26; gpu.rs picks the blobs at create). A
+// permutation rather than a cbuffer bit: the default blobs stay as they were, and neither dither pays for a
+// branch or for the other's arithmetic.
+#ifdef BALE_DITHER_R2
+float quantize_luma8(float y, uint2 p) { return quantize_luma_r2(y, p); }
+float2 quantize_chroma8(float2 uv, uint2 p) { return quantize_chroma_r2(uv, p); }
+#else
+float quantize_luma8(float y, uint2 p) { return quantize_luma_dithered(y, p); }
+float2 quantize_chroma8(float2 uv, uint2 p) { return quantize_chroma_dithered(uv, p); }
+#endif

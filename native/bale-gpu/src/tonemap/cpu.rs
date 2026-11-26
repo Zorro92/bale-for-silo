@@ -9,7 +9,8 @@
 //! Hable's FFmpeg default desat is 2, but explicit ABI desat=0 disables it on both curves.
 //! Output uses BT.1886 inverse EOTF (power 1/2.4): zscale t=bt709's default display-referred
 //! transfer, rather than its scene-referred camera OETF. No integer LUTs. P010 output is plainly
-//! rounded; NV12 output is ordered-dithered (static 8x8 Bayer, `quantize_luma_dithered`).
+//! rounded; NV12 output is ordered-dithered (static 8x8 Bayer, `quantize_luma_dithered`; debug
+//! `r2dither`: rav1g's R2 threshold, [`Dither::R2`]).
 use super::types::{BaleToneMapConfig, BaleToneMapFrameInfo, MAX_DOWNSCALE};
 
 pub const E_INVALIDARG: i32 = 0x80070057u32 as i32;
@@ -452,6 +453,38 @@ pub enum Method {
     Linear,
     Legacy,
 }
+/// The threshold of NV12's 8-bit quantisation (`BALE_TONEMAP_OUTPUT_NV12_DITHERED`); P010 is always
+/// plainly rounded. `Bayer` is the default; `R2` is rav1g's display-pass threshold (debug `r2dither`,
+/// 2026-11-26), so that the stage writes the codes rav1g writes for the same value. The GPU builds the
+/// plane shaders once per dither (`BALE_DITHER_R2`) and creates the stage's set.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Dither {
+    /// Static 8x8 Bayer at the output pixel; Cr on the mirrored index ([`bayer8`]).
+    #[default]
+    Bayer,
+    /// The R2 sequence at the output sample; Cr at the transposed sample ([`r2_threshold`]).
+    R2,
+}
+impl Dither {
+    /// The luma threshold `t` of `floor(v + t)` at output pixel (x, row).
+    pub fn luma_threshold(self, x: u32, row: u32) -> f32 {
+        match self {
+            Self::Bayer => dither_threshold(bayer8(x, row)),
+            Self::R2 => r2_threshold(x, row),
+        }
+    }
+    /// The Cb and Cr thresholds at chroma sample (x, row) of the half-size plane: Bayer mirrors the
+    /// index for Cr (63 - index), R2 transposes the position (rav1g's `threshold(uint2(p.y, p.x))`).
+    pub fn chroma_thresholds(self, x: u32, row: u32) -> [f32; 2] {
+        match self {
+            Self::Bayer => {
+                let index = bayer8(x, row);
+                [dither_threshold(index), dither_threshold(63 - index)]
+            }
+            Self::R2 => [r2_threshold(x, row), r2_threshold(row, x)],
+        }
+    }
+}
 /// One stage's math choices: the defaults, or the debug A/B words of `tonemap-debug`. Each word is
 /// independent; a [`Method`] alone converts to these options with the others at their defaults.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -463,6 +496,8 @@ pub struct Options {
     pub fixed_peak: bool,
     /// `bilinearchroma`: bilinear input chroma upsampling (before 2026-11-24) instead of Catmull-Rom.
     pub bilinear_chroma: bool,
+    /// `r2dither`: [`Dither::R2`], rav1g's threshold, instead of Bayer for NV12 output.
+    pub dither: Dither,
 }
 impl From<Method> for Options {
     fn from(method: Method) -> Self {
@@ -646,19 +681,40 @@ pub fn bayer8(x: u32, y: u32) -> u32 {
 pub fn dither_threshold(index: u32) -> f32 {
     (index as f32 + 0.5) / 64.0
 }
+/// rav1g's R2 lattice in 32-bit fixed point (display_pass.hlsl `R2_X`, `R2_Y`): round(2^32 / g) and
+/// round(2^32 / g^2) for the plastic number g = 1.3247..., the real root of g^3 = g + 1.
+pub const R2_X: u32 = 0xc13f_a9a9;
+pub const R2_Y: u32 = 0x91e1_0da6;
+/// The R2 level (0..256) at sample (x, y): the top 8 bits of `x * R2_X + y * R2_Y` mod 2^32, i.e.
+/// frac(x / g + y / g^2) in 8 bits (M. Roberts, "The unreasonable effectiveness of quasirandom
+/// sequences", 2018).
+pub fn r2_level(x: u32, y: u32) -> u32 {
+    x.wrapping_mul(R2_X).wrapping_add(y.wrapping_mul(R2_Y)) >> 24
+}
+/// rav1g's display-pass threshold at sample (x, y): (level + 1/2) / 256, in (0, 1) with mean 1/2.
+/// Exact in f32 (an odd multiple of 1/512), as the shader's `r2_threshold`. Luma takes it at its
+/// pixel, Cb at its chroma sample, Cr at the transposed sample ([`Dither::chroma_thresholds`]).
+pub fn r2_threshold(x: u32, y: u32) -> f32 {
+    (r2_level(x, y) as f32 + 0.5) / 256.0
+}
+/// NV12 luma quantised with threshold `t`: `floor(16 + 219 y + t)`, clamped to 16..235. Rounding is
+/// `t = 0.5`; a dither's `t` keeps every code within one of the exact value.
+pub fn quantize_luma_with(y: f32, t: f32) -> f32 {
+    (16.0 + 219.0 * y + t).floor().clamp(16.0, 235.0)
+}
+/// NV12 chroma quantised with the Cb and Cr thresholds `t`: `floor(128 + 224 c + t)`, 16..240.
+pub fn quantize_chroma_with(uv: [f32; 2], t: [f32; 2]) -> [f32; 2] {
+    std::array::from_fn(|c| (128.0 + 224.0 * uv[c] + t[c]).floor().clamp(16.0, 240.0))
+}
 /// NV12 luma with a static ordered dither (BALE_TONEMAP_OUTPUT_NV12_DITHERED); see the shader's
 /// comment in tonemap_math.hlsli for why a constant Bayer pattern. Never more than one code from
 /// the exact value (plain rounding: half a code).
 pub fn quantize_luma_dithered(y: f32, x: u32, row: u32) -> f32 {
-    (16.0 + 219.0 * y + dither_threshold(bayer8(x, row)))
-        .floor()
-        .clamp(16.0, 235.0)
+    quantize_luma_with(y, Dither::Bayer.luma_threshold(x, row))
 }
 /// NV12 chroma at chroma-plane position (x, row); Cr uses the mirrored threshold.
 pub fn quantize_chroma_dithered(uv: [f32; 2], x: u32, row: u32) -> [f32; 2] {
-    let index = bayer8(x, row);
-    let t = [dither_threshold(index), dither_threshold(63 - index)];
-    std::array::from_fn(|c| (128.0 + 224.0 * uv[c] + t[c]).floor().clamp(16.0, 240.0))
+    quantize_chroma_with(uv, Dither::Bayer.chroma_thresholds(x, row))
 }
 
 /// Tight P010 words (high 10 bits), input may include decoder alignment beyond visible size.
@@ -668,7 +724,8 @@ pub fn quantize_chroma_dithered(uv: [f32; 2], x: u32, row: u32) -> [f32; 2] {
 /// footprint centred at (2x, 2y + 0.5) that mixes the output pixels' linear RGB, then clips and
 /// encodes once. Clamp visible edges, never sample alignment padding.
 /// NV12 8-bit codes, the ABI 1 output, ordered-dithered like the shader. Current math
-/// ([`Options::default`]: the stream's metadata peak); see [`reference_with`] for the debug options.
+/// ([`Options::default`]: the stream's metadata peak, Bayer); see [`reference_with`] for the debug
+/// options (`options.dither` picks the NV12 threshold).
 pub fn reference(
     config: &BaleToneMapConfig,
     frame: &BaleToneMapFrameInfo,
@@ -728,6 +785,57 @@ fn reference_codes(
     ten_bit: bool,
     options: Options,
 ) -> Result<Vec<u16>, i32> {
+    let encoded = reference_encoded(config, frame, input, width, height, options)?;
+    let (w, h) = (encoded.width, encoded.height);
+    let mut out = vec![0; w * h * 3 / 2];
+    for y in 0..h {
+        for x in 0..w {
+            let luma = encoded.luma[y * w + x];
+            out[y * w + x] = if ten_bit {
+                quantize_luma10(luma)
+            } else {
+                quantize_luma_with(luma, options.dither.luma_threshold(x as u32, y as u32))
+            } as u16;
+        }
+    }
+    for y in 0..h / 2 {
+        for x in 0..w / 2 {
+            let uv = encoded.chroma[y * (w / 2) + x];
+            let codes = if ten_bit {
+                quantize_chroma10(uv)
+            } else {
+                quantize_chroma_with(uv, options.dither.chroma_thresholds(x as u32, y as u32))
+            };
+            for c in 0..2 {
+                out[w * h + y * w + 2 * x + c] = codes[c] as u16;
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The stage's result before its last quantisation, as the luma and chroma passes compute it: the
+/// encoded Y' of each output pixel (row-major, `width` x `height`) and the encoded [Cb, Cr] of each
+/// chroma sample (row-major, `width / 2` x `height / 2`). [`reference_with`] and
+/// [`reference_p010_with`] quantise exactly these values; a test can hold another rounding model to them.
+#[derive(Clone, Debug)]
+pub struct Encoded {
+    pub width: usize,
+    pub height: usize,
+    pub luma: Vec<f32>,
+    pub chroma: Vec<[f32; 2]>,
+}
+
+/// [`Encoded`] values of the reference for a P010 input (`options.dither` does not change them).
+pub fn reference_encoded(
+    config: &BaleToneMapConfig,
+    frame: &BaleToneMapFrameInfo,
+    input: &[u16],
+    width: u32,
+    height: u32,
+    options: impl Into<Options>,
+) -> Result<Encoded, i32> {
+    let options = options.into();
     config.validate()?;
     frame.validate()?;
     // The peak the stage puts in its cbuffer for this frame: the stream's metadata (PQ), else the
@@ -822,18 +930,14 @@ fn reference_codes(
     let value = |x: i32, y: i32| {
         values[y.clamp(0, h as i32 - 1) as usize * w + x.clamp(0, w as i32 - 1) as usize]
     };
-    let mut out = vec![0; w * h * 3 / 2];
+    let mut luma = Vec::with_capacity(w * h);
     for y in 0..h {
         for x in 0..w {
             let v = value(x as i32, y as i32);
-            let luma = if legacy { v[0] } else { encode_output(v)[0] };
-            out[y * w + x] = if ten_bit {
-                quantize_luma10(luma)
-            } else {
-                quantize_luma_dithered(luma, x as u32, y as u32)
-            } as u16;
+            luma.push(if legacy { v[0] } else { encode_output(v)[0] });
         }
     }
+    let mut chroma = Vec::with_capacity(w / 2 * (h / 2));
     for y in 0..h / 2 {
         for x in 0..w / 2 {
             let mut acc = [0.0f32; 3];
@@ -846,18 +950,15 @@ fn reference_codes(
                 }
             }
             let encoded = if legacy { acc } else { encode_output(acc) };
-            let uv = [encoded[1], encoded[2]];
-            let codes = if ten_bit {
-                quantize_chroma10(uv)
-            } else {
-                quantize_chroma_dithered(uv, x as u32, y as u32)
-            };
-            for c in 0..2 {
-                out[w * h + y * w + 2 * x + c] = codes[c] as u16;
-            }
+            chroma.push([encoded[1], encoded[2]]);
         }
     }
-    Ok(out)
+    Ok(Encoded {
+        width: w,
+        height: h,
+        luma,
+        chroma,
+    })
 }
 
 /// A smooth BT.709 SDR picture (P010 words) for dither tests: luma rises from `from` to `to`
@@ -1400,6 +1501,240 @@ mod tests {
             levels(&eight[..256 * 16]),
             levels(&plain)
         );
+    }
+    /// rav1g's display-pass threshold, transcribed on its own from rav1g's float32 model
+    /// (testing/display_pass/model.py `threshold`: wide products masked to 32 bits) and shader
+    /// (libav1/dx/shaders/display_pass.hlsl `threshold`: `mad(t8, 1/256, 0.5/256)`), not from
+    /// [`r2_level`].
+    fn rav1g_threshold(x: u32, y: u32) -> f32 {
+        let sum = u128::from(x) * 0xc13f_a9a9 + u128::from(y) * 0x91e1_0da6;
+        let t8 = ((sum & 0xffff_ffff) >> 24) as f32;
+        t8.mul_add(1.0 / 256.0, 0.5 / 256.0)
+    }
+    /// rav1g's planes: luma at the output pixel, Cb at the chroma sample, Cr at the transposed
+    /// sample (display_pass.hlsl `chroma_code`: `threshold(p)`, `threshold(uint2(p.y, p.x))`).
+    #[test]
+    fn r2_threshold_is_rav1g_s_at_every_position_and_plane() {
+        // The constants are the plastic number's lattice: round(2^32 / g), round(2^32 / g^2).
+        let g = (0..64).fold(1.3f64, |g, _| {
+            g - (g * g * g - g - 1.0) / (3.0 * g * g - 1.0)
+        });
+        assert!((g * g * g - g - 1.0).abs() < 1e-15);
+        assert_eq!(((1u64 << 32) as f64 / g).round() as u32, R2_X);
+        assert_eq!(((1u64 << 32) as f64 / (g * g)).round() as u32, R2_Y);
+        // Levels worked out by hand from rav1g's formula (Python big integers).
+        for ((x, y), level) in [
+            ((0, 0), 0),
+            ((1, 0), 193),
+            ((0, 1), 145),
+            ((1, 1), 83),
+            ((2, 3), 56),
+            ((63, 63), 117),
+            ((1919, 1079), 119),
+            ((3839, 2159), 66),
+            ((u32::MAX, u32::MAX), 172),
+            ((65536, 1), 59),
+        ] {
+            assert_eq!(r2_level(x, y), level, "({x}, {y})");
+            assert_eq!(r2_threshold(x, y), (level as f32 + 0.5) / 256.0);
+        }
+        // Every position of a 64x64 tile at the origin and at odd offsets: 1080p and 4K edges, past
+        // 16 bits, and the wrap at 2^32 (rav1g's uint arithmetic). Bit-equal, every plane.
+        let origins = [
+            (0, 0),
+            (1, 1),
+            (63, 17),
+            (1857, 1017),
+            (3777, 2097),
+            (65535, 3),
+            (1 << 31, 12345),
+            (u32::MAX - 63, u32::MAX - 63),
+            (u32::MAX - 31, 5),
+        ];
+        let mut levels = [0u32; 256];
+        for (ox, oy) in origins {
+            for dy in 0..64 {
+                for dx in 0..64 {
+                    let (x, y) = (ox.wrapping_add(dx), oy.wrapping_add(dy));
+                    let luma = Dither::R2.luma_threshold(x, y);
+                    assert_eq!(
+                        luma.to_bits(),
+                        rav1g_threshold(x, y).to_bits(),
+                        "({x}, {y})"
+                    );
+                    let [cb, cr] = Dither::R2.chroma_thresholds(x, y);
+                    assert_eq!(
+                        cb.to_bits(),
+                        rav1g_threshold(x, y).to_bits(),
+                        "Cb ({x}, {y})"
+                    );
+                    assert_eq!(
+                        cr.to_bits(),
+                        rav1g_threshold(y, x).to_bits(),
+                        "Cr ({x}, {y})"
+                    );
+                    // An odd multiple of 1/512 in (0, 1): never exactly a rounding tie.
+                    let scaled = luma * 512.0;
+                    assert!(scaled.fract() == 0.0 && scaled as u32 % 2 == 1 && luma < 1.0);
+                    if (ox, oy) == (0, 0) {
+                        levels[r2_level(x, y) as usize] += 1;
+                    }
+                }
+            }
+        }
+        // The 64x64 tile at the origin reaches every one of the 256 levels.
+        assert!(levels.iter().all(|&n| n > 0), "{levels:?}");
+        // Bayer is unchanged: the same thresholds as before the Dither type.
+        for (x, y) in [(0, 0), (1, 1), (5, 2), (7, 7), (8, 3)] {
+            let index = bayer8(x, y);
+            assert_eq!(Dither::Bayer.luma_threshold(x, y), dither_threshold(index));
+            assert_eq!(
+                Dither::Bayer.chroma_thresholds(x, y),
+                [dither_threshold(index), dither_threshold(63 - index)]
+            );
+        }
+    }
+    /// What rav1g's documentation claims for its threshold, at a 64x64 tile: a flat area keeps its
+    /// level (bias under 0.003 of a code at every fraction; measured 0.0007 at the k/256 ones), every
+    /// code is within one of the exact value, both chroma planes are unbiased, and the column means of
+    /// a slow ramp stay close to the exact value where Bayer's period-8 columns are a third of a code
+    /// off (64 rows: R2 0.05, Bayer 0.33).
+    #[test]
+    fn r2_dither_is_unbiased_on_flat_areas_and_ramp_columns() {
+        let (w, h) = (64u32, 64u32);
+        let tile = |f: &dyn Fn(u32, u32) -> f32| -> f32 {
+            (0..h)
+                .flat_map(|y| (0..w).map(move |x| (x, y)))
+                .map(|(x, y)| f(x, y))
+                .sum::<f32>()
+                / (w * h) as f32
+        };
+        for k in 1..512 {
+            for base in [16.5f32, 100.0, 233.0] {
+                let v = base + k as f32 / 512.0 + 0.0003;
+                let y = (v - 16.0) / 219.0;
+                // The exact value as the quantiser sees it (16 + 219 y rounds in f32 too).
+                let exact = 16.0 + 219.0 * y;
+                let mean = tile(&|x, row| {
+                    let code = quantize_luma_with(y, Dither::R2.luma_threshold(x, row));
+                    assert!((code - exact).abs() < 1.0, "{code} vs {exact}");
+                    code
+                });
+                assert!((mean - exact).abs() < 0.003, "v={v}: mean {mean}");
+            }
+        }
+        for uv in [[0.013f32, -0.021], [0.1, 0.2], [-0.3, 0.004], [0.45, -0.45]] {
+            for c in 0..2 {
+                let exact = 128.0 + 224.0 * uv[c];
+                let mean = tile(&|x, row| {
+                    quantize_chroma_with(uv, Dither::R2.chroma_thresholds(x, row))[c]
+                });
+                assert!(
+                    (mean - exact).abs() < 0.003,
+                    "{uv:?} plane {c}: {mean} vs {exact}"
+                );
+            }
+        }
+        // A slow ramp, 0.40..0.44 of the luma range across 512 columns, 64 rows.
+        let worst_column = |dither: Dither| {
+            (0..512u32)
+                .map(|x| {
+                    let y = 0.40 + 0.04 * x as f32 / 511.0;
+                    let exact = 16.0 + 219.0 * y;
+                    let sum: f32 = (0..64)
+                        .map(|row| quantize_luma_with(y, dither.luma_threshold(x, row)))
+                        .sum();
+                    (sum / 64.0 - exact).abs()
+                })
+                .fold(0.0f32, f32::max)
+        };
+        let (r2, bayer) = (worst_column(Dither::R2), worst_column(Dither::Bayer));
+        assert!(
+            r2 < 0.06 && bayer > 0.3,
+            "column bias R2 {r2}, Bayer {bayer}"
+        );
+    }
+    /// The reference quantises its encoded values with rav1g's rounding model when `dither` is R2,
+    /// code for code: luma `floor(16 + 219 Y' + t(x, y))`, Cb `floor(128 + 224 Cb + t(i, j))`, Cr with
+    /// `t(j, i)`, clamped. Bayer keeps its codes, and the two dithers are never more than a code apart.
+    #[test]
+    fn r2_reference_rounds_the_encoded_values_like_rav1g() {
+        let r2 = Options {
+            dither: Dither::R2,
+            ..Options::default()
+        };
+        let sdr = BaleToneMapFrameInfo {
+            transfer: 1,
+            primaries: 1,
+            matrix: 1,
+            ..frame()
+        };
+        for (curve, f, reserved, input, (iw, ih)) in [
+            (
+                1,
+                frame(),
+                [0; 4],
+                test_pattern(16, 8, true, false),
+                (16, 8),
+            ),
+            (
+                2,
+                frame(),
+                [32, 16, 0, 0],
+                test_pattern(32, 16, true, false),
+                (32, 16),
+            ),
+            (1, sdr, [0; 4], sdr_ramp(16, 8, 60.0, 980.0), (16, 8)),
+            (
+                1,
+                sdr,
+                [40, 20, 0, 0],
+                sdr_ramp(40, 20, 300.0, 700.0),
+                (40, 20),
+            ),
+        ] {
+            let c = BaleToneMapConfig {
+                reserved,
+                ..config(curve)
+            };
+            let encoded = reference_encoded(&c, &f, &input, iw, ih, r2).unwrap();
+            let (w, h) = (encoded.width, encoded.height);
+            let codes = reference_with(&c, &f, &input, iw, ih, r2).unwrap();
+            for y in 0..h {
+                for x in 0..w {
+                    let t = rav1g_threshold(x as u32, y as u32);
+                    let model = (16.0 + 219.0 * encoded.luma[y * w + x] + t)
+                        .floor()
+                        .clamp(16.0, 235.0);
+                    assert_eq!(f32::from(codes[y * w + x]), model, "luma ({x}, {y})");
+                }
+            }
+            for y in 0..h / 2 {
+                for x in 0..w / 2 {
+                    let [cb, cr] = encoded.chroma[y * (w / 2) + x];
+                    let (tb, tr) = (
+                        rav1g_threshold(x as u32, y as u32),
+                        rav1g_threshold(y as u32, x as u32),
+                    );
+                    let model = |v: f32, t: f32| (128.0 + 224.0 * v + t).floor().clamp(16.0, 240.0);
+                    let at = w * h + y * w + 2 * x;
+                    assert_eq!(f32::from(codes[at]), model(cb, tb), "Cb ({x}, {y})");
+                    assert_eq!(f32::from(codes[at + 1]), model(cr, tr), "Cr ({x}, {y})");
+                }
+            }
+            let bayer = reference(&c, &f, &input, iw, ih).unwrap();
+            assert_eq!(
+                reference_with(&c, &f, &input, iw, ih, Options::default()).unwrap(),
+                bayer
+            );
+            assert!(codes.iter().zip(&bayer).all(|(a, b)| a.abs_diff(*b) <= 1));
+            assert!(codes != bayer, "R2 and Bayer must differ somewhere");
+            // P010 is rounded, whichever dither the stage has.
+            assert_eq!(
+                reference_p010_with(&c, &f, &input, iw, ih, r2).unwrap(),
+                reference_p010(&c, &f, &input, iw, ih).unwrap()
+            );
+        }
     }
     #[test]
     fn visible_edges_ignore_decoder_padding_and_unknown_chroma_locations_read_as_left() {
