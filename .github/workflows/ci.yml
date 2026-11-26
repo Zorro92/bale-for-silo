@@ -536,7 +536,7 @@ jobs:
               'bale_cc_seen', 'bale_cc_stats', 'bale_cc_attach', 'bale_cc_detach', 'bale_cc_destroy',
               'bale_frame_observer_create', 'bale_frame_observer_attach_engine', 'bale_frame_observer_mark', 'bale_frame_observer_drain',
               'bale_frame_observer_status', 'bale_frame_observer_video_descriptor', 'bale_frame_observer_destroy')
-            $timingExports = @('bale_tonemap_debug_timing_enable', 'bale_tonemap_debug_timing_read')
+            $timingExports = @('bale_tonemap_debug_timing_enable', 'bale_tonemap_debug_timing_read', 'bale_tonemap_debug_bench')
             if ('${{ matrix.debug_server }}' -eq 'true') { $required += $timingExports }
             # Removed with the staging upload, CPU grain, debug repack and upload/zero-copy probes.
             $removed = @('bale_grain_cpu_apply', 'bale_repack_abi_version', 'bale_repack_gpu_create',

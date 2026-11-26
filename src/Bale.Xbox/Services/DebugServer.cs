@@ -840,6 +840,30 @@ internal sealed partial class DebugServer
                     return ("200 OK", report);
                 }
 
+            case ("POST", "/tonemap-bench"):
+                {
+                    // bale_gpu-only stage GPU time per NV12 dither (Bayer, R2) on a private device (2026-11-26).
+                    // Never during playback, and not with stage timing on: its event queries would time the bench too.
+                    var framesText = query.GetValueOrDefault("frames") ?? "60";
+                    if (query.Keys.Any(key => key is not "frames")
+                        || !uint.TryParse(framesText, System.Globalization.NumberStyles.None,
+                            System.Globalization.CultureInfo.InvariantCulture, out var benchFrames)
+                        || !DebugToneMapBench.ValidFrames(benchFrames))
+                        return ("400 Bad Request", "frames: 1-240 timed applies per arm (default 60)\n");
+                    var inPlayer = false;
+                    await OnUiAsync(() =>
+                    {
+                        inPlayer = CurrentPage(out _) is PlayerPage;
+                        return string.Empty;
+                    });
+                    if (inPlayer) return ("409 Conflict", "leave the player first\n");
+                    if (DebugStageGpuTiming.Enabled) return ("409 Conflict", "turn gpu-timing off first\n");
+                    var benchReport = await Task.Run(() => DebugToneMapBench.Run(benchFrames));
+                    foreach (var line in benchReport.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                        Log.Info("debug: " + line.Trim());
+                    return ("200 OK", benchReport);
+                }
+
             case ("POST", "/fault/playback"):
                 var injected = false;
                 var playbackBody = await OnUiAsync(() =>

@@ -847,11 +847,51 @@ older playback's results.
 
 ### Bayer against R2 on the console (2026-11-26)
 
-The `stage-timing` build measures the stage whichever dither it runs: the R2 permutation is the same
-draws between the same two events, so the Stage GPU row and its `Bale stage gpu:` log windows cover it
-unchanged. The comparison is an A/B of two playbacks of the same content on the route that writes
-dithered NV12: an HDR10 or HLG stream tone-mapped on an 8-bit SDR display, or SDR larger than the display
-(the SDR downscale); not AV1, which keeps P010. Check that the open logs `player: stage 8-bit output
+The difference to measure is small: rav1g gives its dither as about 0.03 ms at 1080p and 0.1 ms at 4K,
+and Bale's R2 threshold is no more arithmetic than its Bayer one (about 6 DXBC instructions a sample
+against 16). The playback total above cannot resolve it (an upper bound that queueing dominated at
+19 to 52 ms per frame in the 2026-11-24 console check), so the `stage-timing` build has a bench that reads
+real GPU time.
+
+**1. The bench** (`tonemap-bench`, debug packages; outside the player, with `gpu-timing off`):
+
+```sh
+./scripts/bale-debug.sh home                       # leave the player first (409 in the player)
+./scripts/bale-debug.sh gpu-timing off             # 409 while stage timing is on
+./scripts/bale-debug.sh tonemap-bench              # 60 timed applies per arm; tonemap-bench 240 for more
+./scripts/bale-debug.sh tonemap-bench              # run it again: the spread between runs is the noise
+```
+
+`bale_tonemap_debug_bench` makes a private hardware D3D11 device (VIDEO_SUPPORT, like a player open's, but
+it does no video work) and times each apply with GPU timestamp queries, as the grain probe does
+(`docs/gpu-film-grain.md`, console results 2026-11-08). Timestamps crashed the console's driver only on
+Media Foundation's device, whose video decode/process command lists they also covered ("Event queries,
+not timestamps" above); this device has none. For each route that writes dithered NV12 on an 8-bit SDR
+display (4K PQ to 1080p, 4K PQ 1:1, 1080p PQ 1:1, 4K BT.709 SDR to 1080p; PQ from the self-test's
+saturated 2x2 blocks, SDR a ramp), it creates a Bayer and an R2 stage (both with the other `tonemap-debug`
+words as set, so `nostaged` or `bilinearchroma` can be benched too) and applies the same frame in turn:
+NV12 Bayer and NV12 R2 interleaved apply by apply (drift hits both alike), then P010 Bayer and P010 R2 the
+same way (each stage's constants stay put within a phase), each apply flushed and waited for (the stage
+alone on the GPU). The input is shader-readable, so apply reads it in place: the times are the stage's
+passes, without the input copy of the decoder route. P010 never dithers, so its R2 - Bayer difference is
+the measurement's own noise. A header line, then two lines per route (the format; not measured yet):
+
+```text
+  4K PQ -> 1080p (2:1, staged): NV12 Bayer m.mmm ms (p95 p.ppp, min n.nnn); NV12 R2 ...; P010 Bayer ...; P010 R2 ...;
+    R2 - Bayer (medians): NV12 +d.ddd ms; P010 +d.ddd ms (no dither: the noise); 0 disjoint; w ms wall
+```
+
+The app logs each line (`debug: ...`). Read the NV12 difference against the P010 one and against a
+second run; a difference inside them is no difference. Take it in the idle state like every reading (no
+controller or keyboard input for 15+ s before; debug-server calls are not input), the same for every run.
+About 1000 applies at the default, a few seconds; at most about 100 MiB per route (the 4K P010 input,
+both outputs, two staged intermediates at 1080p), released after each route.
+
+**2. In playback** (the same A/B through the real route, to confirm nothing else moves). The
+`stage-timing` build measures the stage whichever dither it runs (the R2 permutation is the same draws
+between the same two events), so the Stage GPU row and its `Bale stage gpu:` windows cover it unchanged.
+Use the route that writes dithered NV12: an HDR10 or HLG stream tone-mapped on an 8-bit SDR display, or
+SDR larger than the display; not AV1, which keeps P010. The open must log `player: stage 8-bit output
 requested`; with P010 output the dither never runs.
 
 ```sh
@@ -868,8 +908,5 @@ requested`; with P010 output the dither never runs.
 ```
 
 Run A and B twice each, alternately (A B A B), on the same content, start position, display mode and idle
-offset, and compare the windows' total avg/max with their end resolution. Mind the accuracy above: the
-total is an upper bound that the 2026-11-24 console check found dominated by queueing (19 to 52 ms per
-frame against a stage of a few ms), while the expected difference is about 0.03 ms at 1080p and 0.1 ms at
-4K (rav1g's dither on the console). A difference smaller than the spread between the two A runs is no
-difference; Missed frames and Stalls must stay equal.
+offset, and compare the windows' total avg/max with their end resolution. Expect no visible difference in
+the upper bound; Missed frames and Stalls must stay equal.

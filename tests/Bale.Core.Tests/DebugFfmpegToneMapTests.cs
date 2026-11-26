@@ -200,3 +200,32 @@ public sealed class DebugToneMapRav1gDisplayTests
         finally { Environment.SetEnvironmentVariable("BALE_TONEMAP_DEBUG", saved); }
     }
 }
+
+public sealed class DebugToneMapBenchTests
+{
+    [Theory]
+    [InlineData(0u, false)]
+    [InlineData(1u, true)]
+    [InlineData(60u, true)]
+    [InlineData(240u, true)]
+    [InlineData(241u, false)]
+    public void FramesStayWithinBaleGpusBound(uint frames, bool valid)
+        => Assert.Equal(valid, DebugToneMapBench.ValidFrames(frames));
+
+    [Fact]
+    public void BenchRunsOnlyOutsideThePlayerWithStageTimingOffAndIsInTheDebugScript()
+    {
+        var server = Read("DebugServer.cs.txt");
+        var route = server[server.IndexOf("case (\"POST\", \"/tonemap-bench\")", StringComparison.Ordinal)..];
+        route = route[..route.IndexOf("case (", 10, StringComparison.Ordinal)];
+        Assert.Contains("CurrentPage(out _) is PlayerPage", route);
+        Assert.Contains("if (DebugStageGpuTiming.Enabled) return (\"409 Conflict\"", route);
+        Assert.Contains("await Task.Run(() => DebugToneMapBench.Run(benchFrames))", route);
+        var script = Read("bale-debug.sh");
+        Assert.Contains("#   scripts/bale-debug.sh tonemap-bench [N]", script);
+        Assert.Contains("\"$BASE/tonemap-bench?frames=${2:-60}\"", script);
+        Assert.StartsWith("#if DEBUG_SERVER", Read("DebugToneMapBench.cs.txt"));
+    }
+
+    private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));
+}

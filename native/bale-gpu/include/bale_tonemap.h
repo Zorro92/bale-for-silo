@@ -117,6 +117,12 @@ typedef struct BaleToneMapTimingStats {
 } BaleToneMapTimingStats;
 HRESULT bale_tonemap_debug_timing_enable(uint32_t enabled); /* 0 or 1; default 0 */
 HRESULT bale_tonemap_debug_timing_read(BaleToneMapTimingStats* stats);
+/* Stage bench (Bale 2026-11-26, same feature): GPU timestamps per apply on a private hardware device (no
+   video work), a Bayer and an R2-dithered stage in turn, NV12 and P010 output, at Bale's display routes.
+   frames: timed applies per arm, 0 = 60, at most 240. Blocks for seconds; never during playback; refuses
+   while timing is enabled. Writes a UTF-8 report without NUL (truncated at a character boundary) and
+   returns its length. */
+uint32_t bale_tonemap_debug_bench(uint32_t frames, uint8_t* report, uint32_t capacity);
 
 #ifdef __cplusplus
 }

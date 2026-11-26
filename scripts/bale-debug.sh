@@ -156,6 +156,7 @@
 #   scripts/bale-debug.sh memprobe cpu|d3d11|d3d12|mixed [step=100] [max=3400] [cpu=1000]
 #                                               idle-only memory limit probe; MiB, step/max 1-4096, step<=max; GPU max>=128 (includes timing pair); cpu 0-4096, mixed only
 #   scripts/bale-debug.sh tonemap-churn [N] [control]  bale_gpu-only tone map create/apply/destroy on fresh devices, N times (default 40); control skips the tone map
+#   scripts/bale-debug.sh tonemap-bench [N]   bale_gpu stage GPU time per apply (GPU timestamps, private device): Bayer vs R2 NV12 dither, with a P010 control, at the 8-bit-display routes; N timed applies per arm (1-240, default 60); not in the player, gpu-timing off
 # Connection previews use disposable fixtures: no network, passwords sent, vault or saved-list writes.
 #   scripts/bale-debug.sh show login            preview phone Login (no live ticket)
 #   scripts/bale-debug.sh show login expired    preview the session-expired Login notice
@@ -1129,6 +1130,13 @@ case "${1:-}" in
     (( step <= max )) || memprobe_usage
     [[ "$mode" == cpu ]] || (( max >= 128 )) || memprobe_usage
     curl --fail-with-body -sS --max-time 300 -G "$BASE/memprobe" "${args[@]}"
+    ;;
+  tonemap-bench)
+    if [[ "$#" -gt 2 || ( "$#" -eq 2 && ! "$2" =~ ^[0-9]{1,3}$ ) ]]; then
+      echo 'usage: scripts/bale-debug.sh tonemap-bench [N]   (N timed applies per arm, 1-240, default 60)' >&2
+      exit 2
+    fi
+    curl --fail-with-body -sS --max-time 600 -X POST "$BASE/tonemap-bench?frames=${2:-60}"
     ;;
   tonemap-churn)
     if [[ "$#" -gt 3 || ( "$#" -ge 2 && ! "$2" =~ ^[0-9]+$ ) || ( "$#" -eq 3 && "$3" != control ) ]]; then
