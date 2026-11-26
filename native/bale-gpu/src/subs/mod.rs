@@ -3,10 +3,12 @@
 //! swap chain that a XAML `SwapChainPanel` shows above the video. This file holds the
 //! platform-independent parts (ABI types, clock, layout and atlas packing), `schedule` knows when
 //! a track's picture can change, `convert` turns SubRip and WebVTT into ASS scripts, `bitmap`
-//! queues and places image subtitles (PGS, DVD, DVB) pushed by the demuxer, and `overlay` is the
+//! queues and places image subtitles (PGS, DVD, DVB) pushed by the demuxer, `cc` decodes in-band
+//! CEA-608 closed captions (caption ABI, `bale_cc_*`) into a live track, and `overlay` is the
 //! Direct3D 11 renderer and its thread.
 
 pub mod bitmap;
+pub mod cc;
 pub mod convert;
 #[cfg(windows)]
 pub mod overlay;

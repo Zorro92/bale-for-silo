@@ -188,6 +188,22 @@ NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
 WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+## androidx Media3 (CEA-608 closed captions)
+
+`bale_gpu.dll`'s closed caption decoder (`native/bale-gpu/src/subs/cc`) ports parts of
+[androidx Media3](https://github.com/androidx/media) (commit `9c1739438bf4ee07cecaed0302b632c5f5f55990`):
+`Cea608Decoder.java` (character tables, validity and parity checks, repeated control codes, service
+tracking, pop-on alignment), `CeaUtil.java` and `UserDataReader.java` (the A/53 SEI and user data walk)
+and `ReorderingBufferQueue.java` (the PTS-ordered queue), rewritten in Rust and changed for Bale.
+Media3 is licensed under the Apache License 2.0, whose text is packaged as `Licenses/FFmpegInteropX.txt`;
+it ships no NOTICE file. `native/bale-gpu/NOTICE` records the files and changes.
+
+Copyright (C) 2016, 2017, 2018 and 2024 The Android Open Source Project
+
+The CEA-608 behaviour otherwise follows the decoder rules of the former 47 CFR 15.119 (a US federal
+regulation, public domain). FFmpeg's `ccaption_dec.c` and AetherEngine (LGPL) were read for behaviour only;
+no code was copied from them.
+
 ## libass, FreeType, FriBidi and HarfBuzz
 
 `bale_gpu.dll` statically links the subtitle renderer [libass](https://github.com/libass/libass) and

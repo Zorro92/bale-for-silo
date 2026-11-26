@@ -9,9 +9,9 @@
 //! - `{` and `}` are written as libass's `\{` and `\}` escapes, so they never open an override
 //!   block. Only SubRip's own `{\...}` blocks are passed through as overrides.
 
-mod ass_writer;
+pub(crate) mod ass_writer;
 mod srt;
-mod style;
+pub(crate) mod style;
 mod vtt;
 
 use std::borrow::Cow;

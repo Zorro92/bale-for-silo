@@ -15,3 +15,24 @@ All rights reserved.
 These files retain their BSD 2-Clause copyright notices and full licence text.
 The distribution also carries the dav1d licence as Licenses/FFmpeg/dav1d.txt.
 The surrounding Bale crate remains AGPL-3.0-only.
+
+CEA-608 closed captions
+
+Parts of src/subs/cc/cea608.rs (the character tables, the cc_valid and parity checks, the
+suppression of repeated control codes, the caption/Text/XDS service tracking and the mid-row
+space), src/subs/cc/extract.rs (the A/53 SEI and user data walk) and src/subs/cc/reorder.rs (the
+queue ordered by unique PTS that releases a late buffer at once), and the pop-on alignment in
+src/subs/cc/ass.rs, are ported from androidx Media3, commit
+9c1739438bf4ee07cecaed0302b632c5f5f55990:
+https://github.com/androidx/media
+(libraries/extractor/src/main/java/androidx/media3/extractor/text/cea/Cea608Decoder.java,
+libraries/extractor/src/main/java/androidx/media3/extractor/CeaUtil.java,
+libraries/extractor/src/main/java/androidx/media3/extractor/ts/UserDataReader.java,
+libraries/container/src/main/java/androidx/media3/container/ReorderingBufferQueue.java)
+
+Copyright (C) 2016, 2017, 2018 and 2024 The Android Open Source Project
+
+Licensed under the Apache License, Version 2.0; the full licence text ships as
+Licenses/FFmpegInteropX.txt. The ported parts were rewritten in Rust and changed for Bale (2026):
+608 caption memories instead of Media3's cue builders, a reorder depth learnt from the stream, and
+ASS output. Media3 ships no NOTICE file.
