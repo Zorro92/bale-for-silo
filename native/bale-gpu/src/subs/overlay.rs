@@ -8,12 +8,16 @@
 //! Image subtitles (`bitmap`) arrive from the demux thread into a queue in [`State`]; the render
 //! thread uploads the event that is due as textures and draws it under the libass images.
 //!
+//! Closed captions (`cc`) are a live track: [`Overlay::begin_live`] loads an empty track from the
+//! caption decoder's header, and the decoder, on the FFmpegInteropX tap's thread, queues event
+//! changes through [`LiveSink`]; the render thread adds them to the libass track as they come.
+//!
 //! Subtitle text and URLs are never logged; nothing here logs at all.
 
 use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, Weak};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -37,6 +41,7 @@ use windows::Win32::System::Threading::WaitForSingleObject;
 use windows::core::{Error, IUnknown, Interface, PCSTR, Result};
 
 use super::bitmap::{self, Event as BitmapEvent, Queue, Sink};
+use super::cc::{LiveCommand, LiveSink};
 use super::schedule::{Next, Schedule};
 use super::{
     ATLAS_START, BaleSubStats, Clock, E_FAIL, E_INVALIDARG, Layout, S_OK, Shelves, atlas_size_for,
@@ -60,6 +65,11 @@ const MAX_SLEEP: Duration = Duration::from_secs(1);
 const LEAD: Duration = Duration::from_millis(1);
 /// Upper bound for one frame-latency wait, so a swap chain nobody composites cannot hang the thread.
 const LATENCY_TIMEOUT_MS: u32 = 1000;
+/// Live caption events are kept this long after they end (a short seek back needs no reload).
+const LIVE_RETENTION_MS: i64 = 60_000;
+/// Live caption changes the render thread may fall behind by; past it the queue restarts with a
+/// clear (only a render thread stalled for a long time gets there).
+const MAX_LIVE_COMMANDS: usize = 4096;
 
 use crate::panel::ISwapChainPanelNative;
 
@@ -79,6 +89,11 @@ struct Instance {
 enum Command {
     Load(Vec<u8>),
     Clear,
+    /// An empty live caption track from `header`, fed through [`LiveSink`] as `generation`.
+    LoadLive {
+        generation: u64,
+        header: Vec<u8>,
+    },
 }
 
 /// Everything API calls and the render thread share.
@@ -104,6 +119,13 @@ struct State {
     bitmap_token: u64,
     /// Image subtitle events, filled by the demux thread through [`Sink`].
     bitmaps: Queue,
+    /// The live caption track's generation; 0 when the track is not live (another load or a
+    /// clear ends it).
+    live_generation: u64,
+    last_live_generation: u64,
+    /// Caption changes for that track not taken by the render thread yet, filled through
+    /// [`LiveSink`].
+    live: Vec<LiveCommand>,
 }
 
 struct Shared {
@@ -185,6 +207,77 @@ impl Sink for Shared {
     }
 }
 
+impl LiveSink for Shared {
+    fn live(&self, generation: u64, commands: &mut Vec<LiveCommand>) -> i32 {
+        let mut state = self.lock();
+        if let Some(hr) = state.unusable() {
+            commands.clear();
+            return hr;
+        }
+        if generation == 0 || state.live_generation != generation {
+            commands.clear();
+            return bitmap::E_NOT_FOUND;
+        }
+        for command in commands.drain(..) {
+            queue_live(&mut state.live, command);
+        }
+        if state.live.len() > MAX_LIVE_COMMANDS {
+            state.live.clear();
+            state.live.push(LiveCommand::Clear);
+        }
+        state.signal = true;
+        self.wake.notify_one();
+        S_OK
+    }
+
+    fn end_live(&self, generation: u64) {
+        let mut state = self.lock();
+        if generation != 0 && state.live_generation == generation {
+            state.live_generation = 0;
+            state.live.clear();
+            if !matches!(state.commands.back(), Some(Command::Clear)) {
+                state.commands.push_back(Command::Clear);
+            }
+            state.signal = true;
+            self.wake.notify_one();
+        }
+    }
+}
+
+/// Queues `command`, folding it into what is still queued: a clear drops everything before it, and
+/// a new end goes into the event's queued add or end.
+fn queue_live(queue: &mut Vec<LiveCommand>, command: LiveCommand) {
+    match command {
+        LiveCommand::Clear => {
+            queue.clear();
+            queue.push(LiveCommand::Clear);
+        }
+        LiveCommand::SetEnd { id, end_ms } => {
+            for queued in queue.iter_mut().rev() {
+                match queued {
+                    LiveCommand::Add {
+                        id: queued_id,
+                        end_ms: queued_end,
+                        ..
+                    }
+                    | LiveCommand::SetEnd {
+                        id: queued_id,
+                        end_ms: queued_end,
+                    } if *queued_id == id => {
+                        *queued_end = end_ms;
+                        return;
+                    }
+                    // Nothing before a clear is still on the track.
+                    LiveCommand::Clear => break,
+                    _ => {}
+                }
+            }
+            queue.push(LiveCommand::SetEnd { id, end_ms });
+        }
+        add @ LiveCommand::Add { .. } => queue.push(add),
+    }
+}
+
 impl State {
     fn unusable(&self) -> Option<i32> {
         if self.exited {
@@ -192,6 +285,12 @@ impl State {
         } else {
             self.failure
         }
+    }
+
+    /// The live caption track ends: its decoder's next changes are refused.
+    fn end_live(&mut self) {
+        self.live_generation = 0;
+        self.live.clear();
     }
 }
 
@@ -278,6 +377,9 @@ impl Overlay {
                 },
                 bitmap_token: 0,
                 bitmaps: Queue::default(),
+                live_generation: 0,
+                last_live_generation: 0,
+                live: Vec::new(),
             }),
             wake: Condvar::new(),
             done: Condvar::new(),
@@ -335,6 +437,7 @@ impl Overlay {
         let script = script.to_vec();
         let posted = self.shared.post(|state| {
             state.load_result = None;
+            state.end_live();
             state.commands.push_back(Command::Load(script));
         });
         if posted != S_OK {
@@ -366,10 +469,37 @@ impl Overlay {
 
     pub fn clear(&self) -> i32 {
         self.shared.post(|state| {
+            state.end_live();
             if !matches!(state.commands.back(), Some(Command::Clear)) {
                 state.commands.push_back(Command::Clear);
             }
         })
+    }
+
+    /// Replaces the track with an empty live caption track from `header` (an ASS script without
+    /// events, `subs::cc::header`) and returns its generation and the sink a caption decoder feeds
+    /// it through. Does not wait for the render thread; a header libass cannot read leaves no track,
+    /// and the decoder's changes are then dropped. Another load, a clear or another live track
+    /// ends this one.
+    pub fn begin_live(
+        &self,
+        header: Vec<u8>,
+    ) -> std::result::Result<(u64, Weak<dyn LiveSink>), i32> {
+        let mut generation = 0;
+        let posted = self.shared.post(|state| {
+            state.end_live();
+            state.last_live_generation += 1;
+            generation = state.last_live_generation;
+            state.live_generation = generation;
+            state
+                .commands
+                .push_back(Command::LoadLive { generation, header });
+        });
+        if posted != S_OK {
+            return Err(posted);
+        }
+        let sink: Arc<dyn LiveSink> = self.shared.clone();
+        Ok((generation, Arc::downgrade(&sink)))
     }
 
     pub fn set_clock(&self, position_ms: i64, rate: f64, playing: bool) -> i32 {
@@ -482,6 +612,9 @@ struct Work {
     clock: Clock,
     clock_stamp: Instant,
     capture: bool,
+    /// Caption changes for live track `live_generation` (0 when there is none).
+    live_generation: u64,
+    live: Vec<LiveCommand>,
     /// An API call ended the wait (or there was none); false when a timed wait ran out.
     signalled: bool,
 }
@@ -542,6 +675,8 @@ fn take_work(shared: &Shared, pace: Pace) -> Work {
         clock: state.clock,
         clock_stamp: state.clock_stamp,
         capture: std::mem::take(&mut state.capture),
+        live_generation: state.live_generation,
+        live: std::mem::take(&mut state.live),
         signalled,
     }
 }
@@ -567,6 +702,8 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
         apply_layout(session, &layout);
     }
     let mut track: Option<Track<'_>> = None;
+    // The generation of the live caption track `track` is, 0 for another track.
+    let mut live_generation = 0;
     let mut schedule = Schedule::default();
     let mut fonts: Vec<(String, Vec<u8>)> = Vec::new();
     let mut stats = BaleSubStats {
@@ -615,34 +752,49 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
         for command in work.commands {
             // The old track goes first either way: stale subtitles are worse than none.
             track = None;
+            live_generation = 0;
             schedule = Schedule::default();
             track_events = 0;
             force = true;
-            let Command::Load(script) = command else {
-                continue;
-            };
-            let result = match &session {
-                None => E_FAIL,
-                Some(session) => {
-                    for (name, bytes) in fonts.drain(..) {
-                        session.add_font(&name, &bytes);
-                    }
-                    match session.track(&script) {
-                        Some(parsed) => {
-                            track_events = parsed.events();
-                            schedule = parsed.schedule();
-                            track = Some(parsed);
-                            S_OK
+            match command {
+                Command::Clear => {}
+                Command::Load(script) => {
+                    let result = match &session {
+                        None => E_FAIL,
+                        Some(session) => {
+                            for (name, bytes) in fonts.drain(..) {
+                                session.add_font(&name, &bytes);
+                            }
+                            match session.track(&script) {
+                                Some(parsed) => {
+                                    track_events = parsed.events();
+                                    schedule = parsed.schedule();
+                                    track = Some(parsed);
+                                    S_OK
+                                }
+                                None => E_INVALIDARG,
+                            }
                         }
-                        None => E_INVALIDARG,
-                    }
+                    };
+                    stats.max_render_us = 0;
+                    // Answer the waiting caller before the font provider (re)starts below.
+                    let mut state = shared.lock();
+                    state.load_result = Some(result);
+                    shared.done.notify_all();
                 }
-            };
-            stats.max_render_us = 0;
-            // Answer the waiting caller before the font provider (re)starts below.
-            let mut state = shared.lock();
-            state.load_result = Some(result);
-            shared.done.notify_all();
+                Command::LoadLive { generation, header } => {
+                    if let Some(session) = &session {
+                        for (name, bytes) in fonts.drain(..) {
+                            session.add_font(&name, &bytes);
+                        }
+                        if let Some(parsed) = session.live_track(&header) {
+                            track = Some(parsed);
+                            live_generation = generation;
+                        }
+                    }
+                    stats.max_render_us = 0;
+                }
+            }
         }
 
         let mut now = work.clock.at(work.clock_stamp.elapsed());
@@ -653,6 +805,29 @@ fn run(shared: &Shared, mut gpu: Gpu, mut layout: Layout) {
         {
             // The sleep ended [`LEAD`] before the boundary: render the boundary's frame.
             now = now.max(at_ms);
+        }
+        // Caption changes go into the live track; libass's own change detection then decides
+        // whether the picture changed (most changes are for events still to come).
+        if live_generation != 0
+            && work.live_generation == live_generation
+            && !work.live.is_empty()
+            && let Some(live) = track.as_mut()
+        {
+            for command in work.live {
+                match command {
+                    LiveCommand::Add {
+                        id,
+                        start_ms,
+                        end_ms,
+                        text,
+                    } => live.add_event(id, start_ms, end_ms, &text),
+                    LiveCommand::SetEnd { id, end_ms } => live.set_event_end(id, end_ms),
+                    LiveCommand::Clear => live.flush_events(),
+                }
+            }
+            live.prune_events(now.saturating_sub(LIVE_RETENTION_MS));
+            track_events = live.events();
+            schedule = live.schedule();
         }
         let (visible, bound, queued, bitmap_boundary) = {
             let mut state = shared.lock();

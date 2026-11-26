@@ -28,12 +28,14 @@ struct Renderer {
 /// The public head of `ASS_Track` (ass_types.h, libass 0.17.5); the rest is never read here.
 #[repr(C)]
 struct RawTrack {
-    _n_styles: c_int,
+    n_styles: c_int,
     _max_styles: c_int,
     n_events: c_int,
     _max_events: c_int,
     _styles: *mut c_void,
     events: *mut RawEvent,
+    _style_format: *mut c_char,
+    event_format: *mut c_char,
 }
 
 /// `ASS_Event` (ass_types.h, libass 0.17.5).
@@ -42,7 +44,7 @@ struct RawEvent {
     /// `long long`, ms.
     start: i64,
     duration: i64,
-    _read_order: c_int,
+    read_order: c_int,
     _layer: c_int,
     _style: c_int,
     _name: *mut c_char,
@@ -58,6 +60,8 @@ struct RawEvent {
 #[cfg(target_pointer_width = "64")]
 const _: () = {
     assert!(std::mem::offset_of!(RawTrack, events) == 24);
+    assert!(std::mem::offset_of!(RawTrack, event_format) == 40);
+    assert!(std::mem::offset_of!(RawEvent, read_order) == 16);
     assert!(std::mem::offset_of!(RawEvent, effect) == 56);
     assert!(std::mem::offset_of!(RawEvent, text) == 64);
     assert!(size_of::<RawEvent>() == 80);
@@ -135,6 +139,18 @@ unsafe extern "C" {
         codepage: *const c_char,
     ) -> *mut RawTrack;
     fn ass_free_track(track: *mut RawTrack);
+    fn ass_new_track(library: *mut Library) -> *mut RawTrack;
+    fn ass_process_codec_private(track: *mut RawTrack, data: *const c_char, size: c_int);
+    fn ass_process_chunk(
+        track: *mut RawTrack,
+        data: *const c_char,
+        size: c_int,
+        timecode: i64,
+        duration: i64,
+    );
+    fn ass_set_check_readorder(track: *mut RawTrack, check_readorder: c_int);
+    fn ass_prune_events(track: *mut RawTrack, deadline: i64);
+    fn ass_flush_events(track: *mut RawTrack);
     fn ass_render_frame(
         renderer: *mut Renderer,
         track: *mut RawTrack,
@@ -318,6 +334,32 @@ impl Session {
         })
     }
 
+    /// An empty track with `header`'s script info and styles, for events added as they come (live
+    /// captions, `subs::cc`). `None` when libass finds no style in it (every track has libass's own
+    /// default style first).
+    pub(crate) fn live_track(&self, header: &[u8]) -> Option<Track<'_>> {
+        let size = c_int::try_from(header.len()).ok()?;
+        // SAFETY: valid library.
+        let raw = unsafe { ass_new_track(self.library) };
+        if raw.is_null() {
+            return None;
+        }
+        // Freed by its Drop on every path from here.
+        let track = Track {
+            raw,
+            _session: PhantomData,
+        };
+        // SAFETY: a live track and `size` readable bytes; libass parses a copy.
+        unsafe {
+            ass_process_codec_private(raw, header.as_ptr().cast(), size);
+            // Bale's event ids are unique: no duplicate check, so no read order bitmap either.
+            ass_set_check_readorder(raw, 0);
+        }
+        // SAFETY: a live `ASS_Track`, whose public head `RawTrack` mirrors.
+        let parsed = unsafe { (*raw).n_styles > 1 && !(*raw).event_format.is_null() };
+        parsed.then_some(track)
+    }
+
     /// Renders `track` at `now_ms` and passes every non-empty image to `each`, in drawing order;
     /// with `always` false only when libass reports a change from the previous render. The image
     /// list is only valid until the next render, so it is consumed here.
@@ -380,6 +422,48 @@ pub(crate) struct Track<'a> {
 }
 
 impl Track<'_> {
+    /// Adds one event to a live track: ReadOrder `id`, `text` the event's text field (overrides
+    /// included, no line breaks).
+    pub(crate) fn add_event(&mut self, id: i32, start_ms: i64, end_ms: i64, text: &str) {
+        // A Matroska chunk: ReadOrder, Layer, Style, Name, MarginL, MarginR, MarginV, Effect, Text.
+        let chunk = format!("{id},0,Default,,0,0,0,,{text}");
+        let Ok(size) = c_int::try_from(chunk.len()) else {
+            return;
+        };
+        let duration = end_ms.saturating_sub(start_ms).max(0);
+        // SAFETY: a live track and `size` readable bytes; libass copies the event.
+        unsafe { ass_process_chunk(self.raw, chunk.as_ptr().cast(), size, start_ms, duration) };
+    }
+
+    /// Moves the end of the live event with ReadOrder `id` (the newest if several); no event, no
+    /// change. libass reads every event's start and duration again each render.
+    pub(crate) fn set_event_end(&mut self, id: i32, end_ms: i64) {
+        // SAFETY: a live `ASS_Track`, whose public head `RawTrack` mirrors.
+        let (events, count) = unsafe { ((*self.raw).events, (*self.raw).n_events) };
+        let count = usize::try_from(count).unwrap_or(0);
+        if events.is_null() || count == 0 {
+            return;
+        }
+        // SAFETY: libass keeps `n_events` initialised events at `events`, and only this thread
+        // (the track's owner) touches them.
+        let events = unsafe { std::slice::from_raw_parts_mut(events, count) };
+        if let Some(event) = events.iter_mut().rev().find(|event| event.read_order == id) {
+            event.duration = end_ms.saturating_sub(event.start).max(0);
+        }
+    }
+
+    /// Drops every event.
+    pub(crate) fn flush_events(&mut self) {
+        // SAFETY: a live track.
+        unsafe { ass_flush_events(self.raw) };
+    }
+
+    /// Drops the events that ended before `deadline_ms`.
+    pub(crate) fn prune_events(&mut self, deadline_ms: i64) {
+        // SAFETY: a live track.
+        unsafe { ass_prune_events(self.raw, deadline_ms) };
+    }
+
     /// Number of events (dialogue lines) in the track.
     pub(crate) fn events(&self) -> u32 {
         // SAFETY: a live `ASS_Track`, whose public head `RawTrack` mirrors.

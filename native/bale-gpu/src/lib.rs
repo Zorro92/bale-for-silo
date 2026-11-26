@@ -3,7 +3,8 @@
 //! grain ([`grain`], grain ABI), the debug frame observer (`frames`), and debug loader/engine
 //! probes (`bale_gpu_*`, this file and `engine`), the subtitle overlay ([`subs`], subtitle ABI,
 //! `bale_sub_*` in this file, with the bitmap ABI `bale_sub_bitmap_*` for image subtitles), the
-//! debug libass subtitle probes (`ass`), the debug audio passthrough probe ([`audio_probe`],
+//! debug libass subtitle probes (`ass`), in-band closed captions ([`subs::cc`], caption ABI,
+//! `bale_cc_*` in this file), the debug audio passthrough probe ([`audio_probe`],
 //! `bale_gpu_audio_probe`) and the exclusive-mode audio output ([`audio_out`], audio output ABI,
 //! `bale_audio_out_*`).
 
@@ -1198,6 +1199,247 @@ pub unsafe extern "C" fn bale_sub_overlay_destroy(overlay: *mut subs::overlay::O
     // SAFETY: the caller hands back sole ownership of a handle made by `Box::into_raw`.
     let overlay = unsafe { Box::from_raw(overlay) };
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(overlay)));
+}
+
+/// Version of the caption ABI (`bale_cc_*`). The FFmpegInteropX tap (`bale_cc_push`,
+/// `bale_cc_flush`) requires 1; the app's exports are only ever added under it.
+#[unsafe(no_mangle)]
+pub extern "C" fn bale_cc_abi_version() -> u32 {
+    subs::cc::CC_ABI_VERSION
+}
+
+/// The fork's tap: one compressed packet of the playing video stream of the media source opened with
+/// `bale_cc_sink=<token>`, in decode order, on its sample (or GPU decoder feeder) thread. `codec` is
+/// 1 = H.264, 2 = HEVC, 3 = MPEG-2; `nal_length_size` 1, 2 or 4 for length-prefixed H.264/HEVC
+/// (avcC/hvcC) and 0 for Annex B and MPEG-2; `pts_100ns` the `MediaStreamSample` timeline,
+/// `INT64_MIN` when the packet has none. `data` is only read during the call. Returns quickly and
+/// never blocks: 0, `E_NOT_FOUND` when no decoder holds the token, `E_INVALIDARG` for an unknown
+/// codec or size, `E_POINTER` for null data with a length.
+///
+/// # Safety
+/// `data` must point to `len` readable bytes (or be null with 0).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_cc_push(
+    token: u64,
+    data: *const u8,
+    len: usize,
+    pts_100ns: i64,
+    codec: u32,
+    nal_length_size: u32,
+) -> i32 {
+    if data.is_null() && len != 0 {
+        return subs::E_POINTER;
+    }
+    let data: &[u8] = if len == 0 {
+        &[]
+    } else {
+        // SAFETY: the caller guarantees `len` readable bytes.
+        unsafe { std::slice::from_raw_parts(data, len) }
+    };
+    std::panic::catch_unwind(|| subs::cc::push(token, data, pts_100ns, codec, nal_length_size))
+        .unwrap_or(subs::E_UNEXPECTED)
+}
+
+/// The fork's tap: the stream was flushed (seek, stream switch, close). What the decoder held and
+/// shows is dropped. 0, or `E_NOT_FOUND` when no decoder holds the token.
+#[unsafe(no_mangle)]
+pub extern "C" fn bale_cc_flush(token: u64) -> i32 {
+    std::panic::catch_unwind(|| subs::cc::flush(token)).unwrap_or(subs::E_UNEXPECTED)
+}
+
+/// Runs `call` on the decoder behind `captions`: `E_POINTER` for null, `E_UNEXPECTED` for a panic.
+///
+/// # Safety
+/// `captions` must be null or a live handle from [`bale_cc_create`].
+unsafe fn with_captions(
+    captions: *const subs::cc::Captions,
+    call: impl FnOnce(&std::sync::Arc<subs::cc::Captions>) -> i32,
+) -> i32 {
+    if captions.is_null() {
+        return subs::E_POINTER;
+    }
+    // SAFETY: a live handle is an `Arc::into_raw` the caller still owns; this borrows it.
+    let captions = std::mem::ManuallyDrop::new(unsafe { std::sync::Arc::from_raw(captions) });
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| call(&captions)))
+        .unwrap_or(subs::E_UNEXPECTED)
+}
+
+/// Creates a caption decoder on CC1, registered under no token and attached to no overlay. Returns
+/// an HRESULT; on failure `*out` is null.
+///
+/// # Safety
+/// `out` must be null or writable for one pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_cc_create(out: *mut *const subs::cc::Captions) -> i32 {
+    if out.is_null() {
+        return subs::E_POINTER;
+    }
+    match std::panic::catch_unwind(subs::cc::Captions::new) {
+        Ok(captions) => {
+            // SAFETY: the caller guarantees writable output storage.
+            unsafe { *out = std::sync::Arc::into_raw(captions) };
+            subs::S_OK
+        }
+        Err(_) => {
+            // SAFETY: as above.
+            unsafe { *out = std::ptr::null() };
+            subs::E_UNEXPECTED
+        }
+    }
+}
+
+/// Takes the tap's packets for `token` (the media source's `bale_cc_sink`, 1..999999999) as a new
+/// stream, dropping what was decoded, seen and counted; 0 takes none. A token registered to
+/// another decoder moves here. A remount registers its new token.
+///
+/// # Safety
+/// `captions` must be null or a live handle from [`bale_cc_create`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_cc_register(captions: *const subs::cc::Captions, token: u64) -> i32 {
+    // SAFETY: forwarded contract.
+    unsafe { with_captions(captions, |captions| captions.register(token)) }
+}
+
+/// Decodes `channel` 1..=4 (CC1..CC4) from now on; `service` is the CEA-708 service number, 0 for
+/// none (`E_NOTIMPL` for 1..=63 until 708 is decoded). A change starts afresh and clears an
+/// attached overlay.
+///
+/// # Safety
+/// `captions` must be null or a live handle from [`bale_cc_create`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_cc_select(
+    captions: *const subs::cc::Captions,
+    channel: u32,
+    service: u32,
+) -> i32 {
+    // SAFETY: forwarded contract.
+    unsafe { with_captions(captions, |captions| captions.select(channel, service)) }
+}
+
+/// What the stream has carried since registration: bit 0..3 = CC1..CC4 had captions, bit 8 = A/53
+/// cc_data at all, bit 9 = CEA-708 data. 0 for a null handle.
+///
+/// # Safety
+/// `captions` must be null or a live handle from [`bale_cc_create`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_cc_seen(captions: *const subs::cc::Captions) -> u32 {
+    let mut seen = 0;
+    // SAFETY: forwarded contract.
+    unsafe {
+        with_captions(captions, |captions| {
+            seen = captions.seen();
+            subs::S_OK
+        })
+    };
+    seen
+}
+
+/// Copies the decoder's counters to `out`.
+///
+/// # Safety
+/// `captions` must be null or a live handle from [`bale_cc_create`]; `out` must be null or writable
+/// for one [`subs::cc::BaleCcStats`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_cc_stats(
+    captions: *const subs::cc::Captions,
+    out: *mut subs::cc::BaleCcStats,
+) -> i32 {
+    if out.is_null() {
+        return subs::E_POINTER;
+    }
+    // SAFETY: forwarded contract; `out` is writable (checked non-null above).
+    unsafe {
+        with_captions(captions, |captions| {
+            out.write_unaligned(captions.stats());
+            subs::S_OK
+        })
+    }
+}
+
+/// Draws the decoder's captions on `overlay` from now on: the overlay's track becomes a live caption
+/// track (replacing a loaded one) in `style` and the font family `font_name` (UTF-8, as
+/// [`bale_sub_overlay_load_text_styled`]; null is the default style), starting with the captions
+/// kept and the one shown now. `flags` 1 draws them in the appearance alone, without 608 colours,
+/// italics, underline and backgrounds. Does not wait for the render thread. Another load or clear
+/// of the overlay, or another attach, ends it.
+///
+/// # Safety
+/// `captions` and `overlay` must be null or live handles; `style` must be null or readable;
+/// `font_name` must point to `font_name_len` readable bytes (or be null with 0).
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_cc_attach(
+    captions: *const subs::cc::Captions,
+    overlay: *mut subs::overlay::Overlay,
+    style: *const subs::convert::TextStyle,
+    font_name: *const u8,
+    font_name_len: usize,
+    flags: u32,
+) -> i32 {
+    if flags & !subs::cc::ass::FLAG_PLAIN != 0 || (font_name.is_null() && font_name_len != 0) {
+        return subs::E_INVALIDARG;
+    }
+    // SAFETY: the caller guarantees `style` is null or readable; it is copied.
+    let style = unsafe { style.as_ref() }.copied();
+    let font_name = if font_name.is_null() || font_name_len == 0 {
+        None
+    } else {
+        // SAFETY: the caller guarantees `font_name_len` readable bytes.
+        Some(unsafe { std::slice::from_raw_parts(font_name, font_name_len) })
+    };
+    let options = match style {
+        Some(style) => {
+            let family = font_name.map(String::from_utf8_lossy);
+            subs::convert::ConvertOptions::styled(&style, family.as_deref())
+        }
+        None => subs::convert::ConvertOptions::default(),
+    };
+    // SAFETY: forwarded contract.
+    unsafe {
+        with_captions(captions, |captions| {
+            with_overlay(overlay, |overlay| {
+                match overlay.begin_live(subs::cc::header(&options).into_bytes()) {
+                    Ok((generation, sink)) => captions.attach(sink, generation, options, flags),
+                    Err(hr) => hr,
+                }
+            })
+        })
+    }
+}
+
+/// Stops drawing the decoder's captions and drops the overlay's live caption track if it is still
+/// this decoder's.
+///
+/// # Safety
+/// `captions` must be null or a live handle from [`bale_cc_create`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_cc_detach(captions: *const subs::cc::Captions) -> i32 {
+    // SAFETY: forwarded contract.
+    unsafe {
+        with_captions(captions, |captions| {
+            captions.detach();
+            subs::S_OK
+        })
+    }
+}
+
+/// Unregisters and detaches the decoder and releases the handle; a push already running finishes
+/// first on its own reference. Null is a no-op.
+///
+/// # Safety
+/// `captions` must be null or a handle from [`bale_cc_create`] that is not used again.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn bale_cc_destroy(captions: *const subs::cc::Captions) {
+    if captions.is_null() {
+        return;
+    }
+    // SAFETY: the caller hands back its reference from `Arc::into_raw`.
+    let captions = unsafe { std::sync::Arc::from_raw(captions) };
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        subs::cc::unregister(&captions);
+        captions.detach();
+        drop(captions);
+    }));
 }
 
 #[cfg(windows)]
