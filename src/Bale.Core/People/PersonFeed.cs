@@ -21,11 +21,17 @@ public sealed class PersonFeed(SiloApiClient api, BrowseFeed browse)
         SearchContinuation? continuation = null, bool showAudiobooks = true, CancellationToken cancellationToken = default) =>
         browse.PersonWorksPageAsync(personId, widths, filter.Type, continuation, showAudiobooks, cancellationToken);
 
-    /// <summary>Both the viewer's libraries and the person's nonzero type totals gate optional chips; failed probes retain chips.</summary>
-    public async Task<IReadOnlyList<PersonMediaFilter>> FiltersAsync(string personId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Both the viewer's libraries and the person's nonzero type totals gate optional chips; failed probes retain chips.
+    /// Audiobooks also needs <paramref name="showAudiobooks"/> (Settings › General › Show Audiobooks), without which
+    /// its type isn't probed (TvPersonDetailViewModel.kt showAudiobooksProvider).
+    /// </summary>
+    public async Task<IReadOnlyList<PersonMediaFilter>> FiltersAsync(string personId, bool showAudiobooks = true,
+        CancellationToken cancellationToken = default)
     {
         var libraryTask = LibraryTypesAsync(cancellationToken);
-        var probes = PersonMediaFilter.Choices.Where(filter => filter.Type is not null).Select(async filter =>
+        var probes = PersonMediaFilter.Choices
+            .Where(filter => filter.Type is not null && (showAudiobooks || filter != PersonMediaFilter.Audiobooks)).Select(async filter =>
         {
             try
             {

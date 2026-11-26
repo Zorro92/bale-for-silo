@@ -99,7 +99,9 @@ public sealed partial class SearchPage : Page, IRestoresFocus
         _loadingFilters = true;
         try
         {
-            var filters = SearchMediaFilter.FromTabs(await client.Browse.LoadLibraryTabsAsync());
+            // TvSearchViewModel.kt: the Audiobooks chip, like the top menu's tab, waits for Settings › General › Show Audiobooks.
+            var filters = SearchMediaFilter.FromTabs(LibraryTabs.Visible(await client.Browse.LoadLibraryTabsAsync(),
+                TopMenuSettings.ShowAudiobooks(client)));
             _filtersLoaded = true;
             if (_filters.SequenceEqual(filters))
             {

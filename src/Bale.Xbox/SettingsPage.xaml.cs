@@ -130,6 +130,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         UpdateSubtitles();
         UpdateIdentity();
         UpdatePolicy();
+        UpdateShowAudiobooks();
         var version = DeviceIdentity.Current().ClientVersion;
         RailVersion.Text = "Bale " + version;
         AppVersion.Text = version;
@@ -280,7 +281,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
                 BackgroundOpacityButton, BackgroundColorButton, PositionButton, ResetAppearanceButton,
             }.Where(item => item.Visibility == Visibility.Visible).ToArray(),
         SettingsCategory.Server => [AccountsButton],
-        _ => [ProfileSelectionButton, HomeSectionsButton],
+        _ => [ProfileSelectionButton, HomeSectionsButton, ShowAudiobooksButton],
     };
 
     private SettingsCategory CategoryOf(object sender) =>
@@ -529,6 +530,28 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         if (!OwnsSettings) return;
         _returnTarget = HomeSectionsButton;
         Frame.Navigate(typeof(HomeSectionsPage));
+    }
+
+    private void UpdateShowAudiobooks() => ShowAudiobooksValue.Text = TopMenuSettings.ShowAudiobooks(_client) ? "On" : "Off";
+
+    /// <summary>
+    /// TvSettingsScreen.kt:1130 Show Audiobooks (TvSettingsViewModel.kt onShowAudiobooksTabChanged): stored on this Xbox for
+    /// this server and profile; the top menu takes it on the way back to Home (TvMainShell.kt re-reads it per route).
+    /// </summary>
+    private void OnShowAudiobooksClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _client is not { } client || _profileId is not { } profileId) return;
+        _returnTarget = ShowAudiobooksButton;
+        if (TopMenuSettings.SetShowAudiobooks(client, profileId, !TopMenuSettings.ShowAudiobooks(client)))
+        {
+            SettingsError.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            SettingsError.Text = "Bale couldn’t save the top menu preference on this Xbox. Try again.";
+            SettingsError.Visibility = Visibility.Visible;
+        }
+        UpdateShowAudiobooks();
     }
 
     private void UpdatePolicy()

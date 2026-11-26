@@ -81,6 +81,19 @@
                 </Button>
                 <TextBlock Text="Choose which Home rows are visible and edit the order in which they appear on this Xbox." Style="{StaticResource SkylineSettingsFooterStyle}" />
               </StackPanel>
+              <!-- TvSettingsScreen.kt:1124-1137 TOP MENU, General's last group Bale has (Cards & Posters, Title Art and Theme
+                   Music come between on Android TV): the Audiobooks tab is opt-in, hidden by default even when the server has
+                   an audiobook library. A switch, shown On/Off like the other switches, stored on this Xbox (TopMenuSettings). -->
+              <StackPanel Style="{StaticResource SkylineSettingsGroupStyle}">
+                <TextBlock Text="TOP MENU" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />
+                <Button x:Name="ShowAudiobooksButton" Style="{StaticResource SkylineSettingsValueRowStyle}" Click="OnShowAudiobooksClick">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock Text="Show Audiobooks" Style="{StaticResource SkylineSettingsRowTextStyle}" />
+                    <TextBlock x:Name="ShowAudiobooksValue" Grid.Column="1" Style="{StaticResource SkylineSettingsValueTextStyle}" />
+                  </Grid>
+                </Button>
+                <TextBlock Text="Adds an Audiobooks tab to the top menu when your server has an audiobook library. Hidden by default." Style="{StaticResource SkylineSettingsFooterStyle}" />
+              </StackPanel>
               <TextBlock x:Name="SettingsError" Style="{StaticResource SkylineSettingsErrorStyle}" Visibility="Collapsed" />
             </StackPanel>
             <StackPanel x:Name="PlaybackPane" Style="{StaticResource SkylineSettingsGroupsStyle}" Visibility="Collapsed">

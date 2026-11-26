@@ -38,6 +38,15 @@ public static class LibraryTabs
             .ToList();
     }
 
+    /// <summary>
+    /// The tabs the top menu shows (TvMediaDestinations.kt visibleTvRoots): Audiobooks is opt-in, hidden unless Settings ›
+    /// General › Show Audiobooks is on (<see cref="Settings.ShowAudiobooksSetting"/>), even when an audiobook library
+    /// exists. Music, like Movies and Series, shows whenever the profile can see a library of it. Search's chips follow the
+    /// same tabs (<see cref="SearchMediaFilter.FromTabs"/>, TvSearchViewModel.kt).
+    /// </summary>
+    public static IReadOnlyList<LibraryTab> Visible(IReadOnlyList<LibraryTab> tabs, bool showAudiobooks) =>
+        tabs.Where(tab => tab.Type != LibraryTabType.Audiobooks || showAudiobooks).ToList();
+
     internal static bool Matches(LibraryTabType tab, string? libraryType)
     {
         var type = (libraryType ?? string.Empty).Trim().ToLowerInvariant();

@@ -23,6 +23,11 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     // TvTopMenuBar.kt: the first preview waits 120ms; an open library/For You panel switches at once (OnTabFocus).
     private readonly DispatcherTimer _dwell = new() { Interval = TopMenuPreviewTiming.Delay(hasOpenPanel: false) };
     private readonly List<TabView> _tabs = new();
+    // Home, every library type tab the profile can see, For You and Calendar. The bar shows them less an opt-in tab that is
+    // off (ShowRootTabs); the instances stay across a re-filter, so the selection survives it.
+    private readonly List<TabView> _rootTabs = new();
+    private bool? _audiobooksShown;
+    private bool _tabsRefiltered;
     private TabView? _selected;
     private bool _searchSelected;
     private bool _settingsReturnHome;
@@ -187,6 +192,8 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
             {
                 _settingsReturnHome = false;
                 _personalReturnToProfile = false;
+                // TvMainShell.kt re-reads Show Audiobooks on every shell route change, so a switch made in Settings shows here.
+                ShowRootTabs(TopMenuSettings.ShowAudiobooks(Session.Client));
                 if (_searchSelected || _selected != _tabs[0]) Select(_tabs[0]);
             }
             if (_librariesWithCollections is null) _ = ProbeLibraryCollectionsAsync();
@@ -210,11 +217,11 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
             AvatarPicture.Visibility = PanelPicture.Visibility = Visibility.Visible;
         }
 
-        _tabs.Clear();
-        _tabs.Add(new TabView("Home", null));
+        _rootTabs.Clear();
+        _rootTabs.Add(new TabView("Home", null));
         try
         {
-            _tabs.AddRange((await Session.Client!.Browse.LoadLibraryTabsAsync()).Select(tab => new TabView(tab.Title, tab)));
+            _rootTabs.AddRange((await Session.Client!.Browse.LoadLibraryTabsAsync()).Select(tab => new TabView(tab.Title, tab)));
         }
         catch (Exception ex)
         {
@@ -223,16 +230,33 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         }
 
         // Fixed roots after the library tabs, as TvTopMenuBar orders them.
-        _tabs.Add(new TabView("For You", null, "foryou"));
-        _tabs.Add(new TabView("Calendar", null, "calendar"));
-        Tabs.ItemsSource = _tabs.ToList();
-        Tabs.UpdateLayout();
+        _rootTabs.Add(new TabView("For You", null, "foryou"));
+        _rootTabs.Add(new TabView("Calendar", null, "calendar"));
+        _audiobooksShown = null;
+        ShowRootTabs(TopMenuSettings.ShowAudiobooks(Session.Client));
         Select(_tabs[0]);
 #if DEBUG_SERVER
         _debugNavigationLoaded = true;
 #endif
         _librariesWithCollections = null;
         _ = ProbeLibraryCollectionsAsync();
+    }
+
+    /// <summary>
+    /// visibleTvRoots (TvMediaDestinations.kt:16-24, TvMainShell.kt:327-341): the root tabs, less Audiobooks unless
+    /// Settings › General › Show Audiobooks is on (LibraryTabs.Visible). The bar is rebuilt only when that changes.
+    /// </summary>
+    private void ShowRootTabs(bool showAudiobooks)
+    {
+        if (_audiobooksShown == showAudiobooks) return;
+        _audiobooksShown = showAudiobooks;
+        var visible = LibraryTabs.Visible(_rootTabs.Select(tab => tab.LibraryTab).OfType<LibraryTab>().ToList(), showAudiobooks);
+        _tabs.Clear();
+        _tabs.AddRange(_rootTabs.Where(tab => tab.LibraryTab is null || visible.Contains(tab.LibraryTab)));
+        Tabs.ItemsSource = _tabs.ToList();
+        Tabs.UpdateLayout();
+        // A cached shell coming back from Settings may lay the new bar out only after this; RestoreFocus checks it again.
+        _tabsRefiltered = true;
     }
 
     private async Task LoadProfileSubtitleAsync()
@@ -303,6 +327,13 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
     /// <summary>The outer PageFrame owns return timing; the selected root screen owns the target.</summary>
     public void RestoreFocus()
     {
+        // A bar rebuilt while the cached shell was out of the tree has its tab buttons only once laid out (ShowRootTabs).
+        if (_tabsRefiltered)
+        {
+            _tabsRefiltered = false;
+            UpdateChecked();
+        }
+
         if (_personalReturnToProfile)
         {
             _personalReturnToProfile = false;

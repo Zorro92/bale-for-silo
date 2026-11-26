@@ -35,7 +35,9 @@ public sealed partial class ShellPage
         _collectionProbe?.Dispose();
         var probe = _collectionProbe = new CancellationTokenSource();
         var profileId = client.ProfileId;
-        var libraries = _tabs.Where(tab => tab.LibraryTab is not null).SelectMany(tab => tab.LibraryTab!.Libraries)
+        // Every library, a hidden Audiobooks tab's too (TvMainShell.kt probes its whole library list), so the tab shown
+        // later by Settings › General › Show Audiobooks finds its answer.
+        var libraries = _rootTabs.Where(tab => tab.LibraryTab is not null).SelectMany(tab => tab.LibraryTab!.Libraries)
             .DistinctBy(library => library.Id).ToList();
         if (libraries.Count == 0) return;
         var ids = new HashSet<string>(StringComparer.Ordinal);

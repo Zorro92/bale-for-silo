@@ -57,7 +57,12 @@ public sealed partial class PersonPage : Page, IBackHandler, IRestoresFocus
         _active = true;
         _entry = e.Parameter as PersonPageEntry ?? new PersonPageEntry(e.Parameter as string ?? string.Empty);
         SetFilters();
-        if (!_entry.FiltersLoaded) _ = LoadFiltersAsync();
+        if (!_entry.FiltersLoaded)
+        {
+            // TvPersonDetailViewModel.kt: audiobook works wait for Settings › General › Show Audiobooks, before the chips load.
+            _entry.ShowAudiobooks = TopMenuSettings.ShowAudiobooks(Session.Client);
+            _ = LoadFiltersAsync();
+        }
         if (_entry.Profile is null)
         {
             await LoadProfileAsync();
@@ -130,7 +135,7 @@ public sealed partial class PersonPage : Page, IBackHandler, IRestoresFocus
         if (Session.Client is not { } client) return;
         try
         {
-            var filters = await client.People.FiltersAsync(_entry.PersonId, _lifetime.Token);
+            var filters = await client.People.FiltersAsync(_entry.PersonId, TopMenuSettings.ShowAudiobooks(client), _lifetime.Token);
             if (!_active || _lifetime.IsCancellationRequested) return;
             var headerFocused = FilterButtons().Any(button => button.FocusState != FocusState.Unfocused);
             _entry.Filters = filters;
