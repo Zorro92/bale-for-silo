@@ -65,6 +65,7 @@ internal sealed unsafe partial class SubtitleOverlay : IDisposable
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_set_clock(nint overlay, long positionMs, double rate, uint playing);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_stats(nint overlay, BaleSubStats* stats);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern void bale_sub_overlay_destroy(nint overlay);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_cc_attach(nint captions, nint overlay, BaleSubTextStyle* style, byte* fontName, nuint fontNameLength, uint flags);
 
     // Guards _overlay and _inFlight. Never held across a native call: a parse on a worker must not
     // stall the UI thread's clock and layout pushes.
@@ -178,6 +179,31 @@ internal sealed unsafe partial class SubtitleOverlay : IDisposable
     /// does not unbind.
     /// </summary>
     internal int BindBitmaps(ulong token) => Call("bind bitmaps", overlay => bale_sub_overlay_bind_bitmaps(overlay, token));
+
+    /// <summary>
+    /// Draws <paramref name="captions"/>' closed captions from now on (bale_cc_attach): the track becomes a live caption
+    /// track in <paramref name="style"/> (the subtitle appearance; the converter's default without one), replacing a
+    /// loaded track, and starts with the captions the decoder kept and the one shown now. Rows stay on the 608 grid,
+    /// as on Android TV. <paramref name="plain"/> draws without 608 colours, italics, underline and backgrounds (Android
+    /// TV's look). LoadText, Clear, another attach or ClosedCaptions.Detach ends it. Does not wait for the render thread;
+    /// any thread. Caption times are the FFmpeg source's sample timeline, so the clock must be that timeline too.
+    /// </summary>
+    internal int AttachCaptions(ClosedCaptions captions, SubtitleTextStyle? style, bool plain = false)
+    {
+        byte[] font;
+        try { font = Encoding.UTF8.GetBytes(style?.FontName ?? string.Empty); }
+        catch (Exception ex) { return Failed("captions", ex); }
+        var native = style is null ? default : BaleSubTextStyle.From(style);
+        var styled = style is not null;
+        return Call("captions", overlay => captions.Call("attach", handle =>
+        {
+            // A local of the lambda, so its address can be taken (a captured one cannot).
+            var copy = native;
+            // An empty array pins to null, which the ABI allows with a zero length.
+            fixed (byte* fontName = font)
+                return bale_cc_attach(handle, overlay, styled ? &copy : null, fontName, (nuint)font.Length, plain ? 1u : 0u);
+        }));
+    }
 
     /// <summary>Source position in ms at the moment of the call; the render thread extrapolates while playing.</summary>
     internal int SetClock(long positionMs, double rate, bool playing) =>

@@ -343,6 +343,12 @@ public sealed partial class PlayerPage
                 if (!media.StageOutput8Bit && media.EngineOutput.StageOutputDepth == 8)
                     media.EngineOutput = DecideEngineOutput(attempt, media, stageNv12Dithered: false);
                 FfmpegSource.ApplySubtitleSink(config, media.SubtitleStreamIndex, media.SubtitleSinkToken);
+                // TODO(captions): in-band closed captions plug in here once the pinned wrapper has fork bale.84's caption
+                // tap (docs/closed-captions.md). For an FFmpeg mount of an H.264, HEVC or MPEG-2 stream: take a fresh token
+                // from the subtitle sink range, register the playback's ClosedCaptions under it (Register starts it afresh
+                // for the mount) and pass it with FfmpegSource.ApplyCaptionSink(config, token). ClosedCaptions.Seen then
+                // offers the CC track, and picking it calls SubtitleOverlay.AttachCaptions with the subtitle appearance, on
+                // the mount's sample timeline (_subtitleTimingOrigin as for bitmaps).
                 var engineSource = attempt.UseEngine;
 #if DEBUG_SERVER
                 engineSource |= DebugPresentEngineSwitch.Seconds > 0;

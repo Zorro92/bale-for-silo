@@ -88,6 +88,15 @@
     <None Include="../../src/Bale.Xbox/Controls/SettingsConfirmDialog.xaml.cs" Link="SettingsConfirmDialog.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/DetailPage.AutomaticAudio.cs" Link="DetailPage.AutomaticAudio.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/SystemCaptions.cs" Link="SystemCaptions.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- In-band closed captions: the wrapper compiles here; the caption ABI's Rust side and CI's export list are compared by source. -->
+    <Compile Include="../../src/Bale.Xbox/Services/ClosedCaptions.cs" Link="ClosedCaptions.cs" />
+    <None Include="../../src/Bale.Xbox/Services/ClosedCaptions.cs" Link="ClosedCaptions.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../native/bale-gpu/src/lib.rs" Link="bale_gpu_lib.rs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../native/bale-gpu/src/subs/cc/mod.rs" Link="bale_gpu_cc_mod.rs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../native/bale-gpu/src/subs/cc/ass.rs" Link="bale_gpu_cc_ass.rs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- A Linux build of bale_gpu (a release cargo build in native/bale-gpu), when there is one, under the DLL's name for ClosedCaptionsNativeTests. -->
+    <None Include="../../native/bale-gpu/target/release/libbale_gpu.so" Link="bale_gpu.dll" CopyToOutputDirectory="PreserveNewest" Visible="false"
+          Condition="Exists('$(MSBuildThisFileDirectory)../../native/bale-gpu/target/release/libbale_gpu.so')" />
     <!-- The styled text ABI's Rust side (subtitle ABI version, TextStyle), compared with SubtitleOverlay.cs. -->
     <None Include="../../native/bale-gpu/src/subs/convert/ass_writer.rs" Link="ass_writer.rs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../native/bale-gpu/src/subs/mod.rs" Link="subs_mod.rs.txt" CopyToOutputDirectory="PreserveNewest" />

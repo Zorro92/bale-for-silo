@@ -212,6 +212,18 @@ internal static class FfmpegSource
         config.FFmpegOptions["bale_subtitle_sink"] = token.ToString(CultureInfo.InvariantCulture);
     }
 
+    /// <summary>
+    /// Fork bale.84's caption tap (bale/README.md "In-band caption packet tap"): every packet of the playing H.264, HEVC
+    /// or MPEG-2 video stream goes to the closed caption decoder registered under the token (ClosedCaptions.Register,
+    /// 1..ClosedCaptions.MaxToken). A remount is a new media source and needs a new token. Not called yet: see the TODO
+    /// in PlayerPage.Media.cs.
+    /// </summary>
+    internal static void ApplyCaptionSink(MediaSourceConfig config, ulong token)
+    {
+        if (token is 0 or > ClosedCaptions.MaxToken) return;
+        config.FFmpegOptions["bale_cc_sink"] = token.ToString(CultureInfo.InvariantCulture);
+    }
+
     internal static void ApplyDecodeTuning(MediaSourceConfig config, SoftwareDecodeTuning tuning)
     {
         if (tuning.DecodeAheadFrames is { } ahead) config.FFmpegOptions["bale_decode_ahead_frames"] = ahead.ToString(CultureInfo.InvariantCulture);
