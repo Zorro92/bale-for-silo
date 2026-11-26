@@ -66,7 +66,10 @@ public sealed partial class PlayerPage
                 // Keep display requests, spinner and subtitle clocks on the normal state path.
                 UpdatePlaybackState(attempt, media);
                 var source = SourcePosition(attempt);
+#if DEBUG_SERVER
+                // The stats pane is debug-only (PlayerPage.Stats.cs).
                 RefreshStats(attempt);
+#endif
                 await ReportPositionAsync(attempt, source, paused);
                 if (!IsCurrent(attempt, media) || media.FailureQueued)
                     return ("409 Conflict", "player stopped during playback control\n");
