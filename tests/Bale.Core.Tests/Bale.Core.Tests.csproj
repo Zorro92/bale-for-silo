@@ -81,6 +81,13 @@
     <Compile Include="../../src/Bale.Xbox/Services/AppSettings.cs" Link="AppSettings.cs" />
     <None Include="../../src/Bale.Xbox/SettingsPage.xaml" Link="SettingsPage.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/SettingsPage.xaml.cs" Link="SettingsPage.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Settings › Subtitles: its sheets, the Auto callers and the console caption reader. -->
+    <None Include="../../src/Bale.Xbox/Controls/SettingsPickerSheet.xaml" Link="SettingsPickerSheet.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Controls/SettingsPickerSheet.xaml.cs" Link="SettingsPickerSheet.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Controls/SettingsConfirmDialog.xaml" Link="SettingsConfirmDialog.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Controls/SettingsConfirmDialog.xaml.cs" Link="SettingsConfirmDialog.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/DetailPage.AutomaticAudio.cs" Link="DetailPage.AutomaticAudio.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/SystemCaptions.cs" Link="SystemCaptions.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugVideoMediaType.cs" Link="DebugVideoMediaType.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugVideoColour.cs" Link="DebugVideoColour.cs" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugMediaAttributes.cs" Link="DebugMediaAttributes.cs" />

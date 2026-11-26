@@ -1,7 +1,7 @@
 namespace Bale.Core.Settings;
 
 // screens/settings/TvSettingsScreen.kt: preserve the official order even when an entire
-// unsupported pane is omitted. Playback carries auto-play; Subtitles waits; Diagnostics is separate.
+// unsupported pane is omitted. Diagnostics is separate.
 public enum SettingsCategory { General, Playback, Subtitles, Diagnostics, Server }
 
 public readonly record struct SettingsSupport(
@@ -10,8 +10,8 @@ public readonly record struct SettingsSupport(
     bool DiagnosticsEligible = false,
     bool PlaybackAvailable = false)
 {
-    /// <summary>What Bale ships today: the Playback pane (auto-play) without Subtitles or Diagnostics.</summary>
-    public static SettingsSupport Bale { get; } = new(PlaybackAvailable: true);
+    /// <summary>What Bale ships today: the Playback and Subtitles panes (the player is always there), not Diagnostics.</summary>
+    public static SettingsSupport Bale { get; } = new(PlayerAvailable: true, PlaybackAvailable: true);
 }
 
 public static class SettingsCategories

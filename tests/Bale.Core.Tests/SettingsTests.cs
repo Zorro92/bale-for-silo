@@ -37,11 +37,13 @@ public class SettingsTests
     }
 
     [Fact]
-    public void BaleShowsPlaybackForAutoPlayButNotSubtitles()
+    public void BaleShowsPlaybackAndSubtitlesButNotDiagnostics()
     {
-        Assert.Equal([SettingsCategory.General, SettingsCategory.Playback, SettingsCategory.Server], SettingsCategories.Visible(SettingsSupport.Bale));
+        Assert.Equal([SettingsCategory.General, SettingsCategory.Playback, SettingsCategory.Subtitles, SettingsCategory.Server],
+            SettingsCategories.Visible(SettingsSupport.Bale));
         Assert.Equal(SettingsCategory.Playback, SettingsCategories.Resolve(SettingsCategory.Playback, SettingsSupport.Bale));
-        Assert.Equal(SettingsCategory.General, SettingsCategories.Resolve(SettingsCategory.Subtitles, SettingsSupport.Bale));
+        Assert.Equal(SettingsCategory.Subtitles, SettingsCategories.Resolve(SettingsCategory.Subtitles, SettingsSupport.Bale));
+        Assert.Equal(SettingsCategory.General, SettingsCategories.Resolve(SettingsCategory.Diagnostics, SettingsSupport.Bale));
     }
 
     [Fact]

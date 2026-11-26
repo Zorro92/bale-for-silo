@@ -44,6 +44,7 @@ public sealed class SiloClient : IDisposable
         People = new People.PersonFeed(_connection.Api, Browse);
         Requests = new Requests.RequestsFeed(_connection.Api, _time);
         Settings = new Settings.PlaybackSettingsFeed(_connection.Api, () => ProfileId is { Length: > 0 } profile ? Server.AbsoluteUri + "\n" + profile : null);
+        SubtitleSettings = new Settings.SubtitleSettingsFeed(_connection.Api, () => ProfileId is { Length: > 0 } profile ? Server.AbsoluteUri + "\n" + profile : null);
         Playback = new Playback.PlaybackClient(_connection.Api, _connection.RequestAdapter, _connection.Http, server, CapturePlaybackScope,
             CaptureHeadersAsync)
         {
@@ -73,6 +74,9 @@ public sealed class SiloClient : IDisposable
 
     /// <summary>Playback settings (auto-play) for the active profile on this device.</summary>
     public Settings.PlaybackSettingsFeed Settings { get; }
+
+    /// <summary>Settings › Subtitles: the profile's subtitle preferences and appearance (Detail's and Up Next's Auto read them).</summary>
+    public Settings.SubtitleSettingsFeed SubtitleSettings { get; }
 
     public Playback.PlaybackClient Playback { get; }
 
@@ -114,6 +118,7 @@ public sealed class SiloClient : IDisposable
         Requests.Reset();
         LibraryBrowse.RatingSources.Reset();
         Settings.Reset();
+        SubtitleSettings.Reset();
         RefreshToken = refreshToken;
         AccessToken = accessToken;
         _accessTokenExpiresAt = accessTokenExpiresAt ?? _time.GetUtcNow();
@@ -131,6 +136,7 @@ public sealed class SiloClient : IDisposable
         Requests.Reset();
         LibraryBrowse.RatingSources.Reset();
         Settings.Reset();
+        SubtitleSettings.Reset();
         AccessToken = tokens.AccessToken;
         RefreshToken = tokens.RefreshToken;
         _accessTokenExpiresAt = ExpiresAt(tokens.ExpiresIn);
@@ -210,6 +216,7 @@ public sealed class SiloClient : IDisposable
         Requests.Reset();
         LibraryBrowse.RatingSources.Reset();
         Settings.Reset();
+        SubtitleSettings.Reset();
         ProfileId = profileId;
         ProfileToken = null;
     }
@@ -239,6 +246,7 @@ public sealed class SiloClient : IDisposable
         Requests.Reset();
         LibraryBrowse.RatingSources.Reset();
         Settings.Reset();
+        SubtitleSettings.Reset();
         ProfileId = profileId;
         ProfileToken = proof;
         return true;
@@ -272,6 +280,7 @@ public sealed class SiloClient : IDisposable
         Requests.Reset();
         LibraryBrowse.RatingSources.Reset();
         Settings.Reset();
+        SubtitleSettings.Reset();
         AccessToken = null;
         RefreshToken = null;
         _accessTokenExpiresAt = null;

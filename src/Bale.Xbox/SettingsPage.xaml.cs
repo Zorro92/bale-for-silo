@@ -30,6 +30,11 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     private CancellationTokenSource? _autoPlayRead;
     // Show Next Up / Skip Intros / Skip Credits (TvSettingsScreen.kt:1395, :1403, :1408): one write at a time, as for Auto-Play.
     private bool _episodeBusy;
+    // Settings › Subtitles (TvSettingsScreen.kt TvSubtitleSettingsPane): one write at a time; the open sheet's picker and row.
+    private bool _subtitleBusy;
+    private CancellationTokenSource? _subtitleRead;
+    private SubtitlePicker? _subtitlePicker;
+    private Control? _subtitlePickerRow;
     // Settings → Playback → Streaming / Connection (TvSettingsScreen.kt, TvConnectionSettings.kt).
     private readonly DispatcherTimer _connectionClock = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _testing;
@@ -83,6 +88,9 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         Unloaded += (_, _) => DetachFocusBoundary();
         SignOutPrompt.SignOutRequested += OnSignOutRequested;
         SignOutPrompt.Dismissed += () => RestoreFocus();
+        OptionSheet.Chosen += OnSubtitleOptionChosen;
+        ResetPrompt.Confirmed += OnResetAppearanceConfirmed;
+        ResetPrompt.Dismissed += () => FocusTarget(ResetAppearanceButton);
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -100,9 +108,11 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         var visible = SettingsCategories.Visible(SettingsSupport.Bale);
         GeneralCategory.Visibility = visible.Contains(SettingsCategory.General) ? Visibility.Visible : Visibility.Collapsed;
         PlaybackCategory.Visibility = visible.Contains(SettingsCategory.Playback) ? Visibility.Visible : Visibility.Collapsed;
+        SubtitlesCategory.Visibility = visible.Contains(SettingsCategory.Subtitles) ? Visibility.Visible : Visibility.Collapsed;
         ServerCategory.Visibility = visible.Contains(SettingsCategory.Server) ? Visibility.Visible : Visibility.Collapsed;
         SelectCategory(SettingsCategories.Resolve(_category, SettingsSupport.Bale));
         PlaybackError.Visibility = Visibility.Collapsed;
+        SubtitlesError.Visibility = Visibility.Collapsed;
         _notice = null;
         _resetFailed = false;
         ConnectionSpeedService.Changed -= OnConnectionChanged;
@@ -113,6 +123,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         UpdateDav1dGpuFilmGrain();
         UpdateSdrBrightness();
         UpdateConnection();
+        UpdateSubtitles();
         UpdateIdentity();
         UpdatePolicy();
         var version = DeviceIdentity.Current().ClientVersion;
@@ -124,6 +135,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             ServerAddress.Text = client.Server.GetLeftPart(UriPartial.Path);
             _ = ReadAccountAsync(client, _profileId);
             _ = ReadAutoPlayAsync(client, _profileId);
+            _ = ReadSubtitlesAsync(client, _profileId);
             _ = ReadConnectionAsync(client, _profileId);
         }
     }
@@ -133,9 +145,13 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         _active = false;
         _accountRead?.Cancel();
         _autoPlayRead?.Cancel();
+        _subtitleRead?.Cancel();
         ConnectionSpeedService.Changed -= OnConnectionChanged;
         _connectionClock.Stop();
         DetachFocusBoundary();
+        OptionSheet.Hide();
+        _subtitlePicker = null;
+        ResetPrompt.Hide();
         ProfilePicker.Visibility = Visibility.Collapsed;
         BufferingPicker.Visibility = Visibility.Collapsed;
         NextUpPicker.Visibility = Visibility.Collapsed;
@@ -152,6 +168,8 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         VisualStateManager.GoToState(ServerCategory, "ServerIcon", false);
         PlaybackCategory.ApplyTemplate();
         VisualStateManager.GoToState(PlaybackCategory, "PlaybackIcon", false);
+        SubtitlesCategory.ApplyTemplate();
+        VisualStateManager.GoToState(SubtitlesCategory, "SubtitlesIcon", false);
         DetachFocusBoundary();
         _focusRoot = Window.Current.Content;
         if (_focusRoot is not null) _focusRoot.GettingFocus += OnGettingFocus;
@@ -200,16 +218,21 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         _category = category;
         var general = category == SettingsCategory.General;
         var playback = category == SettingsCategory.Playback;
+        var subtitles = category == SettingsCategory.Subtitles;
         var server = category == SettingsCategory.Server;
         GeneralCategory.IsChecked = general;
         PlaybackCategory.IsChecked = playback;
+        SubtitlesCategory.IsChecked = subtitles;
         ServerCategory.IsChecked = server;
         GeneralPane.Visibility = GeneralHeaderIcon.Visibility = general ? Visibility.Visible : Visibility.Collapsed;
         PlaybackPane.Visibility = PlaybackHeaderIcon.Visibility = playback ? Visibility.Visible : Visibility.Collapsed;
+        SubtitlesPane.Visibility = SubtitlesHeaderIcon.Visibility = subtitles ? Visibility.Visible : Visibility.Collapsed;
         ServerPane.Visibility = ServerHeaderIcon.Visibility = server ? Visibility.Visible : Visibility.Collapsed;
         (PaneTitle.Text, PaneBlurb.Text) = category switch
         {
             SettingsCategory.Playback => ("Playback", "Streaming quality and episode behavior for this Xbox."),
+            // TvSettingsCategory.Subtitles: settings_subtitles, settings_blurb_subtitles.
+            SettingsCategory.Subtitles => ("Subtitles", "Language, behavior, and on-screen appearance."),
             SettingsCategory.Server => ("Server", "The Silo server this Xbox is connected to."),
             _ => ("General", "App-level options for this Xbox."),
         };
@@ -219,6 +242,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     private ToggleButton SelectedCategory => _category switch
     {
         SettingsCategory.Playback => PlaybackCategory,
+        SettingsCategory.Subtitles => SubtitlesCategory,
         SettingsCategory.Server => ServerCategory,
         _ => GeneralCategory,
     };
@@ -230,6 +254,12 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
                 BufferingQualityButton, LearnedLimitButton, ConnectionSpeedButton, AutoPlayButton, AutoPlayProfileButton,
                 NextUpButton, IntroSkipButton, SkipCreditsButton, SkipCreditsProfileButton, SdrBrightnessButton, Dav1dGpuFilmGrainButton,
             }.Where(item => item.Visibility == Visibility.Visible).ToArray(),
+        SettingsCategory.Subtitles => new Control[]
+            {
+                SubtitleLanguageButton, SubtitleModeButton, ForcedSubtitlesButton, MatchDeviceButton, DeviceOnlyButton, FontSizeButton,
+                FontFamilyButton, FontColorButton, TextOpacityButton, TextOutlineButton, OutlineColorButton, BackgroundStyleButton,
+                BackgroundOpacityButton, BackgroundColorButton, PositionButton, ResetAppearanceButton,
+            }.Where(item => item.Visibility == Visibility.Visible).ToArray(),
         SettingsCategory.Server => [AccountsButton],
         _ => [ProfileSelectionButton, HomeSectionsButton],
     };
@@ -237,6 +267,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     private SettingsCategory CategoryOf(object sender) =>
         ReferenceEquals(sender, ServerCategory) ? SettingsCategory.Server
         : ReferenceEquals(sender, PlaybackCategory) ? SettingsCategory.Playback
+        : ReferenceEquals(sender, SubtitlesCategory) ? SettingsCategory.Subtitles
         : SettingsCategory.General;
 
     private void OnCategoryFocus(object sender, RoutedEventArgs e)
@@ -265,6 +296,12 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     public bool OnBack()
     {
         if (SignOutPrompt.Dismiss()) return true;
+        if (ResetPrompt.Dismiss()) return true;
+        if (OptionSheet.IsOpen)
+        {
+            CloseSubtitlePicker();
+            return true;
+        }
         if (BufferingPicker.Visibility == Visibility.Visible)
         {
             CloseBufferingPicker();
@@ -298,7 +335,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
 
     private void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (!OwnsSettings || SignOutPrompt.IsOpen) return;
+        if (!OwnsSettings || SignOutPrompt.IsOpen || ResetPrompt.IsOpen) return;
         if (SettingsInput.IsBack(e.Key))
         {
             _backPressed = true;
@@ -308,6 +345,16 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         var vertical = SettingsInput.VerticalStep(e.Key);
         var horizontal = SettingsInput.HorizontalStep(e.Key);
         var focused = FocusManager.GetFocusedElement() as DependencyObject;
+        if (OptionSheet.IsOpen)
+        {
+            if (vertical != 0)
+            {
+                OptionSheet.Move(vertical);
+                e.Handled = true;
+            }
+            if (horizontal != 0 || e.Key == VirtualKey.Tab) e.Handled = true;
+            return;
+        }
         if (BufferingPicker.Visibility == Visibility.Visible)
         {
             if (vertical != 0)
@@ -368,7 +415,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         }
         if (SettingsInput.IsWithin(focused, CategoryRail))
         {
-            Control[] rail = new Control[] { AccountButton, GeneralCategory, PlaybackCategory, ServerCategory, SignOutButton }
+            Control[] rail = new Control[] { AccountButton, GeneralCategory, PlaybackCategory, SubtitlesCategory, ServerCategory, SignOutButton }
                 .Where(item => item.Visibility == Visibility.Visible).ToArray();
             if (vertical != 0)
             {
@@ -379,7 +426,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             else if (horizontal != 0)
             {
                 if (horizontal > 0 && (SettingsInput.IsWithin(focused, GeneralCategory) || SettingsInput.IsWithin(focused, PlaybackCategory)
-                    || SettingsInput.IsWithin(focused, ServerCategory))) FocusTarget(DetailActions[0]);
+                    || SettingsInput.IsWithin(focused, SubtitlesCategory) || SettingsInput.IsWithin(focused, ServerCategory))) FocusTarget(DetailActions[0]);
                 e.Handled = true;
             }
         }
@@ -399,7 +446,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
 
     private void OnPreviewKeyUp(object sender, KeyRoutedEventArgs e)
     {
-        if (SignOutPrompt.IsOpen || !SettingsInput.IsBack(e.Key)) return;
+        if (SignOutPrompt.IsOpen || ResetPrompt.IsOpen || !SettingsInput.IsBack(e.Key)) return;
         e.Handled = true;
         if (!_backPressed) return;
         _backPressed = false;
@@ -410,7 +457,11 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     {
         try
         {
-            if (OwnsSettings && BufferingPicker.Visibility == Visibility.Visible && !SettingsInput.IsWithin(e.NewFocusedElement, BufferingPicker))
+            if (OwnsSettings && OptionSheet.IsOpen && !SettingsInput.IsWithin(e.NewFocusedElement, OptionSheet))
+            {
+                if (OptionSheet.FocusTarget is not { } option || !e.TrySetNewFocusedElement(option)) e.Cancel = true;
+            }
+            else if (OwnsSettings && BufferingPicker.Visibility == Visibility.Visible && !SettingsInput.IsWithin(e.NewFocusedElement, BufferingPicker))
             {
                 if (!e.TrySetNewFocusedElement(SelectedBufferingOption)) e.Cancel = true;
             }
@@ -820,6 +871,219 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         }
     }
 
+    /// <summary>Settings › Subtitles reads its values when Settings opens (one effective read for every row).</summary>
+    private async Task ReadSubtitlesAsync(SiloClient client, string? profileId)
+    {
+        _subtitleRead?.Cancel();
+        using var read = new CancellationTokenSource();
+        _subtitleRead = read;
+        try
+        {
+            await client.SubtitleSettings.RefreshAsync(read.Token);
+            if (OwnsSettings && !read.IsCancellationRequested && client.ProfileId == profileId) UpdateSubtitles();
+        }
+        catch (OperationCanceledException) when (read.IsCancellationRequested) { }
+        catch (Exception error) { Log.Error("Settings subtitles read", error); }
+        finally { if (ReferenceEquals(_subtitleRead, read)) _subtitleRead = null; }
+    }
+
+    /// <summary>
+    /// TvSubtitleSettingsPane: every row's value, Text Opacity only where the server's contract knows it (focus moves up
+    /// when it leaves), the scope footer, and the preview in the effective appearance.
+    /// </summary>
+    private void UpdateSubtitles()
+    {
+        var settings = _client?.SubtitleSettings;
+        var preferences = settings?.Preferences ?? new SubtitlePreferences();
+        var setting = settings?.Appearance ?? new SubtitleAppearanceSetting(SubtitleAppearance.Default);
+        var appearance = setting.Value;
+        SubtitleLanguageValue.Text = SettingsLanguages.SubtitleLabel(preferences.Language);
+        SubtitleModeValue.Text = SubtitleModes.Label(preferences.Mode);
+        ForcedSubtitlesValue.Text = OnOff(preferences.ShowForced);
+        MatchDeviceValue.Text = OnOff(settings?.MatchDevice == true);
+        DeviceOnlyValue.Text = OnOff(setting.DeviceOverride);
+        FontSizeValue.Text = SubtitleAppearanceOptions.FontSizeLabel(appearance.FontSize);
+        FontFamilyValue.Text = SubtitleAppearanceOptions.FontFamilyLabel(appearance.FontFamily);
+        FontColorValue.Text = SubtitleAppearanceOptions.FontColorLabel(appearance.FontColor);
+        TextOpacityValue.Text = SubtitleAppearanceOptions.Percent(appearance.TextOpacity);
+        if (!setting.TextOpacitySupported && SettingsInput.IsWithin(FocusManager.GetFocusedElement() as DependencyObject, TextOpacityButton))
+            FocusTarget(FontColorButton);
+        TextOpacityButton.Visibility = Shown(setting.TextOpacitySupported);
+        TextOutlineValue.Text = OnOff(appearance.TextOutline);
+        OutlineColorValue.Text = SubtitleAppearanceOptions.OutlineColorLabel(appearance.TextOutlineColor);
+        BackgroundStyleValue.Text = SubtitleAppearanceOptions.BackgroundStyleLabel(appearance.BackgroundStyle);
+        BackgroundOpacityValue.Text = SubtitleAppearanceOptions.Percent(appearance.BackgroundOpacity);
+        BackgroundColorValue.Text = SubtitleAppearanceOptions.BackgroundColorLabel(appearance.BackgroundColor);
+        PositionValue.Text = SubtitleAppearanceOptions.PositionLabel(appearance.Position);
+        // settings_subtitles_scopeDevice / settings_subtitles_scopeProfile.
+        SubtitleScopeFooter.Text = setting.DeviceOverride ? "Only on this device." : "Saved for this profile on all devices.";
+        UpdateSubtitlePreview(settings?.EffectiveAppearance(settings.MatchDevice ? SystemCaptions.Read() : null) ?? appearance);
+    }
+
+    private static string OnOff(bool on) => on ? "On" : "Off";
+
+    /// <summary>
+    /// TvSettingsSubtitlePreview: the sample in the effective appearance's font (the faces the player draws with), size,
+    /// colour and text opacity; a four-way 1px outline for Text Outline or the Outline style; the box only for Box; at the
+    /// top, or 7 (18 for Lower Third) above the bottom.
+    /// </summary>
+    private void UpdateSubtitlePreview(SubtitleAppearance appearance)
+    {
+        var safe = appearance.Sanitized();
+        var family = new Windows.UI.Xaml.Media.FontFamily(SubtitleTextStyle.FontNameOf(safe.FontFamily));
+        var size = SubtitleAppearanceOptions.PreviewFontSize(safe.FontSize);
+        var outline = safe.TextOutline || safe.BackgroundStyle == SubtitleBackgroundStyle.Outline;
+        var outlineBrush = PreviewBrush(safe.TextOutlineColor, 100);
+        foreach (var text in new[] { SubtitlePreviewOutline1, SubtitlePreviewOutline2, SubtitlePreviewOutline3, SubtitlePreviewOutline4 })
+        {
+            text.FontFamily = family;
+            text.FontSize = size;
+            text.Foreground = outlineBrush;
+            text.Visibility = Shown(outline);
+        }
+        SubtitlePreviewText.FontFamily = family;
+        SubtitlePreviewText.FontSize = size;
+        SubtitlePreviewText.Foreground = PreviewBrush(safe.FontColor, safe.TextOpacity);
+        var box = safe.BackgroundStyle == SubtitleBackgroundStyle.Box;
+        SubtitlePreviewBox.Background = box ? PreviewBrush(safe.BackgroundColor, safe.BackgroundOpacity) : null;
+        SubtitlePreviewBox.Padding = box ? new Thickness(7, 2, 7, 2) : new Thickness(0);
+        SubtitlePreviewBox.VerticalAlignment = safe.Position == SubtitlePosition.Top ? VerticalAlignment.Top : VerticalAlignment.Bottom;
+        SubtitlePreviewBox.Margin = new Thickness(0, 0, 0, safe.Position == SubtitlePosition.LowerThird ? 18 : 7);
+    }
+
+    /// <summary>A #rrggbb colour at a percentage opacity (a literal: code never reads XAML resources).</summary>
+    private static SolidColorBrush PreviewBrush(string hex, int opacityPercent)
+    {
+        var (red, green, blue) = SubtitleAppearance.Rgb(hex);
+        return new SolidColorBrush(Windows.UI.Color.FromArgb((byte)(Math.Clamp(opacityPercent, 0, 100) * 255 / 100), red, green, blue));
+    }
+
+    /// <summary>A picker row (its Tag names the SubtitlePicker): its sheet, the checked row focused (TvSettingsPickerSheet).</summary>
+    private void OnSubtitlePickerClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _client is not { } client || sender is not Control row
+            || !Enum.TryParse<SubtitlePicker>(row.Tag as string, out var picker)) return;
+        _returnTarget = row;
+        _subtitlePicker = picker;
+        _subtitlePickerRow = row;
+        var settings = client.SubtitleSettings;
+        OptionSheet.Show(SubtitleSettingsPickers.Build(picker, settings.Preferences, settings.LanguageSuggestions, settings.Appearance.Value));
+    }
+
+    private void CloseSubtitlePicker()
+    {
+        OptionSheet.Hide();
+        _subtitlePicker = null;
+        if (_subtitlePickerRow is { } row) FocusTarget(row);
+    }
+
+    /// <summary>
+    /// A chosen row: Language and Behavior write the profile's value (onSubtitleLanguageChanged / onSubtitleModeChanged);
+    /// an appearance row saves the whole appearance, the profile's or this Xbox's own (editAppearance).
+    /// </summary>
+    private async void OnSubtitleOptionChosen(string id)
+    {
+        if (!OwnsSettings || _client is not { } client || _subtitlePicker is not { } picker) return;
+        CloseSubtitlePicker();
+        var settings = client.SubtitleSettings;
+        if (picker == SubtitlePicker.Language)
+            await ChangeSubtitleSettingAsync(client, "the subtitle language", () => settings.SetLanguageAsync(id));
+        else if (picker == SubtitlePicker.Behavior)
+        {
+            if (SubtitleModes.FromWire(id) is { } mode) await ChangeSubtitleSettingAsync(client, "the subtitle behavior", () => settings.SetModeAsync(mode));
+        }
+        else if (SubtitleSettingsPickers.Apply(picker, id, settings.Appearance.Value) is { } next)
+            await ChangeSubtitleSettingAsync(client, "the subtitle appearance", () => settings.SetAppearanceAsync(next));
+    }
+
+    /// <summary>TvSettingsScreen.kt SettingsToggleRow: Show Forced Subtitles is the profile's (onShowForcedSubtitlesChanged).</summary>
+    private async void OnForcedSubtitlesClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _client is not { } client) return;
+        _returnTarget = ForcedSubtitlesButton;
+        var settings = client.SubtitleSettings;
+        await ChangeSubtitleSettingAsync(client, "Show Forced Subtitles", () => settings.SetShowForcedAsync(!settings.Preferences.ShowForced));
+    }
+
+    /// <summary>Use Device Settings: this Xbox only (setSubtitleMatchesDevice is a local write), for this server and profile.</summary>
+    private void OnMatchDeviceClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _client is not { } client) return;
+        _returnTarget = MatchDeviceButton;
+        var settings = client.SubtitleSettings;
+        if (settings.SetMatchDevice(!settings.MatchDevice)) SubtitlesError.Visibility = Visibility.Collapsed;
+        else
+        {
+            SubtitlesError.Text = "Bale couldn’t save Use Device Settings on this Xbox. Try again.";
+            SubtitlesError.Visibility = Visibility.Visible;
+        }
+        UpdateSubtitles();
+    }
+
+    /// <summary>Only on This Device: on keeps a copy for this Xbox; off deletes it and goes back to the profile's.</summary>
+    private async void OnDeviceOnlyClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _client is not { } client) return;
+        _returnTarget = DeviceOnlyButton;
+        var settings = client.SubtitleSettings;
+        await ChangeSubtitleSettingAsync(client, "Only on This Device",
+            () => settings.SetAppearanceOnlyOnThisDeviceAsync(!settings.Appearance.DeviceOverride));
+    }
+
+    private async void OnTextOutlineClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings || _client is not { } client) return;
+        _returnTarget = TextOutlineButton;
+        var settings = client.SubtitleSettings;
+        var appearance = settings.Appearance.Value;
+        await ChangeSubtitleSettingAsync(client, "the subtitle appearance",
+            () => settings.SetAppearanceAsync(appearance with { TextOutline = !appearance.TextOutline }));
+    }
+
+    /// <summary>TvSettingsConfirmDialog: settings_subtitles_resetTitle / _resetMessage / _resetConfirm.</summary>
+    private void OnResetAppearanceClick(object sender, RoutedEventArgs e)
+    {
+        if (!OwnsSettings) return;
+        _returnTarget = ResetAppearanceButton;
+        ResetPrompt.Show("Reset subtitle appearance?", "This restores every subtitle appearance option to its default.", "Reset");
+    }
+
+    /// <summary>resetSubtitleAppearance: the contract default, saved where edits go (the profile's, or this Xbox's own).</summary>
+    private async void OnResetAppearanceConfirmed()
+    {
+        if (!OwnsSettings || _client is not { } client) return;
+        FocusTarget(ResetAppearanceButton);
+        await ChangeSubtitleSettingAsync(client, "the subtitle appearance", () => client.SubtitleSettings.SetAppearanceAsync(SubtitleAppearance.Default));
+    }
+
+    private async Task ChangeSubtitleSettingAsync(SiloClient client, string name, Func<Task> change)
+    {
+        if (_subtitleBusy) return;
+        _subtitleBusy = true;
+        // A read that started before this write must not land after it with the old value.
+        _subtitleRead?.Cancel();
+        var profileId = _profileId;
+        try
+        {
+            await change();
+            if (OwnsSettings && client.ProfileId == profileId) SubtitlesError.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception error)
+        {
+            Log.Error("Settings subtitles write", error);
+            if (OwnsSettings && client.ProfileId == profileId)
+            {
+                SubtitlesError.Text = "Bale couldn’t save " + name + " on the server. Try again.";
+                SubtitlesError.Visibility = Visibility.Visible;
+            }
+        }
+        finally
+        {
+            _subtitleBusy = false;
+            if (OwnsSettings && client.ProfileId == profileId) UpdateSubtitles();
+        }
+    }
+
     /// <summary>
     /// Settings reads the connection when Playback settings opens, after a network change while it is open (via
     /// <see cref="ConnectionSpeedService.Changed"/>), and after Reset and Test speed (buffering-quality design,
@@ -991,7 +1255,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     private void OnSignOutFocus(object sender, RoutedEventArgs e)
     {
         // TvSettingsScreen.kt hides the category selection while the bottom rail action owns focus.
-        GeneralCategory.IsChecked = PlaybackCategory.IsChecked = ServerCategory.IsChecked = false;
+        GeneralCategory.IsChecked = PlaybackCategory.IsChecked = SubtitlesCategory.IsChecked = ServerCategory.IsChecked = false;
     }
 
     private void OnSignOutClick(object sender, RoutedEventArgs e)

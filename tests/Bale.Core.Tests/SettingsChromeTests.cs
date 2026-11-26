@@ -36,7 +36,8 @@ public class SettingsChromeTests
         Assert.Equal("{StaticResource SkylinePrimary}", Attribute(Named(category, "FocusedFill"), "Background"));
         var focused = Named(category, "Focused");
         Assert.Equal("1", StateValue(focused, "FocusedFill.Opacity"));
-        foreach (var target in new[] { "Title.Foreground", "Description.Foreground", "GeneralGlyph.Fill", "ServerGlyph.Fill" })
+        foreach (var target in new[] { "Title.Foreground", "Description.Foreground", "GeneralGlyph.Fill", "PlaybackGlyph.Fill", "SubtitlesGlyph.Fill",
+            "ServerGlyph.Fill" })
             Assert.Equal("Black", StateValue(focused, target));
         Assert.DoesNotContain(focused.Descendants(Ui + "Setter"), setter =>
             ((string?)setter.Attribute("Target"))?.Contains("Scale", StringComparison.Ordinal) == true);

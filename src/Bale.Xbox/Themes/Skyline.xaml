@@ -1988,6 +1988,10 @@
     <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="services:SurfaceShadow.Elevation" Value="30" />
   </Style>
+  <!-- TvDialog.kt's default 470dp card (TvSettingsConfirmDialog, e.g. Reset subtitle appearance?). -->
+  <Style x:Key="SkylineDialogCardStyle" TargetType="Grid" BasedOn="{StaticResource SkylineSignOutDialogCardStyle}">
+    <Setter Property="Width" Value="470" />
+  </Style>
   <Style x:Key="SkylineDialogShadowMaskStyle" TargetType="Rectangle">
     <Setter Property="RadiusX" Value="22" /><Setter Property="RadiusY" Value="22" />
     <Setter Property="Fill" Value="Black" />
@@ -3884,6 +3888,8 @@
             <Grid Width="24" Height="24">
               <Path x:Name="GeneralGlyph" Fill="White" Data="M19.43,12.98 C19.47,12.66 19.5,12.34 19.5,12 C19.5,11.66 19.47,11.34 19.43,11.02 L21.54,9.37 L19.54,5.91 L17.05,6.91 C16.54,6.52 15.98,6.19 15.37,5.94 L15,3 H9 L8.63,5.94 C8.02,6.19 7.46,6.52 6.95,6.91 L4.46,5.91 L2.46,9.37 L4.57,11.02 C4.53,11.34 4.5,11.66 4.5,12 C4.5,12.34 4.53,12.66 4.57,12.98 L2.46,14.63 L4.46,18.09 L6.95,17.09 C7.46,17.48 8.02,17.81 8.63,18.06 L9,21 H15 L15.37,18.06 C15.98,17.81 16.54,17.48 17.05,17.09 L19.54,18.09 L21.54,14.63 Z M12,15.5 C10.07,15.5 8.5,13.93 8.5,12 C8.5,10.07 10.07,8.5 12,8.5 C13.93,8.5 15.5,10.07 15.5,12 C15.5,13.93 13.93,15.5 12,15.5 Z" />
               <Path x:Name="PlaybackGlyph" Fill="White" Visibility="Collapsed" Data="M20,4 H4 C2.9,4 2,4.9 2,6 V18 C2,19.1 2.9,20 4,20 H20 C21.1,20 22,19.1 22,18 V6 C22,4.9 21.1,4 20,4 Z M20,18 H4 V6 H20 Z M9.5,16.5 V7.5 L16.5,12 Z" />
+              <!-- TvSettingsCategory.Subtitles: Icons.Outlined.ClosedCaption. -->
+              <Path x:Name="SubtitlesGlyph" Fill="White" Visibility="Collapsed" Data="M19,4 H5 C3.89,4 3,4.9 3,6 V18 C3,19.1 3.89,20 5,20 H19 C20.1,20 21,19.1 21,18 V6 C21,4.9 20.1,4 19,4 Z M19,18 H5 V6 H19 V18 Z M7,15 H10 C10.55,15 11,14.55 11,14 V13 H9.5 V13.5 H7.5 V10.5 H9.5 V11 H11 V10 C11,9.45 10.55,9 10,9 H7 C6.45,9 6,9.45 6,10 V14 C6,14.55 6.45,15 7,15 Z M14,15 H17 C17.55,15 18,14.55 18,14 V13 H16.5 V13.5 H14.5 V10.5 H16.5 V11 H18 V10 C18,9.45 17.55,9 17,9 H14 C13.45,9 13,9.45 13,10 V14 C13,14.55 13.45,15 14,15 Z" />
               <Path x:Name="ServerGlyph" Fill="White" Visibility="Collapsed" Data="M20,3 H4 C2.9,3 2,3.9 2,5 V9 C2,10.1 2.9,11 4,11 H20 C21.1,11 22,10.1 22,9 V5 C22,3.9 21.1,3 20,3 Z M20,9 H4 V5 H20 Z M6,6 H8 V8 H6 Z M20,13 H4 C2.9,13 2,13.9 2,15 V19 C2,20.1 2.9,21 4,21 H20 C21.1,21 22,20.1 22,19 V15 C22,13.9 21.1,13 20,13 Z M20,19 H4 V15 H20 Z M6,16 H8 V18 H6 Z" />
             </Grid>
           </Viewbox>
@@ -3904,6 +3910,7 @@
             <VisualState x:Name="Focused"><VisualState.Setters>
               <Setter Target="FocusedFill.Opacity" Value="1" /><Setter Target="Title.Foreground" Value="Black" /><Setter Target="Description.Foreground" Value="Black" />
               <Setter Target="GeneralGlyph.Fill" Value="Black" /><Setter Target="ServerGlyph.Fill" Value="Black" />
+              <Setter Target="PlaybackGlyph.Fill" Value="Black" /><Setter Target="SubtitlesGlyph.Fill" Value="Black" />
             </VisualState.Setters></VisualState>
             <VisualState x:Name="PointerFocused" /><VisualState x:Name="Unfocused" />
           </VisualStateGroup>
@@ -3911,6 +3918,7 @@
             <VisualState x:Name="GeneralIcon" />
             <VisualState x:Name="PlaybackIcon"><VisualState.Setters><Setter Target="GeneralGlyph.Visibility" Value="Collapsed" /><Setter Target="PlaybackGlyph.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
             <VisualState x:Name="ServerIcon"><VisualState.Setters><Setter Target="GeneralGlyph.Visibility" Value="Collapsed" /><Setter Target="ServerGlyph.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="SubtitlesIcon"><VisualState.Setters><Setter Target="GeneralGlyph.Visibility" Value="Collapsed" /><Setter Target="SubtitlesGlyph.Visibility" Value="Visible" /></VisualState.Setters></VisualState>
           </VisualStateGroup>
         </VisualStateManager.VisualStateGroups>
       </Grid>
@@ -4004,6 +4012,55 @@
   </Style>
   <Style x:Key="SkylineSettingsAddressStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineSettingsInfoValueStyle}"><Setter Property="TextWrapping" Value="Wrap" /><Setter Property="MaxLines" Value="3" /></Style>
   <Style x:Key="SkylineSettingsErrorStyle" TargetType="TextBlock" BasedOn="{StaticResource SkylineSettingsFooterStyle}"><Setter Property="Foreground" Value="{StaticResource SkylineError}" /></Style>
+  <!-- TvSettingsScreen.kt SettingsActionRow(destructive = true): a row-height action, red at rest and red on the focused
+       platter (DestructiveRed / DestructiveRedOnPlatter), with no chevron. -->
+  <Style x:Key="SkylineSettingsDestructiveRowStyle" TargetType="Button">
+    <Setter Property="Height" Value="38" /><Setter Property="MaxWidth" Value="540" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Center" /><Setter Property="Padding" Value="12,0" />
+    <Setter Property="Background" Value="{StaticResource SkylineSettingsRowFill}" /><Setter Property="Foreground" Value="{StaticResource SkylineSettingsDestructive}" />
+    <Setter Property="BorderBrush" Value="{StaticResource SkylineSettingsRowBorder}" /><Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="7" /><Setter Property="UseSystemFocusVisuals" Value="False" />
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+      <Border x:Name="Row" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+              CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}">
+        <ContentPresenter x:Name="Content" Content="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Center" />
+        <VisualStateManager.VisualStateGroups>
+          <VisualStateGroup x:Name="CommonStates"><VisualState x:Name="Normal" /><VisualState x:Name="PointerOver" /><VisualState x:Name="Pressed" />
+            <VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="Row.Opacity" Value="0.4" /></VisualState.Setters></VisualState>
+          </VisualStateGroup>
+          <VisualStateGroup x:Name="FocusStates">
+            <VisualState x:Name="Focused"><VisualState.Setters><Setter Target="Row.Background" Value="{StaticResource SkylinePrimary}" /><Setter Target="Row.BorderBrush" Value="Transparent" /><Setter Target="Content.Foreground" Value="{StaticResource SkylineSettingsDestructiveFocused}" /></VisualState.Setters></VisualState>
+            <VisualState x:Name="PointerFocused" /><VisualState x:Name="Unfocused" />
+          </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+      </Border>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+  <!-- TvSettingsScreen.kt SettingsNestedGroup: rows inset 14dp (top 2dp) on a white 2.5% panel, 1dp white 7% border, 10dp
+       radius, 6dp padding and 6dp between rows. -->
+  <Style x:Key="SkylineSettingsNestedGroupStyle" TargetType="Border">
+    <Setter Property="Margin" Value="14,2,0,0" /><Setter Property="Padding" Value="6" /><Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Background" Value="#06FFFFFF" /><Setter Property="BorderBrush" Value="#12FFFFFF" /><Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style x:Key="SkylineSettingsNestedRowsStyle" TargetType="StackPanel"><Setter Property="Spacing" Value="6" /></Style>
+  <!-- TvSettingsSubtitlePreview: a 76dp card (7dp of it below the 9dp-radius #55575A to #101113 gradient), 12/7dp padding.
+       The sample's font, size, colours, box and position follow the effective appearance from code. -->
+  <Style x:Key="SkylineSettingsSubtitlePreviewStyle" TargetType="Border">
+    <Setter Property="Height" Value="69" /><Setter Property="Margin" Value="0,0,0,7" /><Setter Property="MaxWidth" Value="540" />
+    <Setter Property="CornerRadius" Value="9" /><Setter Property="Padding" Value="12,7" />
+    <Setter Property="Background">
+      <Setter.Value>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF55575A" Offset="0" /><GradientStop Color="#FF101113" Offset="1" /></LinearGradientBrush>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="SkylineSettingsSubtitlePreviewBoxStyle" TargetType="Border">
+    <Setter Property="CornerRadius" Value="3" /><Setter Property="HorizontalAlignment" Value="Center" /><Setter Property="VerticalAlignment" Value="Bottom" />
+  </Style>
+  <Style x:Key="SkylineSettingsSubtitlePreviewTextStyle" TargetType="TextBlock">
+    <Setter Property="FontWeight" Value="SemiBold" /><Setter Property="TextWrapping" Value="NoWrap" /><Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
   <!-- TvSettingsPickerSheet: a centered 380dp card, selected option/check circle, Back to close. -->
   <Style x:Key="SkylineSettingsPickerCardStyle" TargetType="Border">
     <Setter Property="Width" Value="380" /><Setter Property="MaxHeight" Value="460" /><Setter Property="CornerRadius" Value="15" />

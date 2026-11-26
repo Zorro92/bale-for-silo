@@ -163,22 +163,22 @@ public sealed partial class PlayerPage
 
     /// <summary>
     /// DetailPage.AutomaticAudio.cs's policy for a start no Detail page chose: settings language, then the active
-    /// profile's language and subtitle settings. A failed profile read still starts, on the device/English fallback.
+    /// profile's language; the subtitle settings as the server resolves them (what Settings › Subtitles writes), else
+    /// the profile's own fields. A failed read still starts, on the device/English fallback.
     /// </summary>
     private static async Task<PlaybackSelection> NextEpisodeSelectionAsync(Attempt attempt, ItemDetail detail)
     {
         string? language = null;
         SubtitleAutoContext? subtitles = null;
-        try
+        if (attempt.Client.ProfileId is { } profileId)
         {
-            if (attempt.Client.ProfileId is { } profileId
-                && (await attempt.Client.GetProfilesAsync()).FirstOrDefault(item => item.Id == profileId) is { } profile)
-            {
-                language = profile.Language;
-                subtitles = new(profile.SubtitleLanguage, profile.SubtitleMode, profile.ShowForcedSubtitles ?? true);
-            }
+            var preferences = attempt.Client.SubtitleSettings.ReadPreferencesAsync();
+            Bale.Core.Api.Models.Profile? profile = null;
+            try { profile = (await attempt.Client.GetProfilesAsync()).FirstOrDefault(item => item.Id == profileId); }
+            catch (Exception ex) { LogFailure("up next track policy", ex); }
+            language = profile?.Language;
+            subtitles = Bale.Core.Settings.SubtitlePreferences.AutoContextFor(await preferences, profile);
         }
-        catch (Exception ex) { LogFailure("up next track policy", ex); }
         var selection = PlaybackLaunchTracks.ForAuto(detail,
             PlaybackAudioSelection.EffectivePreferredAudioLanguage(AppSettings.AudioLanguage, language),
             XboxAudioCapabilities.Current, subtitles);
