@@ -2940,13 +2940,15 @@ excepted (owner, 2026-11-26): on the rav1g route the tone map is the route's own
 downscale rav1g's display pass (`Rav1gRouteDecision.DownscaleStage`, `rav1g_downscale`, since route.rs keeps AV1
 off the console downscale), and with depth 8 rav1g's display pass writes ordered-dithered NV12 itself, after grain
 and tone map (rav1g 0.7.0-alpha.1+, pinned 0.8.0-alpha.1; the fork's BaleRav1g.h maps the key into the pass's depth).
-Its threshold is R2 quasirandom rather than bale_gpu's 8x8 Bayer; the owner accepted that, so there is no parity
-work. A rav1g mount without a stage (the source fits the display, no tone map) keeps its direct output at the
-source depth, and the engine's B8G8R8A8/R10G10B10A2 target follows the display as for any codec.
+Its threshold is R2 quasirandom, and since 2026-11-26 bale_gpu's stage dithers with the same R2 threshold by default
+(owner), so both routes write the same 8-bit codes for the same value. A rav1g mount without a stage (the source
+fits the display, no tone map) keeps its direct output at the source depth, and the engine's B8G8R8A8/R10G10B10A2
+target follows the display as for any codec.
 `FfmpegSource.ApplyStageOutputDepth` then sets the fork key `bale_tonemap_output_depth=8` (beside
 `bale_tonemap_output_width/height`; unset keeps P010), the stage writes ordered-dithered NV12 in the same pass
-(half the stage's output frame memory, one rounding at full precision; static 8x8 Bayer, or rav1g's R2 threshold
-under debug `tonemap-debug r2dither`, 2026-11-26; docs/gpu-tone-map.md), and the engine
+(half the stage's output frame memory, one rounding at full precision; rav1g's R2 threshold since 2026-11-26, after a
+console bench found it no slower than the static 8x8 Bayer it replaced, which debug `tonemap-debug bayerdither` still
+selects; docs/gpu-tone-map.md), and the engine
 decision reads `frames=nv12 target=bgra reason=console stage writes dithered NV12 (SDR 8-bit display)`.
 `FfmpegVideoOutputGuard` (and on the rav1g route `Rav1gOutputCheck`, Rust `output_verdict`'s `nv12_requested`)
 accepts that NV12 only with the tone-map mark, and still accepts marked P010.

@@ -1,19 +1,22 @@
 //! Debug-package stage bench (Cargo feature stage-timing, 2026-11-26): the stage's GPU time per apply
 //! with each NV12 dither, so the console can compare Bayer against rav1g's R2 (docs/gpu-tone-map.md
-//! "Bayer against R2 on the console"). In playback the stage's event-query total is an upper bound
-//! that queueing dominates (19 to 52 ms per frame on the console, 2026-11-24, against a stage of a few
-//! ms), while a dither costs about 0.03 to 0.1 ms.
+//! "Bayer against R2 on the console"). Its console run (2026-11-26) found no cost, and R2 became the
+//! default; the bench still compares the two, Bayer through debug `bayerdither`, with the same report.
+//! In playback the stage's event-query total is an upper bound that queueing dominates (19 to 52 ms per
+//! frame on the console, 2026-11-24, against a stage of a few ms), while a dither costs about 0.03 to
+//! 0.1 ms.
 //!
 //! So this runs the stage alone on a private hardware D3D11 device and times each apply with GPU
 //! timestamps, as the grain probe times its shader (`grain::probe`, console results 2026-11-08).
 //! Timestamps crashed the console's driver only on Media Foundation's device, whose video command
-//! lists they also covered (timing_gpu.rs); this device does no video work. Per case a Bayer and an
-//! R2 stage (with the other BALE_TONEMAP_DEBUG words as set) apply the same frame in turn, to NV12 and
-//! then to P010: P010 never dithers, so its R2 - Bayer difference is the measurement's own noise. The input
-//! is shader-readable, so apply reads it in place and the time is the stage's passes only (no input
-//! copy). Each apply is flushed and waited for: the times are of a stage that has the GPU to itself.
-//! Never during playback (the app refuses it there); stage timing must be off (it would add its event
-//! queries and submissions to the bench's stages).
+//! lists they also covered (timing_gpu.rs); this device does no video work. Per case a Bayer
+//! (`bayerdither`) and an R2 (default) stage, both with the other BALE_TONEMAP_DEBUG words as set,
+//! apply the same frame in turn, to NV12 and then to P010: P010 never dithers, so its R2 - Bayer
+//! difference is the measurement's own noise. The input is shader-readable, so apply reads it in
+//! place and the time is the stage's passes only (no input copy). Each apply is flushed and waited
+//! for: the times are of a stage that has the GPU to itself. Never during playback (the app refuses
+//! it there); stage timing must be off (it would add its event queries and submissions to the
+//! bench's stages).
 use super::{cpu, gpu::ToneMapGpu, types::*};
 use crate::grain::gpu::{texture, texture_desc};
 use std::fmt::Write as _;
@@ -73,7 +76,8 @@ const CASES: [Case; 4] = [
     },
 ];
 
-/// (stage, output) per arm: stage 0 is Bayer, 1 is R2; output 0 is NV12, 1 is P010.
+/// (stage, output) per arm: stage 0 is Bayer (`bayerdither`), 1 is R2 (the default); output 0 is
+/// NV12, 1 is P010. The order and labels are the report's since the first console run (2026-11-26).
 const ARMS: [(usize, usize, &str); 4] = [
     (0, 0, "NV12 Bayer"),
     (1, 0, "NV12 R2"),
@@ -341,16 +345,17 @@ fn run_on(
     words: &str,
     report: &mut String,
 ) {
-    // The other words apply to both stages; the dither is the bench's.
+    // The other words apply to both stages; the dither is the bench's: R2 is the default, Bayer takes
+    // `bayerdither`.
     let others: Vec<&str> = words
         .split([',', ' '])
-        .filter(|w| !w.is_empty() && *w != "r2dither")
+        .filter(|w| !w.is_empty() && *w != "bayerdither")
         .collect();
-    let bayer = others.join(",");
-    let r2 = others
+    let r2 = others.join(",");
+    let bayer = others
         .iter()
         .copied()
-        .chain(["r2dither"])
+        .chain(["bayerdither"])
         .collect::<Vec<_>>()
         .join(",");
     let _ = writeln!(
@@ -359,7 +364,7 @@ fn run_on(
          video work), {frames} timed applies per arm after {warmup} warm-up, Bayer and R2 interleaved \
          (NV12, then the P010 control), input read in place; other tonemap-debug words: {}",
         device.level.0,
-        if bayer.is_empty() { "none" } else { &bayer }
+        if r2.is_empty() { "none" } else { &r2 }
     );
     for case in cases {
         if let Err(error) = bench_case(device, case, frames, warmup, [&bayer, &r2], report) {
@@ -552,7 +557,7 @@ mod tests {
     }
 
     /// The bench on WARP at small sizes: every case reports all four arms and both differences, and
-    /// keeps the other debug words for both stages.
+    /// keeps the other debug words for both stages (the dither word is the bench's own).
     #[test]
     fn warp_bench_reports_every_arm() {
         let device = BenchDevice::create(D3D_DRIVER_TYPE_WARP).unwrap();
@@ -577,10 +582,10 @@ mod tests {
             },
         ];
         let mut report = String::new();
-        run_on(&device, &cases, 3, 1, "nostaged,r2dither", &mut report);
+        run_on(&device, &cases, 3, 1, "nostaged,bayerdither", &mut report);
         println!("{report}");
         assert!(
-            report.contains("other tonemap-debug words: nostaged"),
+            report.contains("other tonemap-debug words: nostaged\n"),
             "{report}"
         );
         assert!(!report.contains("FAILS"), "{report}");

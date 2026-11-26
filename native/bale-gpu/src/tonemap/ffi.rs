@@ -32,9 +32,9 @@ pub extern "C" fn bale_tonemap_abi_version() -> u32 {
 /// depth from the output texture's format. DOWNSCALE: the config may name a larger visible
 /// source size in `reserved[0..2]`, area-downscaled in display-linear light. INPUT_NV12: the input
 /// may be NV12. SDR709: BT.709 SDR sources are accepted (scale only, no tone curve or gamut change).
-/// NV12_DITHERED: NV12 output is ordered-dithered to 8 bits (static 8x8 Bayer; debug `r2dither`:
-/// rav1g's R2 threshold), so a caller may ask for 8-bit stage output on an 8-bit display without
-/// banding (Bale's `bale_tonemap_output_depth`).
+/// NV12_DITHERED: NV12 output is ordered-dithered to 8 bits (rav1g's R2 threshold since 2026-11-26,
+/// the codes rav1g's display pass writes; debug `bayerdither`: static 8x8 Bayer), so a caller may ask
+/// for 8-bit stage output on an 8-bit display without banding (Bale's `bale_tonemap_output_depth`).
 /// Bit 64 is retired (2026-11-24) and never set: decoder arrays are always copied first.
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_tonemap_output_formats() -> u32 {

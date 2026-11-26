@@ -15,13 +15,16 @@ use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::core::{HRESULT, Interface, Result};
 
 const VS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/fullscreen_vs.cso"));
+// The plane shaders built without BALE_DITHER_R2 quantise NV12 with the static 8x8 Bayer threshold:
+// the stage's default from 2026-11-19, now only under debug `bayerdither`.
 const Y_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_luma_ps.cso"));
 const UV_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_chroma_ps.cso"));
 const AREA_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_area_ps.cso"));
 const Y_STAGED_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_luma_staged_ps.cso"));
 const UV_STAGED_PS: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_chroma_staged_ps.cso"));
-// The same plane shaders built with BALE_DITHER_R2: rav1g's NV12 threshold (debug `r2dither`).
+// The same plane shaders built with BALE_DITHER_R2: rav1g's NV12 threshold, the stage's default set
+// since 2026-11-26.
 const Y_R2_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_luma_r2_ps.cso"));
 const UV_R2_PS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/tonemap_chroma_r2_ps.cso"));
 const Y_STAGED_R2_PS: &[u8] =
@@ -61,8 +64,9 @@ struct PlaneShaders {
 impl PlaneShaders {
     fn create(device: &ID3D11Device1, dither: cpu::Dither) -> Result<Self> {
         let blobs = match dither {
-            cpu::Dither::Bayer => [Y_PS, UV_PS, Y_STAGED_PS, UV_STAGED_PS],
+            // The default (owner, 2026-11-26): the codes rav1g's display pass writes.
             cpu::Dither::R2 => [Y_R2_PS, UV_R2_PS, Y_STAGED_R2_PS, UV_STAGED_R2_PS],
+            cpu::Dither::Bayer => [Y_PS, UV_PS, Y_STAGED_PS, UV_STAGED_PS],
         };
         let [y, uv, y_staged, uv_staged] = blobs.map(|blob| {
             let mut shader = None;
@@ -104,7 +108,7 @@ pub struct ToneMapGpu {
     /// `nostaged` switch is off: one area pass per output pixel instead of one per plane read.
     staged: Option<Staged>,
     /// Current math, or the debug A/B words (`gammachroma`, `fixedpeak`, `bilinearchroma`,
-    /// `r2dither`).
+    /// `bayerdither`).
     options: cpu::Options,
     /// The cubic's co-sited fast path (`cpu::cosited_bits`); off only in a test comparing both.
     cosited_fast_path: bool,
@@ -127,8 +131,8 @@ impl ToneMapGpu {
     }
 
     /// Test and bench hook: [`create`](Self::create) with the debug switch words `words` (the syntax
-    /// of BALE_TONEMAP_DEBUG) instead of the process environment's, so that a WARP test can create an
-    /// `r2dither` stage, its create self-test included, without changing what other tests read.
+    /// of BALE_TONEMAP_DEBUG) instead of the process environment's, so that a WARP test can create a
+    /// `bayerdither` stage, its create self-test included, without changing what other tests read.
     #[doc(hidden)]
     pub fn create_with_switches(
         device: &ID3D11Device,
@@ -296,7 +300,7 @@ impl ToneMapGpu {
     }
 
     /// Test hook: all debug A/B options at once (`gammachroma`, `fixedpeak`, `bilinearchroma`,
-    /// `r2dither`). Another dither creates that dither's plane shaders.
+    /// `bayerdither`). Another dither creates that dither's plane shaders.
     #[doc(hidden)]
     pub fn set_options(&mut self, options: cpu::Options) -> Result<()> {
         if options.dither != self.planes.dither {
@@ -810,8 +814,10 @@ mod tests {
 /// encoded Cb/Cr ([`cpu::Method::Legacy`]); `fixedpeak` (2026-11-24, A/B) tone-maps PQ from the
 /// config's source peak as before, not from the stream's MaxCLL / mastering metadata;
 /// `bilinearchroma` (2026-11-24, quality/cost A/B) upsamples the input chroma bilinearly as before
-/// instead of with Catmull-Rom; `r2dither` (2026-11-26, cost A/B before it becomes the default)
-/// dithers NV12 output with rav1g's R2 threshold instead of Bayer ([`cpu::Dither::R2`]).
+/// instead of with Catmull-Rom; `bayerdither` (2026-11-26, when rav1g's R2 threshold became the
+/// default, [`cpu::Dither::R2`]) dithers NV12 output with the static 8x8 Bayer threshold as before
+/// ([`cpu::Dither::Bayer`]). `r2dither`, the A/B word that chose R2 until then, is retired and
+/// ignored like any unknown word.
 #[derive(Clone, Copy, Default)]
 struct DebugSwitches {
     no_self_test: bool,
@@ -820,7 +826,7 @@ struct DebugSwitches {
     gamma_chroma: bool,
     fixed_peak: bool,
     bilinear_chroma: bool,
-    r2_dither: bool,
+    bayer_dither: bool,
     /// Not a word: the bench's stages (`create_unrecorded`) never touch the peak report that
     /// playback's once-per-stream log line reads.
     unrecorded: bool,
@@ -842,7 +848,7 @@ impl DebugSwitches {
                 "gammachroma" => switches.gamma_chroma = true,
                 "fixedpeak" => switches.fixed_peak = true,
                 "bilinearchroma" => switches.bilinear_chroma = true,
-                "r2dither" => switches.r2_dither = true,
+                "bayerdither" => switches.bayer_dither = true,
                 _ => {}
             }
         }
@@ -859,10 +865,10 @@ impl DebugSwitches {
             },
             fixed_peak: self.fixed_peak,
             bilinear_chroma: self.bilinear_chroma,
-            dither: if self.r2_dither {
-                cpu::Dither::R2
-            } else {
+            dither: if self.bayer_dither {
                 cpu::Dither::Bayer
+            } else {
+                cpu::Dither::R2
             },
         }
     }
@@ -1012,18 +1018,24 @@ mod debug_switch_tests {
         let chroma = DebugSwitches::parse("bilinearchroma,gammachroma");
         assert!(chroma.bilinear_chroma && chroma.gamma_chroma && !chroma.fixed_peak);
         assert!(!peak.bilinear_chroma);
-        // Bayer unless `r2dither` is given; the word combines with the others.
-        assert_eq!(chroma.options().dither, super::cpu::Dither::Bayer);
+        // R2 (the default since 2026-11-26) unless `bayerdither` is given; the word combines with the
+        // others.
+        assert_eq!(chroma.options().dither, super::cpu::Dither::R2);
         assert_eq!(none.options(), super::cpu::Options::default());
-        let r2 = DebugSwitches::parse("nostaged r2dither");
-        assert!(r2.r2_dither && r2.no_staged && !r2.bilinear_chroma);
+        assert_eq!(none.options().dither, super::cpu::Dither::R2);
+        let bayer = DebugSwitches::parse("nostaged bayerdither");
+        assert!(bayer.bayer_dither && bayer.no_staged && !bayer.bilinear_chroma);
         assert_eq!(
-            r2.options(),
+            bayer.options(),
             super::cpu::Options {
-                dither: super::cpu::Dither::R2,
+                dither: super::cpu::Dither::Bayer,
                 ..Default::default()
             }
         );
-        assert!(!DebugSwitches::parse("r2,dither,R2dither").r2_dither);
+        assert!(!DebugSwitches::parse("bayer,dither,BayerDither").bayer_dither);
+        // The retired A/B word `r2dither` changes nothing: R2 is the default.
+        let retired = DebugSwitches::parse("r2dither");
+        assert!(!retired.bayer_dither);
+        assert_eq!(retired.options(), super::cpu::Options::default());
     }
 }

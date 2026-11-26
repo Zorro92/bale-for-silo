@@ -91,18 +91,33 @@ public sealed class DebugFfmpegToneMapTests
     [InlineData("bilinearchroma", true)]
     [InlineData("gammachroma,bilinearchroma,fixedpeak,nostaged", true)]
     [InlineData("noselftest,nostate,nostaged,gammachroma,fixedpeak,bilinearchroma", true)]
-    [InlineData("r2dither", true)]
-    [InlineData("r2dither,nostaged", true)]
-    [InlineData("noselftest,nostate,nostaged,gammachroma,fixedpeak,bilinearchroma,r2dither", true)]
+    [InlineData("bayerdither", true)]
+    [InlineData("bayerdither,nostaged", true)]
+    [InlineData("noselftest,nostate,nostaged,gammachroma,fixedpeak,bilinearchroma,bayerdither", true)]
     [InlineData("bilinear", false)]
-    [InlineData("r2", false)]
-    [InlineData("dither=r2", false)]
-    [InlineData("R2dither", false)]
+    [InlineData("bayer", false)]
+    [InlineData("dither=bayer", false)]
+    [InlineData("BayerDither", false)]
+    // Retired 2026-11-26 when R2 became the default.
+    [InlineData("r2dither", false)]
+    [InlineData("r2dither,bayerdither", false)]
     [InlineData("gammachroma,other", false)]
     [InlineData("FixedPeak", false)]
     [InlineData("GammaChroma", false)]
     public void ToneMapSwitchesAcceptOnlyKnownWords(string flags, bool valid)
         => Assert.Equal(valid, DebugToneMapSwitches.Valid(flags));
+
+    [Fact]
+    public void TheDebugScriptOffersExactlyTheAppsToneMapWords()
+    {
+        // bale-debug.sh checks the words before the app does, and its help lists them: both follow the app's list
+        // (bayerdither replaced r2dither on 2026-11-26, when R2 became the stage's default dither).
+        var script = Read("bale-debug.sh");
+        Assert.Contains($"words='{DebugToneMapSwitches.Words.Replace(',', '|')}'", script);
+        Assert.Contains($"#   scripts/bale-debug.sh tonemap-debug [{DebugToneMapSwitches.Words}]  ", script);
+        Assert.Contains("bayerdither", DebugToneMapSwitches.Words);
+        Assert.DoesNotContain("r2dither", script);
+    }
 
     [Theory]
     [InlineData("2.1.0-bale.37", false)]

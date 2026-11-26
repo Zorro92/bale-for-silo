@@ -13,9 +13,10 @@ pub const BALE_TONEMAP_INPUT_NV12: u32 = 8;
 /// BT.709 SDR sources (transfer 1/6/14/15, primaries 1, matrix 1) are accepted: decode BT.1886 to
 /// linear light, area-downscale, re-encode; no tone curve and no gamut change (scale only).
 pub const BALE_TONEMAP_SDR709: u32 = 16;
-/// NV12 output is ordered-dithered (static 8x8 Bayer threshold, luma and chroma; debug `r2dither`:
-/// rav1g's R2 threshold, `cpu::Dither`) before the 8-bit quantisation, from the same float result
-/// P010 rounds to 10 bits. P010 output is unchanged.
+/// NV12 output is ordered-dithered (luma and chroma) before the 8-bit quantisation, from the same
+/// float result P010 rounds to 10 bits: with rav1g's R2 threshold since 2026-11-26, so the stage
+/// writes the codes rav1g's display pass writes (`cpu::Dither`; debug `bayerdither`: the static 8x8
+/// Bayer threshold, the default before). P010 output is unchanged.
 pub const BALE_TONEMAP_OUTPUT_NV12_DITHERED: u32 = 32;
 // Bit 64 is retired (2026-11-24) and stays unused: wrappers 2.1.0-bale.64 to bale.75 read it as
 // permission for shader-readable decoder pools. Decoder arrays are always copied first.

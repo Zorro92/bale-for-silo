@@ -40,29 +40,37 @@ read it as permission for shader-readable decoder pools.
 ## Dithered NV12 output (`BALE_TONEMAP_OUTPUT_NV12_DITHERED`, 2026-11-19)
 
 NV12 output from the tone map and the area downscale is computed in fp32 exactly like P010 and only the
-final 8-bit quantisation changes: plain rounding `floor(x + 0.5)` becomes `floor(x + t)`, with
-`t = (bayer8(x, y) + 0.5) / 64` from a static 8x8 Bayer (ordered-dither) matrix at the output pixel, for
-luma and chroma (Cr on the mirrored index `63 - bayer8`, so Cb and Cr do not step together; chroma uses
-its own half-size plane position). The 64 thresholds are evenly spaced with mean 0.5, so a flat area keeps
-its mean level, each code is under one code from the exact value, and a slow 10-bit ramp becomes a fine
-fixed pattern instead of 8-bit bands.
+final 8-bit quantisation changes: plain rounding `floor(x + 0.5)` becomes `floor(x + t)`, with a threshold
+`t` in (0, 1) of mean 0.5 that depends only on the output position. **Since 2026-11-26 `t` is rav1g's R2
+threshold** (next section), so Bale's stage writes the 8-bit codes rav1g's display pass writes for the same
+value. From 2026-11-19 it was a static 8x8 Bayer (ordered-dither) matrix, which debug
+`scripts/bale-debug.sh tonemap-debug bayerdither` still selects: `t = (bayer8(x, y) + 0.5) / 64` at the
+output pixel, for luma and chroma (Cr on the mirrored index `63 - bayer8`, so Cb and Cr do not step together;
+chroma uses its own half-size plane position), 64 evenly spaced thresholds. With either threshold a flat
+area keeps its mean level, each code is under one code from the exact value, and a slow 10-bit ramp becomes
+a fine fixed pattern instead of 8-bit bands.
 
-Why this pattern: Bayer is computed from the pixel position alone (no noise texture or table), its
+Why Bayer first: it is computed from the pixel position alone (no noise texture or table), its
 thresholds are exact in f32, so `cpu.rs` mirrors the shader exactly, and its period-8 structure sits at
-the highest spatial frequencies, invisible at a one-code amplitude. There is **no per-frame offset**:
-the pattern is tied to the output pixel, so a still picture produces identical frames (no crawl, no
-temporal shimmer); only the content moves. P010 output stays plainly rounded, bit for bit as before.
-Tests: `cpu.rs` (permutation, mean error ~0 and more local levels than plain rounding on a smooth
-ramp) and WARP (`nv12_output_is_dithered_like_the_reference_and_p010_is_unchanged`, Windows CI only).
+the highest spatial frequencies, invisible at a one-code amplitude. R2 keeps all of that without the period.
+There is **no per-frame offset** with either: the pattern is tied to the output pixel, so a still picture
+produces identical frames (no crawl, no temporal shimmer); only the content moves. P010 output stays plainly
+rounded, bit for bit as before.
+Tests: `cpu.rs` (Bayer's permutation; for both thresholds, mean error ~0 and more local levels than plain
+rounding on a smooth ramp) and WARP (`nv12_output_is_dithered_like_the_reference_and_p010_is_unchanged`, the
+default stage and a `bayerdither` one, Windows CI only).
 
-### rav1g's R2 threshold (debug `r2dither`, 2026-11-26)
+### rav1g's R2 threshold (the default since 2026-11-26)
 
-Owner (2026-11-26): Bale's stage should write the same 8-bit codes as rav1g's display pass, so that the
-rav1g route and Bale's routes vary less, and the cost is measured on the console before R2 becomes the
-default. `scripts/bale-debug.sh tonemap-debug r2dither` replaces the Bayer threshold with rav1g's from the
-next tone-map create; **the default stays Bayer**. Nothing else changes: the same value `v` (`16 + 219 Y'`
-for luma, `128 + 224 C` for chroma, from the one fp32 encode after the tone map or downscale), the same
-`floor(v + t)` and clamps, and P010 stays plainly rounded.
+Owner (2026-11-26): Bale's stage writes the same 8-bit codes as rav1g's display pass, so that the rav1g
+route and Bale's routes vary less. R2 came in as the debug word `r2dither` so that its cost could be
+measured on the console first; the bench there found none ("Bayer against R2 on the console" below: R2 −
+Bayer on NV12, against the P010 control, about −0.03 ms on the 2:1 staged routes and about 0 at 1:1), and
+the owner made R2 the default the same day. `r2dither` is retired; `scripts/bale-debug.sh tonemap-debug
+bayerdither` brings the Bayer threshold back from the next tone-map create (debug builds). Nothing else
+differs between the two: the same value `v` (`16 + 219 Y'` for luma, `128 + 224 C` for chroma, from the one
+fp32 encode after the tone map or downscale), the same `floor(v + t)` and clamps, and P010 stays plainly
+rounded.
 
 The threshold is rav1g's (`libav1/dx/shaders/display_pass.hlsl` `threshold`, `luma_code`, `chroma_code`;
 rav1g docs/integration.md "The dither"; its model `testing/display_pass/model.py` `threshold`):
@@ -83,8 +91,9 @@ code at any fraction); and it is the same for every frame, so a still picture st
 **How.** `shaders/tonemap_math.hlsli` `r2_threshold` / `quantize_luma_r2` / `quantize_chroma_r2`, chosen
 by a shader permutation, not a cbuffer bit: `build.rs` builds the luma and chroma passes (per-plane and
 staged) again with `BALE_DITHER_R2` (four more ps_5_0 blobs), and `gpu.rs` creates only the stage's own set
-(`PlaneShaders`). So neither dither pays for a branch or for the other's arithmetic, and the default blobs
-are byte-identical to the ones before the change (checked with fxc). The threshold is written
+(`PlaneShaders`): the `BALE_DITHER_R2` blobs by default, the Bayer ones (built without it) under
+`bayerdither`. So neither dither pays for a branch or for the other's arithmetic, and the Bayer blobs are
+byte-identical to the ones before R2 came in (checked with fxc). The threshold is written
 `(((x * R2_X + y * R2_Y) >> 23) | 1) / 512`, the same value as rav1g's `mad(t8, 1/256, 0.5/256)`: fxc split
 that form into a mad and a separate add of 1/512 (two roundings of `v + t`), while the single exact
 product folds into the sum's one rounding, as in rav1g's formula. In DXBC it costs about 6 instructions a
@@ -96,22 +105,24 @@ In the chroma pass fxc adds the 128 after the threshold, for both dithers as bef
 bit-identical (different shaders and compilers: fxc here, dxc there): rav1g measured Bale's reference
 against its pass within one code, at most 0.5% of a plane's codes one apart (rav1g
 docs/bale-display-pass.md "How close to Bale's stage", P010); NV12 was not comparable then because the
-thresholds differed by design. With `r2dither` the same holds for NV12.
+thresholds differed by design. With R2 the default, the same holds for NV12.
 
 **Tests.** `cpu.rs`: `r2_threshold_is_rav1g_s_at_every_position_and_plane` (bit-equal to a separate
 transcription of rav1g's formula at every position of 64x64 tiles at the origin and at odd offsets up to
-the 2^32 wrap, for luma, Cb and transposed Cr; the constants derived from g; hand-worked levels),
-`r2_dither_is_unbiased_on_flat_areas_and_ramp_columns` and `r2_reference_rounds_the_encoded_values_like_rav1g`
-(the reference's codes equal rav1g's rounding of its encoded values, code for code; Bayer unchanged). WARP
-(Windows CI): `r2_nv12_rounds_like_rav1g_code_for_code` creates the stage with `r2dither` (its create
-self-test then checks the R2 codes) and compares the GPU's NV12 with rav1g's rounding of the reference's
-values (`cpu::reference_encoded`). It is exact for every code of uniform BT.709 SDR frames at 1:1 (quarter
+the 2^32 wrap, for luma, Cb and transposed Cr; the constants derived from g; hand-worked levels; R2 is
+`Dither::default()`), `r2_dither_is_unbiased_on_flat_areas_and_ramp_columns` and
+`r2_reference_rounds_the_encoded_values_like_rav1g` (the default reference's codes equal rav1g's rounding of
+its encoded values, code for code, and `bayerdither`'s equal Bayer's rounding of the same values). WARP
+(Windows CI): `r2_nv12_rounds_like_rav1g_code_for_code` creates the default stage through `bale_tonemap_create`
+(its create self-test then checks the R2 codes) and compares the GPU's NV12 with rav1g's rounding of the
+reference's values (`cpu::reference_encoded`). It is exact for every code of uniform BT.709 SDR frames at 1:1 (quarter
 codes, so `v + t` is at least 1/512 from a step, about six times the largest expected WARP-vs-CPU float
 difference): three frames give every position the cuts 1/4, 1/2 and 3/4 in each plane, over a 128x128
 picture, a 3840-wide and a 2160-tall strip, plus both luma clamps. Downscaled ramps (2:1, 3:2, 2.4:1,
 staged and per-plane) reach every threshold level: exact wherever the value lies more than 1/256 from a
-step, one code at most otherwise. Against a Bayer stage, P010 is bit-identical and NV12 within one code;
-switching a live handle's dither gives a created R2 stage's output. Prints `r2 rounding:` lines.
+step, one code at most otherwise. Against a `bayerdither` stage, P010 is bit-identical and NV12 within one
+code, each stage's NV12 within tolerance of its own dither's reference; switching a live handle's dither
+gives the other created stage's output. Prints `r2 rounding:` lines.
 
 ## Area downscale in display-linear light
 
@@ -462,7 +473,7 @@ upscalers (Jinc, vendor Super Resolution); 1080p to 4K stays with the console's 
 - `scripts/bale-debug.sh tonemap-churn [N] [control]` runs bale_gpu's tone map alone N times on a
   fresh hardware device (create, five 4K applies, destroy; no MF or FFmpeg). It ran 40/40 on
   2026-11-17 and isolated the crash from bale_gpu.
-- `scripts/bale-debug.sh tonemap-debug [noselftest,nostate,nostaged,gammachroma,fixedpeak,bilinearchroma,r2dither]`
+- `scripts/bale-debug.sh tonemap-debug [noselftest,nostate,nostaged,gammachroma,fixedpeak,bilinearchroma,bayerdither]`
   skips the create self-test, replaces the private ID3DDeviceContextState swap with explicit save/restore
   of what the draw touches, (`nostaged`) skips the downscale intermediate so each plane pass evaluates the
   area sum itself (the pre-2026-11-22 path, for GPU-cost A/B), (`gammachroma`) runs the pre-2026-11-22
@@ -470,11 +481,13 @@ upscalers (Jinc, vendor Super Resolution); 1080p to 4K stays with the console's 
   that math), (`fixedpeak`) tone-maps PQ from the config peak (1000 nits) instead of the stream's MaxCLL /
   mastering metadata (the pre-2026-11-24 peak; the Tone-map peak row then says `debug fixedpeak`),
   (`bilinearchroma`) upsamples the input chroma bilinearly instead of with Catmull-Rom (the pre-2026-11-24
-  filter, quality/cost A/B), or (`r2dither`, 2026-11-26) dithers NV12 output with rav1g's R2 threshold
-  instead of Bayer ("rav1g's R2 threshold" above; P010 unchanged; the self-test checks the R2 codes; rav1g's
-  own pass needs no key, its NV12 is R2 already). Words combine (`gammachroma,bilinearchroma,fixedpeak,nostaged`
-  is the fully old stage). Each applies from the next tone-map create, and stays set until cleared
-  (`tonemap-debug` with no words) or the app restarts.
+  filter, quality/cost A/B), or (`bayerdither`, 2026-11-26) dithers NV12 output with the static 8x8 Bayer
+  threshold instead of rav1g's R2, the default since 2026-11-26 ("rav1g's R2 threshold" above; P010
+  unchanged; the self-test checks the Bayer codes; rav1g's display pass has no Bayer, its NV12 stays R2).
+  `r2dither`, the word that chose R2 before it became the default, is retired: the app and the script refuse
+  it. Words combine (`gammachroma,bilinearchroma,fixedpeak,nostaged,bayerdither` is the fully old stage).
+  Each applies from the next tone-map create, and stays set until cleared (`tonemap-debug` with no words) or
+  the app restarts.
 - `bale-debug.sh mem` reports `D3D11 devices: watched N destroyed M alive K`: each engine device
   carries a private-data marker that only real destruction frees.
 - `scripts/bale-debug.sh ffmpeg-tune white=80..400` sets the SDR white (nits) of the next attempt's tone map, the
@@ -859,6 +872,13 @@ against 16). The playback total above cannot resolve it (an upper bound that que
 19 to 52 ms per frame in the 2026-11-24 console check), so the `stage-timing` build has a bench that reads
 real GPU time.
 
+**Result (2026-11-26, Series X, Bale 0.1.795, three runs of `tonemap-bench 240`, i.e. 240 timed applies
+per arm):** R2 − Bayer on NV12, minus the P010 control's R2 − Bayer (P010 never dithers, so that is the
+noise), was about −0.03 ms on the 2:1 staged routes (4K PQ → 1080p, 4K SDR → 1080p) and about 0 at 1:1
+(4K PQ, 1080p PQ). R2 costs nothing measurable, so the owner made it the stage's default that day ("rav1g's R2
+threshold" above). The bench still compares the two, Bayer through `bayerdither` and R2 as the default, with
+the same stages, arms and report, so later runs read like this one.
+
 **1. The bench** (`tonemap-bench`, debug packages; outside the player, with `gpu-timing off`):
 
 ```sh
@@ -874,13 +894,14 @@ it does no video work) and times each apply with GPU timestamp queries, as the g
 Media Foundation's device, whose video decode/process command lists they also covered ("Event queries,
 not timestamps" above); this device has none. For each route that writes dithered NV12 on an 8-bit SDR
 display (4K PQ to 1080p, 4K PQ 1:1, 1080p PQ 1:1, 4K BT.709 SDR to 1080p; PQ from the self-test's
-saturated 2x2 blocks, SDR a ramp), it creates a Bayer and an R2 stage (both with the other `tonemap-debug`
-words as set, so `nostaged` or `bilinearchroma` can be benched too) and applies the same frame in turn:
+saturated 2x2 blocks, SDR a ramp), it creates a Bayer stage (`bayerdither`) and an R2 stage (the default),
+both with the other `tonemap-debug` words as set, so `nostaged` or `bilinearchroma` can be benched too (the
+bench sets the dither word itself), and applies the same frame in turn:
 NV12 Bayer and NV12 R2 interleaved apply by apply (drift hits both alike), then P010 Bayer and P010 R2 the
 same way (each stage's constants stay put within a phase), each apply flushed and waited for (the stage
 alone on the GPU). The input is shader-readable, so apply reads it in place: the times are the stage's
 passes, without the input copy of the decoder route. P010 never dithers, so its R2 - Bayer difference is
-the measurement's own noise. A header line, then two lines per route (the format; not measured yet):
+the measurement's own noise. A header line, then two lines per route (the format):
 
 ```text
   4K PQ -> 1080p (2:1, staged): NV12 Bayer m.mmm ms (p95 p.ppp, min n.nnn); NV12 R2 ...; P010 Bayer ...; P010 R2 ...;
@@ -897,19 +918,19 @@ both outputs, two staged intermediates at 1080p), released after each route.
 `stage-timing` build measures the stage whichever dither it runs (the R2 permutation is the same draws
 between the same two events), so the Stage GPU row and its `Bale stage gpu:` windows cover it unchanged.
 Use the route that writes dithered NV12: an HDR10 or HLG stream tone-mapped on an 8-bit SDR display, or
-SDR larger than the display; not AV1, which keeps P010. The open must log `player: stage 8-bit output
-requested`; with P010 output the dither never runs.
+SDR larger than the display; not AV1, whose 8-bit output comes from rav1g's display pass (always R2;
+`bayerdither` does not reach it). The open must log `player: stage 8-bit output requested`; with P010
+output the dither never runs.
 
 ```sh
 ./scripts/bale-debug.sh gpu-timing on
-./scripts/bale-debug.sh tonemap-debug              # A: Bayer (the default)
+./scripts/bale-debug.sh tonemap-debug bayerdither  # A: Bayer, from the next tone-map create
 ./scripts/bale-debug.sh play <content-id> start=600
 # No controller/keyboard input for 15+ s, then read several windows at the same offset from the start:
 ./scripts/bale-debug.sh stats | grep -E 'Stage GPU|Missed frames|Stalls'
-./scripts/bale-debug.sh tonemap-debug r2dither     # B: R2, from the next tone-map create
+./scripts/bale-debug.sh tonemap-debug              # B: R2 (the default) again
 ./scripts/bale-debug.sh play <content-id> start=600
 ./scripts/bale-debug.sh stats | grep -E 'Stage GPU|Missed frames|Stalls'
-./scripts/bale-debug.sh tonemap-debug              # back to Bayer
 ./scripts/bale-debug.sh gpu-timing off
 ```
 

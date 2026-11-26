@@ -9,8 +9,9 @@
 //! Hable's FFmpeg default desat is 2, but explicit ABI desat=0 disables it on both curves.
 //! Output uses BT.1886 inverse EOTF (power 1/2.4): zscale t=bt709's default display-referred
 //! transfer, rather than its scene-referred camera OETF. No integer LUTs. P010 output is plainly
-//! rounded; NV12 output is ordered-dithered (static 8x8 Bayer, `quantize_luma_dithered`; debug
-//! `r2dither`: rav1g's R2 threshold, [`Dither::R2`]).
+//! rounded; NV12 output is ordered-dithered with rav1g's R2 threshold ([`Dither::R2`], the default
+//! since 2026-11-26, `quantize_luma_dithered`; debug `bayerdither`: the static 8x8 Bayer threshold
+//! it replaced, [`Dither::Bayer`]).
 use super::types::{BaleToneMapConfig, BaleToneMapFrameInfo, MAX_DOWNSCALE};
 
 pub const E_INVALIDARG: i32 = 0x80070057u32 as i32;
@@ -454,15 +455,16 @@ pub enum Method {
     Legacy,
 }
 /// The threshold of NV12's 8-bit quantisation (`BALE_TONEMAP_OUTPUT_NV12_DITHERED`); P010 is always
-/// plainly rounded. `Bayer` is the default; `R2` is rav1g's display-pass threshold (debug `r2dither`,
-/// 2026-11-26), so that the stage writes the codes rav1g writes for the same value. The GPU builds the
-/// plane shaders once per dither (`BALE_DITHER_R2`) and creates the stage's set.
+/// plainly rounded. `R2`, rav1g's display-pass threshold, is the default since 2026-11-26 (owner: the
+/// stage writes the codes rav1g writes for the same value; the console bench found no cost); `Bayer`,
+/// the default from 2026-11-19, stays under debug `bayerdither`. The GPU builds the plane shaders once
+/// per dither (`BALE_DITHER_R2`) and creates the stage's set.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Dither {
     /// Static 8x8 Bayer at the output pixel; Cr on the mirrored index ([`bayer8`]).
-    #[default]
     Bayer,
     /// The R2 sequence at the output sample; Cr at the transposed sample ([`r2_threshold`]).
+    #[default]
     R2,
 }
 impl Dither {
@@ -496,7 +498,8 @@ pub struct Options {
     pub fixed_peak: bool,
     /// `bilinearchroma`: bilinear input chroma upsampling (before 2026-11-24) instead of Catmull-Rom.
     pub bilinear_chroma: bool,
-    /// `r2dither`: [`Dither::R2`], rav1g's threshold, instead of Bayer for NV12 output.
+    /// `bayerdither`: [`Dither::Bayer`] (the default before 2026-11-26) instead of rav1g's R2
+    /// threshold for NV12 output.
     pub dither: Dither,
 }
 impl From<Method> for Options {
@@ -706,15 +709,17 @@ pub fn quantize_luma_with(y: f32, t: f32) -> f32 {
 pub fn quantize_chroma_with(uv: [f32; 2], t: [f32; 2]) -> [f32; 2] {
     std::array::from_fn(|c| (128.0 + 224.0 * uv[c] + t[c]).floor().clamp(16.0, 240.0))
 }
-/// NV12 luma with a static ordered dither (BALE_TONEMAP_OUTPUT_NV12_DITHERED); see the shader's
-/// comment in tonemap_math.hlsli for why a constant Bayer pattern. Never more than one code from
+/// NV12 luma with the stage's default static ordered dither (BALE_TONEMAP_OUTPUT_NV12_DITHERED,
+/// [`Dither::default`]: rav1g's R2 threshold since 2026-11-26, as the default plane shaders'
+/// `quantize_luma8`); see the shader's comments in tonemap_math.hlsli. Never more than one code from
 /// the exact value (plain rounding: half a code).
 pub fn quantize_luma_dithered(y: f32, x: u32, row: u32) -> f32 {
-    quantize_luma_with(y, Dither::Bayer.luma_threshold(x, row))
+    quantize_luma_with(y, Dither::default().luma_threshold(x, row))
 }
-/// NV12 chroma at chroma-plane position (x, row); Cr uses the mirrored threshold.
+/// NV12 chroma at chroma-plane position (x, row) with the default dither; Cr takes the transposed
+/// sample's threshold (R2; Bayer mirrors its index instead).
 pub fn quantize_chroma_dithered(uv: [f32; 2], x: u32, row: u32) -> [f32; 2] {
-    quantize_chroma_with(uv, Dither::Bayer.chroma_thresholds(x, row))
+    quantize_chroma_with(uv, Dither::default().chroma_thresholds(x, row))
 }
 
 /// Tight P010 words (high 10 bits), input may include decoder alignment beyond visible size.
@@ -724,7 +729,7 @@ pub fn quantize_chroma_dithered(uv: [f32; 2], x: u32, row: u32) -> [f32; 2] {
 /// footprint centred at (2x, 2y + 0.5) that mixes the output pixels' linear RGB, then clips and
 /// encodes once. Clamp visible edges, never sample alignment padding.
 /// NV12 8-bit codes, the ABI 1 output, ordered-dithered like the shader. Current math
-/// ([`Options::default`]: the stream's metadata peak, Bayer); see [`reference_with`] for the debug
+/// ([`Options::default`]: the stream's metadata peak, R2); see [`reference_with`] for the debug
 /// options (`options.dither` picks the NV12 threshold).
 pub fn reference(
     config: &BaleToneMapConfig,
@@ -1396,52 +1401,66 @@ mod tests {
             (0..64).all(|v| (0.0..1.0).contains(&dither_threshold(v)) && dither_threshold(v) > 0.0)
         );
     }
-    /// A slow ramp: dithered codes stay within one code of the exact value, the mean error over
-    /// the ramp is ~0, and local averages resolve many more levels than plain rounding's bands.
+    /// A slow ramp, with either dither: dithered codes stay within one code of the exact value, the
+    /// mean error over the ramp is ~0, and local averages resolve many more levels than plain
+    /// rounding's bands. The default helpers (`quantize_*_dithered`) are R2's since 2026-11-26.
     #[test]
     fn dither_removes_banding_without_biasing_a_smooth_gradient() {
         let (w, h) = (512u32, 8u32);
         // 0.40..0.44 of the luma range: under nine 8-bit codes across 512 columns.
         let exact = |x: u32| 16.0 + 219.0 * (0.40 + 0.04 * x as f32 / (w - 1) as f32);
-        let mut error = 0.0f64;
-        let (mut plain_levels, mut dithered_levels) = (Vec::new(), Vec::new());
-        for x in 0..w {
-            let y = (exact(x) - 16.0) / 219.0;
-            let mut column = 0.0;
-            for row in 0..h {
-                let d = quantize_luma_dithered(y, x, row);
-                assert!(
-                    (d - exact(x)).abs() < 1.0,
-                    "x={x} row={row}: {d} vs {}",
-                    exact(x)
-                );
-                assert!((d - quantize_luma(y)).abs() <= 1.0);
-                error += f64::from(d - exact(x));
-                column += d;
+        for dither in [Dither::R2, Dither::Bayer] {
+            let mut error = 0.0f64;
+            let (mut plain_levels, mut dithered_levels) = (Vec::new(), Vec::new());
+            for x in 0..w {
+                let y = (exact(x) - 16.0) / 219.0;
+                let mut column = 0.0;
+                for row in 0..h {
+                    let d = quantize_luma_with(y, dither.luma_threshold(x, row));
+                    assert!(
+                        (d - exact(x)).abs() < 1.0,
+                        "{dither:?} x={x} row={row}: {d} vs {}",
+                        exact(x)
+                    );
+                    assert!((d - quantize_luma(y)).abs() <= 1.0);
+                    if dither == Dither::default() {
+                        assert_eq!(quantize_luma_dithered(y, x, row), d);
+                    }
+                    error += f64::from(d - exact(x));
+                    column += d;
+                }
+                dithered_levels.push((column / h as f32 * 64.0).round() as i32);
+                plain_levels.push(quantize_luma(y) as i32);
             }
-            dithered_levels.push((column / h as f32 * 64.0).round() as i32);
-            plain_levels.push(quantize_luma(y) as i32);
+            let mean_error = error / f64::from(w * h);
+            assert!(
+                mean_error.abs() < 0.02,
+                "{dither:?} mean error {mean_error}"
+            );
+            plain_levels.dedup();
+            dithered_levels.dedup();
+            assert!(plain_levels.len() <= 10, "{}", plain_levels.len());
+            assert!(
+                dithered_levels.len() >= 4 * plain_levels.len(),
+                "{dither:?}: dithered {} vs plain {} levels",
+                dithered_levels.len(),
+                plain_levels.len()
+            );
         }
-        let mean_error = error / f64::from(w * h);
-        assert!(mean_error.abs() < 0.02, "mean error {mean_error}");
-        plain_levels.dedup();
-        dithered_levels.dedup();
-        assert!(plain_levels.len() <= 10, "{}", plain_levels.len());
-        assert!(
-            dithered_levels.len() >= 4 * plain_levels.len(),
-            "dithered {} vs plain {} levels",
-            dithered_levels.len(),
-            plain_levels.len()
-        );
-        // Chroma: both planes unbiased over an 8x8 tile, Cr on the mirrored pattern.
+        // Chroma: Bayer's planes are unbiased over its 8x8 tile, Cr on the mirrored pattern (R2's
+        // over its 64x64 tile: r2_dither_is_unbiased_on_flat_areas_and_ramp_columns).
         for uv in [[0.013f32, -0.021], [0.1, 0.2], [-0.3, 0.004]] {
             let mut sum = [0.0f32; 2];
             for row in 0..8 {
                 for x in 0..8 {
-                    let q = quantize_chroma_dithered(uv, x, row);
+                    let q = quantize_chroma_with(uv, Dither::Bayer.chroma_thresholds(x, row));
                     for c in 0..2 {
                         sum[c] += q[c] - (128.0 + 224.0 * uv[c]);
                     }
+                    assert_eq!(
+                        quantize_chroma_dithered(uv, x, row),
+                        quantize_chroma_with(uv, Dither::R2.chroma_thresholds(x, row))
+                    );
                 }
             }
             assert!(
@@ -1450,8 +1469,9 @@ mod tests {
             );
         }
     }
-    /// The full reference on a smooth SDR ramp: NV12 codes within one code of the P010 result
-    /// (exact at 8 bits), unbiased, and more local levels than plainly rounding that same result.
+    /// The full reference on a smooth SDR ramp, with the default dither (R2) and with Bayer: NV12
+    /// codes within one code of the P010 result (exact at 8 bits), unbiased, and more local levels
+    /// than plainly rounding that same result.
     #[test]
     fn dithered_nv12_reference_tracks_p010_on_a_smooth_ramp() {
         let c = BaleToneMapConfig {
@@ -1466,18 +1486,7 @@ mod tests {
             ..frame()
         };
         let input = sdr_ramp(256, 16, 400.0, 416.0);
-        let eight = reference(&c, &f, &input, 256, 16).unwrap();
         let ten = reference_p010(&c, &f, &input, 256, 16).unwrap();
-        let mut error = 0.0f64;
-        for (i, (&a, &b)) in eight.iter().zip(&ten).enumerate() {
-            let exact = f32::from(b) / 4.0;
-            assert!(
-                (f32::from(a) - exact).abs() <= 1.0 + 0.125,
-                "{i}: {a} vs {exact}"
-            );
-            error += f64::from(f32::from(a) - exact);
-        }
-        assert!((error / eight.len() as f64).abs() < 0.05);
         let levels = |codes: &[u8]| {
             let mut means: Vec<u32> = (0..256)
                 .step_by(8)
@@ -1495,12 +1504,32 @@ mod tests {
             .iter()
             .map(|&b| ((f32::from(b) / 4.0) + 0.5).floor() as u8)
             .collect();
-        assert!(
-            levels(&eight[..256 * 16]) >= 3 * levels(&plain),
-            "{} vs {}",
-            levels(&eight[..256 * 16]),
-            levels(&plain)
-        );
+        for dither in [Dither::R2, Dither::Bayer] {
+            let options = Options {
+                dither,
+                ..Options::default()
+            };
+            let eight = reference_with(&c, &f, &input, 256, 16, options).unwrap();
+            if dither == Dither::default() {
+                assert_eq!(reference(&c, &f, &input, 256, 16).unwrap(), eight);
+            }
+            let mut error = 0.0f64;
+            for (i, (&a, &b)) in eight.iter().zip(&ten).enumerate() {
+                let exact = f32::from(b) / 4.0;
+                assert!(
+                    (f32::from(a) - exact).abs() <= 1.0 + 0.125,
+                    "{dither:?} {i}: {a} vs {exact}"
+                );
+                error += f64::from(f32::from(a) - exact);
+            }
+            assert!((error / eight.len() as f64).abs() < 0.05, "{dither:?}");
+            assert!(
+                levels(&eight[..256 * 16]) >= 3 * levels(&plain),
+                "{dither:?}: {} vs {}",
+                levels(&eight[..256 * 16]),
+                levels(&plain)
+            );
+        }
     }
     /// rav1g's display-pass threshold, transcribed on its own from rav1g's float32 model
     /// (testing/display_pass/model.py `threshold`: wide products masked to 32 bits) and shader
@@ -1584,7 +1613,9 @@ mod tests {
         }
         // The 64x64 tile at the origin reaches every one of the 256 levels.
         assert!(levels.iter().all(|&n| n > 0), "{levels:?}");
-        // Bayer is unchanged: the same thresholds as before the Dither type.
+        // R2 is the stage's default since 2026-11-26.
+        assert_eq!(Dither::default(), Dither::R2);
+        // Bayer (debug `bayerdither`) is unchanged: the same thresholds as before the Dither type.
         for (x, y) in [(0, 0), (1, 1), (5, 2), (7, 7), (8, 3)] {
             let index = bayer8(x, y);
             assert_eq!(Dither::Bayer.luma_threshold(x, y), dither_threshold(index));
@@ -1654,13 +1685,17 @@ mod tests {
             "column bias R2 {r2}, Bayer {bayer}"
         );
     }
-    /// The reference quantises its encoded values with rav1g's rounding model when `dither` is R2,
-    /// code for code: luma `floor(16 + 219 Y' + t(x, y))`, Cb `floor(128 + 224 Cb + t(i, j))`, Cr with
-    /// `t(j, i)`, clamped. Bayer keeps its codes, and the two dithers are never more than a code apart.
+    /// The reference's default NV12 (R2 since 2026-11-26) quantises its encoded values with rav1g's
+    /// rounding model, code for code: luma `floor(16 + 219 Y' + t(x, y))`, Cb `floor(128 + 224 Cb +
+    /// t(i, j))`, Cr with `t(j, i)`, clamped. Debug `bayerdither` quantises the same values with
+    /// Bayer's thresholds (`bayer8` at the sample, Cr mirrored), and the two dithers are never more
+    /// than a code apart.
     #[test]
     fn r2_reference_rounds_the_encoded_values_like_rav1g() {
-        let r2 = Options {
-            dither: Dither::R2,
+        let r2 = Options::default();
+        assert_eq!(r2.dither, Dither::R2, "R2 is the default dither");
+        let bayer = Options {
+            dither: Dither::Bayer,
             ..Options::default()
         };
         let sdr = BaleToneMapFrameInfo {
@@ -1699,14 +1734,25 @@ mod tests {
             };
             let encoded = reference_encoded(&c, &f, &input, iw, ih, r2).unwrap();
             let (w, h) = (encoded.width, encoded.height);
-            let codes = reference_with(&c, &f, &input, iw, ih, r2).unwrap();
+            let codes = reference(&c, &f, &input, iw, ih).unwrap();
+            assert_eq!(reference_with(&c, &f, &input, iw, ih, r2).unwrap(), codes);
+            let bayer_codes = reference_with(&c, &f, &input, iw, ih, bayer).unwrap();
+            // The dither only quantises: both take the same encoded values.
+            let bayer_encoded = reference_encoded(&c, &f, &input, iw, ih, bayer).unwrap();
+            assert_eq!(
+                (&bayer_encoded.luma, &bayer_encoded.chroma),
+                (&encoded.luma, &encoded.chroma)
+            );
+            let luma = |v: f32, t: f32| (16.0 + 219.0 * v + t).floor().clamp(16.0, 235.0);
+            let chroma = |v: f32, t: f32| (128.0 + 224.0 * v + t).floor().clamp(16.0, 240.0);
+            let index = |x: usize, y: usize| bayer8(x as u32, y as u32);
             for y in 0..h {
                 for x in 0..w {
-                    let t = rav1g_threshold(x as u32, y as u32);
-                    let model = (16.0 + 219.0 * encoded.luma[y * w + x] + t)
-                        .floor()
-                        .clamp(16.0, 235.0);
-                    assert_eq!(f32::from(codes[y * w + x]), model, "luma ({x}, {y})");
+                    let (v, at) = (encoded.luma[y * w + x], y * w + x);
+                    let model = luma(v, rav1g_threshold(x as u32, y as u32));
+                    assert_eq!(f32::from(codes[at]), model, "luma ({x}, {y})");
+                    let model = luma(v, dither_threshold(index(x, y)));
+                    assert_eq!(f32::from(bayer_codes[at]), model, "Bayer luma ({x}, {y})");
                 }
             }
             for y in 0..h / 2 {
@@ -1716,22 +1762,35 @@ mod tests {
                         rav1g_threshold(x as u32, y as u32),
                         rav1g_threshold(y as u32, x as u32),
                     );
-                    let model = |v: f32, t: f32| (128.0 + 224.0 * v + t).floor().clamp(16.0, 240.0);
                     let at = w * h + y * w + 2 * x;
-                    assert_eq!(f32::from(codes[at]), model(cb, tb), "Cb ({x}, {y})");
-                    assert_eq!(f32::from(codes[at + 1]), model(cr, tr), "Cr ({x}, {y})");
+                    assert_eq!(f32::from(codes[at]), chroma(cb, tb), "Cb ({x}, {y})");
+                    assert_eq!(f32::from(codes[at + 1]), chroma(cr, tr), "Cr ({x}, {y})");
+                    let (tb, tr) = (
+                        dither_threshold(index(x, y)),
+                        dither_threshold(63 - index(x, y)),
+                    );
+                    assert_eq!(
+                        f32::from(bayer_codes[at]),
+                        chroma(cb, tb),
+                        "Bayer Cb ({x}, {y})"
+                    );
+                    assert_eq!(
+                        f32::from(bayer_codes[at + 1]),
+                        chroma(cr, tr),
+                        "Bayer Cr ({x}, {y})"
+                    );
                 }
             }
-            let bayer = reference(&c, &f, &input, iw, ih).unwrap();
-            assert_eq!(
-                reference_with(&c, &f, &input, iw, ih, Options::default()).unwrap(),
-                bayer
+            assert!(
+                codes
+                    .iter()
+                    .zip(&bayer_codes)
+                    .all(|(a, b)| a.abs_diff(*b) <= 1)
             );
-            assert!(codes.iter().zip(&bayer).all(|(a, b)| a.abs_diff(*b) <= 1));
-            assert!(codes != bayer, "R2 and Bayer must differ somewhere");
+            assert!(codes != bayer_codes, "R2 and Bayer must differ somewhere");
             // P010 is rounded, whichever dither the stage has.
             assert_eq!(
-                reference_p010_with(&c, &f, &input, iw, ih, r2).unwrap(),
+                reference_p010_with(&c, &f, &input, iw, ih, bayer).unwrap(),
                 reference_p010(&c, &f, &input, iw, ih).unwrap()
             );
         }

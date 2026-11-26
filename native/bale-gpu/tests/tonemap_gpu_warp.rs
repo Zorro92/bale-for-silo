@@ -52,7 +52,7 @@ impl Warp {
         assert!(!handle.is_null());
         Handle(handle)
     }
-    /// A stage created with debug switch words (BALE_TONEMAP_DEBUG's syntax, e.g. `r2dither`), its
+    /// A stage created with debug switch words (BALE_TONEMAP_DEBUG's syntax, e.g. `bayerdither`), its
     /// create self-test included, without touching the environment other tests read.
     fn create_with(&self, config: &BaleToneMapConfig, words: &str) -> Handle {
         let gpu =
@@ -229,8 +229,9 @@ fn output_desc_as(c: &BaleToneMapConfig, format: DXGI_FORMAT) -> D3D11_TEXTURE2D
 
 /// NV12 output is ordered-dithered exactly like the CPU reference (at most one code apart, from
 /// float differences at a threshold), resolves a slow ramp into more levels than plain rounding,
-/// and is the same on a second apply (static pattern: still content stays still). P010 output
-/// keeps the plain-rounded 10-bit result.
+/// and is the same on a second apply (static pattern: still content stays still), with the default
+/// threshold (rav1g's R2 since 2026-11-26, from bale_tonemap_create) and with debug `bayerdither`'s
+/// Bayer. P010 output keeps the plain-rounded 10-bit result.
 #[test]
 fn nv12_output_is_dithered_like_the_reference_and_p010_is_unchanged() {
     assert_ne!(
@@ -238,6 +239,10 @@ fn nv12_output_is_dithered_like_the_reference_and_p010_is_unchanged() {
         0
     );
     let warp = Warp::new();
+    let bayer = cpu::Options {
+        dither: cpu::Dither::Bayer,
+        ..cpu::Options::default()
+    };
     let (w, h) = (256u32, 16u32);
     let sdr = BaleToneMapFrameInfo {
         transfer: 1,
@@ -270,65 +275,76 @@ fn nv12_output_is_dithered_like_the_reference_and_p010_is_unchanged() {
                 (&pq, cpu::test_pattern(iw, ih, true, false)),
             ]
         };
-        let handle = warp.create(&c);
-        for (f, input) in inputs {
-            let source = warp.texture(
-                &desc(
-                    iw,
-                    ih,
-                    DXGI_FORMAT_P010,
-                    D3D11_BIND_SHADER_RESOURCE.0 as u32,
-                ),
-                Some(&input),
-            );
-            let nv12 = warp.texture(&output_desc(&c), None);
-            assert_eq!(handle.apply(&warp, &source, 0, &nv12, f), S_OK);
-            let actual = warp.readback(&nv12);
-            let expected = cpu::reference(&c, f, &input, iw, ih).unwrap();
-            // The smooth SDR ramp only differs by a threshold flip; the PQ pattern's saturated
-            // edges keep the tone-map tests' tolerance (3 codes; 12 at 10 bits, as the self-test).
-            let (tolerance, tolerance10) = if f.transfer == 1 { (1, 1) } else { (3, 12) };
-            assert_eq!(actual.len(), expected.len());
-            for (i, (&a, &b)) in actual.iter().zip(&expected).enumerate() {
-                assert!(
-                    a.abs_diff(b) <= tolerance,
-                    "NV12 curve={curve} transfer={} code={i}: GPU {a}, CPU {b}",
-                    f.transfer
+        // The default stage (bale_tonemap_create: R2) and a debug `bayerdither` one.
+        for (handle, options) in [
+            (warp.create(&c), cpu::Options::default()),
+            (warp.create_with(&c, "bayerdither"), bayer),
+        ] {
+            // SAFETY: the test owns the live handle; no apply is in flight.
+            assert_eq!(unsafe { (*handle.0).dither() }, options.dither);
+            let dither = options.dither;
+            for (f, input) in &inputs {
+                let source = warp.texture(
+                    &desc(
+                        iw,
+                        ih,
+                        DXGI_FORMAT_P010,
+                        D3D11_BIND_SHADER_RESOURCE.0 as u32,
+                    ),
+                    Some(input.as_slice()),
                 );
-            }
-            assert_eq!(handle.apply(&warp, &source, 0, &nv12, f), S_OK);
-            assert_eq!(warp.readback(&nv12), actual, "the dither is static");
-            let p010 = warp.texture(&output_desc_as(&c, DXGI_FORMAT_P010), None);
-            assert_eq!(handle.apply(&warp, &source, 0, &p010, f), S_OK);
-            let actual10 = warp.readback_p010(&p010);
-            let expected10 = cpu::reference_p010(&c, f, &input, iw, ih).unwrap();
-            assert_eq!(actual10.len(), expected10.len());
-            for (i, (&a, &b)) in actual10.iter().zip(&expected10).enumerate() {
-                assert!(
-                    a.abs_diff(b) <= tolerance10,
-                    "P010 curve={curve} transfer={} code={i}: GPU {a}, CPU {b}",
-                    f.transfer
-                );
-            }
-            if f.transfer == 1 {
-                // On the ramp, 8x8-block sums of the dithered luma resolve the 10-bit steps that
-                // plain rounding of the P010 result collapses into a few bands.
-                let levels = |codes: Vec<u32>| {
-                    let mut sums: Vec<u32> = (0..w as usize)
-                        .step_by(8)
-                        .map(|x| {
-                            (0..8)
-                                .flat_map(|y| (0..8).map(move |dx| (y, x + dx)))
-                                .map(|(y, x)| codes[y * w as usize + x])
-                                .sum()
-                        })
-                        .collect();
-                    sums.dedup();
-                    sums.len()
-                };
-                let dithered = levels(actual.iter().map(|&a| u32::from(a)).collect());
-                let plain = levels(actual10.iter().map(|&b| (u32::from(b) + 2) / 4).collect());
-                assert!(dithered >= 3 * plain, "{dithered} vs {plain} levels");
+                let nv12 = warp.texture(&output_desc(&c), None);
+                assert_eq!(handle.apply(&warp, &source, 0, &nv12, f), S_OK);
+                let actual = warp.readback(&nv12);
+                let expected = cpu::reference_with(&c, f, input, iw, ih, options).unwrap();
+                // The smooth SDR ramp only differs by a threshold flip; the PQ pattern's saturated
+                // edges keep the tone-map tests' tolerance (3 codes; 12 at 10 bits, as the self-test).
+                let (tolerance, tolerance10) = if f.transfer == 1 { (1, 1) } else { (3, 12) };
+                assert_eq!(actual.len(), expected.len());
+                for (i, (&a, &b)) in actual.iter().zip(&expected).enumerate() {
+                    assert!(
+                        a.abs_diff(b) <= tolerance,
+                        "NV12 {dither:?} curve={curve} transfer={} code={i}: GPU {a}, CPU {b}",
+                        f.transfer
+                    );
+                }
+                assert_eq!(handle.apply(&warp, &source, 0, &nv12, f), S_OK);
+                assert_eq!(warp.readback(&nv12), actual, "the dither is static");
+                let p010 = warp.texture(&output_desc_as(&c, DXGI_FORMAT_P010), None);
+                assert_eq!(handle.apply(&warp, &source, 0, &p010, f), S_OK);
+                let actual10 = warp.readback_p010(&p010);
+                let expected10 = cpu::reference_p010(&c, f, input, iw, ih).unwrap();
+                assert_eq!(actual10.len(), expected10.len());
+                for (i, (&a, &b)) in actual10.iter().zip(&expected10).enumerate() {
+                    assert!(
+                        a.abs_diff(b) <= tolerance10,
+                        "P010 {dither:?} curve={curve} transfer={} code={i}: GPU {a}, CPU {b}",
+                        f.transfer
+                    );
+                }
+                if f.transfer == 1 {
+                    // On the ramp, 8x8-block sums of the dithered luma resolve the 10-bit steps
+                    // that plain rounding of the P010 result collapses into a few bands.
+                    let levels = |codes: Vec<u32>| {
+                        let mut sums: Vec<u32> = (0..w as usize)
+                            .step_by(8)
+                            .map(|x| {
+                                (0..8)
+                                    .flat_map(|y| (0..8).map(move |dx| (y, x + dx)))
+                                    .map(|(y, x)| codes[y * w as usize + x])
+                                    .sum()
+                            })
+                            .collect();
+                        sums.dedup();
+                        sums.len()
+                    };
+                    let dithered = levels(actual.iter().map(|&a| u32::from(a)).collect());
+                    let plain = levels(actual10.iter().map(|&b| (u32::from(b) + 2) / 4).collect());
+                    assert!(
+                        dithered >= 3 * plain,
+                        "{dither:?}: {dithered} vs {plain} levels"
+                    );
+                }
             }
         }
     }
@@ -405,9 +421,10 @@ fn uniform_p010(w: u32, h: u32, luma: u16, cb: u16, cr: u16) -> Vec<u16> {
     data
 }
 
-/// Debug `r2dither`: NV12 output takes rav1g's display-pass threshold and rounding (`floor(v + t)`;
-/// luma at the pixel, Cb at the chroma sample, Cr transposed) code for code, from the stage's own
-/// value `v`; P010 stays bit-identical to the Bayer stage's.
+/// The default stage's NV12 output (bale_tonemap_create, R2 since 2026-11-26) takes rav1g's
+/// display-pass threshold and rounding (`floor(v + t)`; luma at the pixel, Cb at the chroma sample,
+/// Cr transposed) code for code, from the stage's own value `v`; P010 stays bit-identical to a debug
+/// `bayerdither` stage's, whose NV12 keeps matching the Bayer reference.
 ///
 /// Exact everywhere on uniform BT.709 SDR frames at 1:1: each value is a quarter code (a 10-bit
 /// code over 4) and each threshold an odd multiple of 1/512, so `v + t` lies at least 1/512 from a
@@ -422,9 +439,11 @@ fn uniform_p010(w: u32, h: u32, luma: u16, cb: u16, cr: u16) -> Vec<u16> {
 fn r2_nv12_rounds_like_rav1g_code_for_code() {
     let warp = Warp::new();
     let srv = D3D11_BIND_SHADER_RESOURCE.0 as u32;
-    let r2 = cpu::Options {
-        dither: cpu::Dither::R2,
-        ..cpu::Options::default()
+    let r2 = cpu::Options::default();
+    assert_eq!(r2.dither, cpu::Dither::R2, "R2 is the default dither");
+    let bayer = cpu::Options {
+        dither: cpu::Dither::Bayer,
+        ..r2
     };
     let sdr = BaleToneMapFrameInfo {
         transfer: 1,
@@ -438,7 +457,7 @@ fn r2_nv12_rounds_like_rav1g_code_for_code() {
             height: h,
             ..config(1)
         };
-        let handle = warp.create_with(&c, "r2dither");
+        let handle = warp.create(&c);
         // SAFETY: the test owns the live handle; no apply is in flight.
         assert_eq!(unsafe { (*handle.0).dither() }, cpu::Dither::R2);
         let output = warp.texture(&output_desc(&c), None);
@@ -467,7 +486,7 @@ fn r2_nv12_rounds_like_rav1g_code_for_code() {
                 );
             }
             assert_eq!(
-                cpu::reference_with(&c, &sdr, &input, w, h, r2).unwrap(),
+                cpu::reference(&c, &sdr, &input, w, h).unwrap(),
                 model,
                 "{case}: the CPU reference rounds like rav1g"
             );
@@ -504,11 +523,8 @@ fn r2_nv12_rounds_like_rav1g_code_for_code() {
         let source = warp.texture(&desc(sw, sh, DXGI_FORMAT_P010, srv), Some(&input));
         let encoded = cpu::reference_encoded(&c, &sdr, &input, sw, sh, r2).unwrap();
         let (model, margins) = rav1g_nv12(&encoded);
-        assert_eq!(
-            cpu::reference_with(&c, &sdr, &input, sw, sh, r2).unwrap(),
-            model
-        );
-        let handle = warp.create_with(&c, "r2dither");
+        assert_eq!(cpu::reference(&c, &sdr, &input, sw, sh).unwrap(), model);
+        let handle = warp.create(&c);
         let output = warp.texture(&output_desc(&c), None);
         for staged in [true, false] {
             // SAFETY: the test owns the live handle; no apply is in flight.
@@ -538,10 +554,11 @@ fn r2_nv12_rounds_like_rav1g_code_for_code() {
             );
         }
     }
-    // Against the Bayer stage on the same frames: P010 bit-identical (the permutations differ only
-    // in the 8-bit threshold), NV12 within one code and not the same picture. Switching the dither of
-    // a live handle (set_options) gives exactly a created R2 stage's output. PQ keeps the tone map's
-    // usual tolerance against the reference (3 codes; saturated edges).
+    // Against a debug `bayerdither` stage on the same frames: P010 bit-identical (the permutations
+    // differ only in the 8-bit threshold), NV12 within one code and not the same picture, and each
+    // stage's NV12 matches its own dither's reference. Switching the dither of a live handle
+    // (set_options) gives exactly the other created stage's output. PQ keeps the tone map's usual
+    // tolerance against the reference (3 codes; saturated edges).
     let pq = BaleToneMapFrameInfo {
         transfer: 16,
         primaries: 9,
@@ -585,9 +602,10 @@ fn r2_nv12_rounds_like_rav1g_code_for_code() {
                 warp.readback(&output).into_iter().map(u16::from).collect()
             }
         };
-        let (bayer_stage, r2_stage) = (warp.create(&c), warp.create_with(&c, "r2dither"));
-        // SAFETY: the test owns the live handle; no apply is in flight.
+        let (bayer_stage, r2_stage) = (warp.create_with(&c, "bayerdither"), warp.create(&c));
+        // SAFETY (each deref below): the test owns the live handles; no apply is in flight.
         assert_eq!(unsafe { (*bayer_stage.0).dither() }, cpu::Dither::Bayer);
+        assert_eq!(unsafe { (*r2_stage.0).dither() }, cpu::Dither::R2);
         let r2_nv12 = render(&r2_stage, DXGI_FORMAT_NV12);
         let bayer_nv12 = render(&bayer_stage, DXGI_FORMAT_NV12);
         assert_eq!(
@@ -608,16 +626,18 @@ fn r2_nv12_rounds_like_rav1g_code_for_code() {
             .filter(|(a, b)| a != b)
             .count();
         assert!(differing > 0, "{case}: the R2 stage wrote Bayer's codes");
-        let reference = cpu::reference_with(&c, f, &input, iw, ih, r2).unwrap();
         let tolerance = if f.transfer == 1 { 1 } else { 3 };
-        for (i, (&a, &b)) in r2_nv12.iter().zip(&reference).enumerate() {
-            assert!(
-                a.abs_diff(u16::from(b)) <= tolerance,
-                "{case} {}: GPU {a}, CPU {b}",
-                nv12_position(i, 256, 16)
-            );
+        for (options, actual) in [(r2, &r2_nv12), (bayer, &bayer_nv12)] {
+            let reference = cpu::reference_with(&c, f, &input, iw, ih, options).unwrap();
+            for (i, (&a, &b)) in actual.iter().zip(&reference).enumerate() {
+                assert!(
+                    a.abs_diff(u16::from(b)) <= tolerance,
+                    "{case} {:?} {}: GPU {a}, CPU {b}",
+                    options.dither,
+                    nv12_position(i, 256, 16)
+                );
+            }
         }
-        // SAFETY: the test owns the live handle; no apply is in flight.
         unsafe { (*bayer_stage.0).set_options(r2) }.unwrap();
         assert_eq!(unsafe { (*bayer_stage.0).dither() }, cpu::Dither::R2);
         assert_eq!(
@@ -625,7 +645,8 @@ fn r2_nv12_rounds_like_rav1g_code_for_code() {
             r2_nv12,
             "{case}: set_options"
         );
-        unsafe { (*bayer_stage.0).set_options(cpu::Options::default()) }.unwrap();
+        unsafe { (*bayer_stage.0).set_options(bayer) }.unwrap();
+        assert_eq!(unsafe { (*bayer_stage.0).dither() }, cpu::Dither::Bayer);
         assert_eq!(
             render(&bayer_stage, DXGI_FORMAT_NV12),
             bayer_nv12,
