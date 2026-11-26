@@ -16,8 +16,15 @@ public sealed partial class SettingsPickerSheet : UserControl
 {
     private List<SettingsPickerOptionView> _options = [];
     private int _focusIndex;
+    // Until the first row after Show takes focus: that reveal jumps, so the sheet opens on the checked row.
+    private bool _opening;
 
-    public SettingsPickerSheet() => InitializeComponent();
+    public SettingsPickerSheet()
+    {
+        InitializeComponent();
+        // OnOptionFocus scrolls the list; XAML's own reveal (Move's keyboard focus) must not move it as well.
+        SettingsScroll.OwnBringIntoView(Options);
+    }
 
     public bool IsOpen => ModalLayer.Visibility == Visibility.Visible;
 
@@ -32,6 +39,7 @@ public sealed partial class SettingsPickerSheet : UserControl
         Options.ItemsSource = _options;
         ModalLayer.Visibility = Visibility.Visible;
         Scroller.ChangeView(null, 0, null, disableAnimation: true);
+        _opening = true;
         FocusRetry.Until(this, () => !IsOpen || FocusRow(_focusIndex, FocusState.Programmatic));
     }
 
@@ -41,7 +49,7 @@ public sealed partial class SettingsPickerSheet : UserControl
     /// </summary>
     public void Hide() => ModalLayer.Visibility = Visibility.Collapsed;
 
-    /// <summary>Up/Down: the next row, stopping at the ends; a focused row scrolls itself into view.</summary>
+    /// <summary>Up/Down: the next row, stopping at the ends; <see cref="OnOptionFocus"/> scrolls it into view.</summary>
     public void Move(int step)
     {
         if (_options.Count == 0) return;
@@ -69,9 +77,19 @@ public sealed partial class SettingsPickerSheet : UserControl
         catch (Exception ex) { Log.Error("Settings picker row", ex); }
     }
 
+    /// <summary>
+    /// TvSettingsPickerSheet's LazyColumn: a row that takes focus glides to Compose's TV pivot (SettingsFocusScroll). The
+    /// sheet scrolls to the checked row before focusing it (listState.scrollToItem), so the first reveal after Show jumps.
+    /// A row not laid out yet is revealed on a later layout, unless focus has moved on by then.
+    /// </summary>
     private void OnOptionFocus(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: SettingsPickerOptionView view }) _focusIndex = view.Index;
+        if (sender is not FrameworkElement { DataContext: SettingsPickerOptionView view } row) return;
+        _focusIndex = view.Index;
+        var animate = !_opening;
+        _opening = false;
+        FocusRetry.Until(this, () => !IsOpen || !ReferenceEquals(_options.ElementAtOrDefault(_focusIndex), view)
+            || SettingsScroll.Reveal(Scroller, Options, row, animate));
     }
 
     private void OnOptionClick(object sender, RoutedEventArgs e)

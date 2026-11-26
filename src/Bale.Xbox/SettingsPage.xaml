@@ -60,7 +60,9 @@
           </StackPanel>
         </Grid>
         <ScrollViewer x:Name="DetailScroller" Grid.Row="1" Style="{StaticResource SkylineSettingsDetailScrollerStyle}">
-          <Grid>
+          <!-- TvSettingsScreen.kt's panes are LazyColumns that glide a focused row to Compose's TV pivot; OnDetailFocus does
+               that for every pane (SettingsScroll), since the page moves focus itself and XAML doesn't scroll for it. -->
+          <Grid x:Name="DetailContent" GotFocus="OnDetailFocus">
             <StackPanel x:Name="GeneralPane" Style="{StaticResource SkylineSettingsGroupsStyle}">
               <StackPanel Style="{StaticResource SkylineSettingsGroupStyle}">
                 <TextBlock Text="PROFILE AT LAUNCH" Style="{StaticResource SkylineSettingsGroupHeaderStyle}" />

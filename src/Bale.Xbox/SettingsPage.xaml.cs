@@ -24,6 +24,8 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     private CancellationTokenSource? _accountRead;
     private UIElement? _focusRoot;
     private bool _active;
+    // Navigated to anew (not Back): the pane opens at its top once loaded.
+    private bool _newVisit;
     private bool _backPressed;
     private bool _signingOut;
     private bool _autoPlayBusy;
@@ -91,6 +93,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         OptionSheet.Chosen += OnSubtitleOptionChosen;
         ResetPrompt.Confirmed += OnResetAppearanceConfirmed;
         ResetPrompt.Dismissed += () => FocusTarget(ResetAppearanceButton);
+        SettingsScroll.OwnBringIntoView(DetailContent);
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -104,6 +107,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
         {
             _category = SettingsCategory.General;
             _returnTarget = GeneralCategory;
+            _newVisit = true;
         }
         var visible = SettingsCategories.Visible(SettingsSupport.Bale);
         GeneralCategory.Visibility = visible.Contains(SettingsCategory.General) ? Visibility.Visible : Visibility.Collapsed;
@@ -164,6 +168,10 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         if (!_active) return;
+        // A new visit composes the pane afresh in TvSettingsScreen.kt, at its top; Back finds it where it was. Done once the
+        // cached page is back in the tree, where its scroller takes the change.
+        if (_newVisit) DetailScroller.ChangeView(null, 0, null, disableAnimation: true);
+        _newVisit = false;
         ServerCategory.ApplyTemplate();
         VisualStateManager.GoToState(ServerCategory, "ServerIcon", false);
         PlaybackCategory.ApplyTemplate();
@@ -225,6 +233,7 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
 
     private void SelectCategory(SettingsCategory category)
     {
+        var changed = category != _category;
         _category = category;
         var general = category == SettingsCategory.General;
         var playback = category == SettingsCategory.Playback;
@@ -244,7 +253,9 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
             SettingsCategory.Server => ("Server", "The Silo server this Xbox is connected to."),
             _ => ("General", "App-level options for this Xbox."),
         };
-        DetailScroller.ChangeView(null, 0, null, disableAnimation: true);
+        // TvSettingsScreen.kt composes a newly selected category's pane at its top; refocusing the selected category (Left
+        // or Back from its rows) leaves the pane where it was.
+        if (changed) DetailScroller.ChangeView(null, 0, null, disableAnimation: true);
     }
 
     private ToggleButton SelectedCategory => _category switch
@@ -294,6 +305,20 @@ public sealed partial class SettingsPage : Page, IBackHandler, IRestoresFocus
     {
         _returnTarget = target;
         FocusRetry.Until(this, () => !OwnsSettings || (target.Focus(FocusState.Programmatic) && target.FocusState != FocusState.Unfocused));
+    }
+
+    /// <summary>
+    /// TvSettingsScreen.kt's panes glide a row that takes focus to Compose's TV pivot (SettingsFocusScroll), every pane
+    /// alike. XAML scrolls a ScrollViewer for keyboard focus only, and the page moves focus itself (FocusTarget's
+    /// Focus(Programmatic)), so the pane scrolls here whichever way the row got focus; a row not laid out yet (a pane just
+    /// switched in) is revealed on a later layout while it keeps focus.
+    /// </summary>
+    private void OnDetailFocus(object sender, RoutedEventArgs e)
+    {
+        // GotFocus arrives after the move: reveal what holds focus now, if it is still in the pane.
+        if (FocusManager.GetFocusedElement() is not FrameworkElement row || !SettingsInput.IsWithin(row, DetailContent)) return;
+        FocusRetry.Until(this, () => !OwnsSettings || !ReferenceEquals(FocusManager.GetFocusedElement(), row)
+            || SettingsScroll.Reveal(DetailScroller, DetailContent, row, animate: true));
     }
 
     public void RestoreFocus()

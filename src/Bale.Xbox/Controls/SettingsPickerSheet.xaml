@@ -6,7 +6,8 @@
     FontFamily="{StaticResource SkylineFont}" IsTabStop="False">
   <!-- TvSettingsPickerSheet (TvSettingsScreen.kt:2384): the card, header and rows of the page's fixed pickers, with its rows
        built from a Bale.Core SettingsPickerModel; a long list (the subtitle languages) scrolls inside the card's 460dp
-       maximum while the header stays. The page owns the keys: Up/Down call Move, Back closes it. -->
+       maximum while the header stays, opening on the checked row and following focus to Compose's TV pivot
+       (OnOptionFocus, SettingsFocusScroll). The page owns the keys: Up/Down call Move, Back closes it. -->
   <Grid x:Name="ModalLayer" Visibility="Collapsed" Background="{StaticResource SkylineSettingsPickerScrim}">
     <Border Style="{StaticResource SkylineSettingsPickerCardStyle}">
       <Grid>

@@ -86,6 +86,8 @@
     <None Include="../../src/Bale.Xbox/Controls/SettingsPickerSheet.xaml.cs" Link="SettingsPickerSheet.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Controls/SettingsConfirmDialog.xaml" Link="SettingsConfirmDialog.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Controls/SettingsConfirmDialog.xaml.cs" Link="SettingsConfirmDialog.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- How the Settings pane and picker sheet scroll to a focused row (SettingsFocusScroll's pivot), pinned by source. -->
+    <None Include="../../src/Bale.Xbox/Services/SettingsScroll.cs" Link="SettingsScroll.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/DetailPage.AutomaticAudio.cs" Link="DetailPage.AutomaticAudio.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/SystemCaptions.cs" Link="SystemCaptions.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <!-- In-band closed captions: the wrapper compiles here; the caption ABI's Rust side and CI's export list are compared by source. -->
