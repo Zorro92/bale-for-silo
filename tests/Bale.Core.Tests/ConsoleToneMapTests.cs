@@ -566,7 +566,7 @@ public sealed class ConsoleToneMapTests
     {
         var uhd = new PlaybackRouteDecision(true, false, "hevc", "eac3", 0, 3840, 2160, ConsoleToneMap: true);
         var eight = new EngineOutputDecision("bgra", "nv12", "console stage writes dithered NV12 (SDR 8-bit display)", 8, "SDR 8-bit display");
-        var ten = new EngineOutputDecision("bgra", "p010", "SDR 8-bit display: 8-bit output", 10, "AV1 keeps 10-bit output (until rav1g is stable)");
+        var ten = new EngineOutputDecision("bgra", "p010", "SDR 8-bit display: 8-bit output", 10, "bale_gpu without dithered NV12");
         var config = FfmpegSource.Configuration(uhd);
         Assert.True(FfmpegSource.ApplyStageOutputDepth(config, uhd, eight));
         Assert.Equal("8", config.FFmpegOptions["bale_tonemap_output_depth"]);
@@ -586,6 +586,31 @@ public sealed class ConsoleToneMapTests
         removed.FFmpegOptions.Remove("bale_tonemap");
         Assert.False(FfmpegSource.ApplyStageOutputDepth(removed, uhd, eight));
         Assert.DoesNotContain("bale_tonemap_output_depth", removed.FFmpegOptions.Keys);
+    }
+
+    [Fact]
+    public void TheRav1gDownscaleAsksRav1gsDisplayPassForTheSameDepth()
+    {
+        // 4K SDR AV1 on a 1080p display (owner, 2026-11-26: AV1 delivers at display depth): the fork hands
+        // bale_tonemap_output_depth=8 to rav1g's display pass, which dithers NV12 itself.
+        var route = new PlaybackRouteDecision(true, true, "av1", "opus", 0, 3840, 2160);
+        var rav1g = new Rav1gRouteDecision(true, 250, 1920, 1080, ToneMap: false, new Av1SourceFacts(8, 2, 5, 1, 24),
+            DownscaleStage: true);
+        var eight = new EngineOutputDecision("bgra", "nv12", "console stage writes dithered NV12 (SDR 8-bit display)", 8, "SDR 8-bit display");
+        var config = FfmpegSource.Configuration(route, new DebugFfmpegInputTuning(), rav1g);
+        Assert.False(config.FFmpegOptions.ContainsKey("bale_tonemap"));
+        Assert.True(FfmpegSource.ApplyStageOutputDepth(config, route, eight, rav1gDownscale: true));
+        Assert.Equal("8", config.FFmpegOptions["bale_tonemap_output_depth"]);
+        // Without the downscale the rav1g mount has no stage: nothing requested.
+        var direct = FfmpegSource.Configuration(route, new DebugFfmpegInputTuning(), rav1g with { OutputWidth = null, OutputHeight = null,
+            DownscaleStage = false });
+        Assert.False(FfmpegSource.ApplyStageOutputDepth(direct, route, eight));
+        Assert.DoesNotContain("bale_tonemap_output_depth", direct.FFmpegOptions.Keys);
+        // HDR AV1 tone-mapped on an SDR display is the route's ConsoleToneMap stage, as for HEVC/VP9.
+        var toneMapRoute = route with { ConsoleToneMap = true };
+        var toneMap = FfmpegSource.Configuration(toneMapRoute, new DebugFfmpegInputTuning(), rav1g with { ToneMap = true, DownscaleStage = false });
+        Assert.True(FfmpegSource.ApplyStageOutputDepth(toneMap, toneMapRoute, eight));
+        Assert.Equal("8", toneMap.FFmpegOptions["bale_tonemap_output_depth"]);
     }
 
     [Fact]

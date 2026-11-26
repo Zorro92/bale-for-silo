@@ -12,9 +12,11 @@ public sealed record Av1SourceFacts(long? BitDepth, uint? Primaries, uint? Trans
 /// <summary>
 /// What a mount sets for rav1g; <see cref="Rav1g"/> false is the dav1d D3D11 CPU route.
 /// <see cref="DecodeAheadFrames"/> is <c>bale_decode_ahead_frames</c> on the rav1g route (null: the software default).
+/// <see cref="DownscaleStage"/>: rav1g's display pass (or the fork's stage) scales this SDR source down to the display, a
+/// stage for EngineOutputPolicy's depth like the console downscale (route.rs keeps AV1 off that one).
 /// </summary>
 public sealed record Rav1gRouteDecision(bool Rav1g, int? BufferMs, int? OutputWidth, int? OutputHeight, bool ToneMap,
-    Av1SourceFacts Source, int? DecodeAheadFrames = null, int? OutputTextures = null);
+    Av1SourceFacts Source, int? DecodeAheadFrames = null, int? OutputTextures = null, bool DownscaleStage = false);
 
 /// <summary>The media type the output guard read off a rav1g route's video sample.</summary>
 public sealed record Rav1gOutputFacts(string? Subtype, bool Rav1gMark, bool ToneMapMark, uint? Primaries, uint? Transfer,
@@ -98,16 +100,19 @@ public static class Rav1gPolicy
 
     /// <summary>
     /// The guard's rule on a rav1g route: direct output needs the rav1g mark, the source's depth (8-bit NV12,
-    /// more P010) and colour; stage output is marked limited BT.709 P010 (NV12 only when bale_gpu lacks P010);
-    /// no mark is the open's dav1d fallback, accepted (the chain's next decoder).
+    /// more P010) and colour; stage output is marked limited BT.709 P010, or NV12 when bale_gpu lacks P010 or Bale asked
+    /// for dithered 8-bit output (<paramref name="nv12Requested"/>, an 8-bit SDR display); no mark is the open's dav1d
+    /// fallback, accepted (the chain's next decoder).
     /// </summary>
-    public static Rav1gVerdict OutputVerdict(Av1SourceFacts source, Rav1gOutputFacts output, bool sdrDisplay, bool allowNv12Stage) =>
+    public static Rav1gVerdict OutputVerdict(Av1SourceFacts source, Rav1gOutputFacts output, bool sdrDisplay, bool allowNv12Stage,
+        bool nv12Requested = false) =>
         BaleCoreNative.Call("av1_decoder.output_verdict", writer =>
         {
             writer.Record("source", source, BaleCoreJson.Default.Av1SourceFacts);
             writer.Record("output", output, BaleCoreJson.Default.Rav1gOutputFacts);
             writer.WriteBoolean("sdr_display", sdrDisplay);
             writer.WriteBoolean("allow_nv12_stage", allowNv12Stage);
+            writer.WriteBoolean("nv12_requested", nv12Requested);
         }, BaleCoreJson.Default.Rav1gVerdict);
 
     /// <summary>

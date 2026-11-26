@@ -2921,9 +2921,9 @@ display depth: each mount's swap-chain format is capped at the current HDMI mode
 `engine_output.rs`, passed per open through `bale_gpu_engine_session_open_target`, bale_gpu ABI 14). P010
 frames get R10G10B10A2 for HDR/HLG passthrough (not console tone-mapped). For SDR output, including console
 tone-mapped HDR, P010 gets R10G10B10A2 only at 30 bpp or more; below that or with unknown display depth it
-gets B8G8R8A8. **Temporary AV1 exception:** a route or source codec normalising to AV1 keeps P010 →
-R10G10B10A2 until rav1g is stable, so decoder development retains realistic 10-bit resource use; one named
-constant in `engine_output.rs` controls it. NV12 and unknown frames always keep B8G8R8A8. Decoders, tone map,
+gets B8G8R8A8. AV1 follows the same rule: its temporary exception (P010 → R10G10B10A2 on every display, so
+decoder development kept realistic 10-bit resource use) ended on 2026-11-26 with rav1g as the default AV1
+decoder (owner). NV12 and unknown frames always keep B8G8R8A8. Decoders, tone map,
 scaling and the reported `frames` stay at their existing depth (source, else catalog bit depth/pixel format,
 else HDR/DV implies 10-bit; the SDR area downscale still writes P010 for 8-bit sources too). HDMI bpp is read
 on the UI thread at engine open and logged (`player: engine output=... frames=... display=24bpp reason=...`).
@@ -2932,15 +2932,23 @@ R10G10B10A2 behaviour for all displays. Debug `engine-target` (`auto` default, o
 still wins over everything. Both switches are memory only and apply on the next engine open.
 See "First 10-bit video after a boot slows the console GPU" below for the reason for the display ceiling.
 
-**Stage output at display depth (phase 2, 2026-11-19).** On an 8-bit SDR display the console stage itself
-delivers 8 bits: when the route uses the stage (tone map or SDR downscale), the current HDMI mode is below
-30 bpp (or unknown) and not HDR passthrough, the source is not AV1, the debug `output-depth` is `display`,
-and bale_gpu reports `BALE_TONEMAP_OUTPUT_NV12_DITHERED`, `engine_output.rs` returns `stage_output_depth` 8.
+**Stage output at display depth (phase 2, 2026-11-19; AV1 since 2026-11-26).** On an 8-bit SDR display the
+console stage itself delivers 8 bits: when the route uses the stage (tone map or SDR downscale), the current HDMI
+mode is below 30 bpp (or unknown) and not HDR passthrough, the debug `output-depth` is `display`, and bale_gpu
+reports `BALE_TONEMAP_OUTPUT_NV12_DITHERED`, `engine_output.rs` returns `stage_output_depth` 8. AV1 is no longer
+excepted (owner, 2026-11-26): on the rav1g route the tone map is the route's own `ConsoleToneMap` and the SDR
+downscale rav1g's display pass (`Rav1gRouteDecision.DownscaleStage`, `rav1g_downscale`, since route.rs keeps AV1
+off the console downscale), and with depth 8 rav1g's display pass writes ordered-dithered NV12 itself, after grain
+and tone map (rav1g 0.7.0-alpha.1+, pinned 0.8.0-alpha.1; the fork's BaleRav1g.h maps the key into the pass's depth).
+Its threshold is R2 quasirandom rather than bale_gpu's 8x8 Bayer; the owner accepted that, so there is no parity
+work. A rav1g mount without a stage (the source fits the display, no tone map) keeps its direct output at the
+source depth, and the engine's B8G8R8A8/R10G10B10A2 target follows the display as for any codec.
 `FfmpegSource.ApplyStageOutputDepth` then sets the fork key `bale_tonemap_output_depth=8` (beside
 `bale_tonemap_output_width/height`; unset keeps P010), the stage writes ordered-dithered NV12 in the same pass
 (half the stage's output frame memory, one rounding at full precision; docs/gpu-tone-map.md), and the engine
 decision reads `frames=nv12 target=bgra reason=console stage writes dithered NV12 (SDR 8-bit display)`.
-`FfmpegVideoOutputGuard` accepts that NV12 only with the tone-map mark, and still accepts marked P010.
+`FfmpegVideoOutputGuard` (and on the rav1g route `Rav1gOutputCheck`, Rust `output_verdict`'s `nv12_requested`)
+accepts that NV12 only with the tone-map mark, and still accepts marked P010.
 Each FFmpeg open logs `player: stage 8-bit output requested|not requested (<reason>)`. This needs a fork
 wrapper that reads `bale_tonemap_output_depth` (it applies the key on every stage route, D3D11 and rav1g);
 older wrappers ignore the key and keep P010, which then plays as before with the B8G8R8A8 target.
@@ -2955,7 +2963,7 @@ older wrappers ignore the key and keep P010, which then plays as before with the
 - **Usually short:** it normally wears off within 2 minutes. One afternoon case lasted 35+ minutes, after
   longer, repeated 10-bit viewing.
 - **Consequence:** the revised engine policy avoids 10-bit presentation on 8-bit SDR outputs, except for
-  the temporary AV1 development exception or an explicit debug override. Before GPU timing runs, do not
+  an explicit debug override (the temporary AV1 development exception ended on 2026-11-26). Before GPU timing runs, do not
   take a reading within a few minutes of the first 10-bit play after a boot.
 
 **No longer reproduces (2026-11-23, console OS 26100.9673, build 261116).** Restart before each play, 60 s of

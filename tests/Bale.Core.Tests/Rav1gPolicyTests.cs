@@ -63,6 +63,10 @@ public sealed class Rav1gPolicyTests
         Assert.Null(fits.OutputWidth);
         Assert.Null(fits.OutputHeight);
         Assert.False(fits.ToneMap);
+        // SDR larger than the display is rav1g's downscale stage; PQ is the tone map's or passes through.
+        Assert.True(decision.DownscaleStage);
+        Assert.False(fits.DownscaleStage);
+        Assert.False(Decide(version: Version("bt2020", "smpte2084", "bt2020nc")).DownscaleStage);
     }
 
     private static Rav1gOutputFacts Direct(string subtype, uint? primaries = 2, uint? transfer = 5, uint? matrix = 1) =>
@@ -100,6 +104,12 @@ public sealed class Rav1gPolicyTests
         Assert.Equal("stage", Rav1gPolicy.OutputVerdict(Sdr(10), stage, true, false).Kind);
         Assert.Equal("reject", Rav1gPolicy.OutputVerdict(Sdr(10), stage with { Subtype = "NV12" }, true, false).Kind);
         Assert.Equal("stage", Rav1gPolicy.OutputVerdict(Sdr(10), stage with { Subtype = "NV12" }, true, true).Kind);
+        // Dithered 8-bit output Bale asked for on an 8-bit SDR display (owner, 2026-11-26: AV1 at display depth too);
+        // P010 stays accepted (HDR passthrough, a 30+ bpp display, a wrapper ignoring the key).
+        Assert.Equal("stage", Rav1gPolicy.OutputVerdict(Sdr(10), stage with { Subtype = "NV12" }, true, false, nv12Requested: true).Kind);
+        Assert.Equal("stage", Rav1gPolicy.OutputVerdict(Sdr(10), stage, true, false, nv12Requested: true).Kind);
+        // A request never excuses unmarked or direct NV12 from a 10-bit source.
+        Assert.Equal("reject", Rav1gPolicy.OutputVerdict(Sdr(10), Direct("NV12"), true, false, nv12Requested: true).Kind);
         Assert.Equal("reject", Rav1gPolicy.OutputVerdict(Sdr(10), stage with { Range = 1 }, true, false).Kind);
         Assert.Equal("both marks", Rav1gPolicy.OutputVerdict(Sdr(10), stage with { Rav1gMark = true }, true, false).Reason);
     }

@@ -175,6 +175,11 @@ pub struct RouteDecision {
     pub output_height: Option<i32>,
     /// `bale_tonemap=1`: PQ/HLG on a known SDR display is tone-mapped by the stage.
     pub tone_map: bool,
+    /// rav1g's display pass (or the fork's stage on rav1g's frames) scales this SDR source down to the
+    /// display: a stage for the engine output's depth (`engine_output`), as the console downscale is for
+    /// HEVC/VP9/H.264. PQ/HLG and BT.2020 sources get none from the size alone (the fork's
+    /// BaleToneMap::Create: no curve without the tone map); their tone map is route.rs's.
+    pub downscale_stage: bool,
     pub source: SourceFacts,
 }
 
@@ -194,6 +199,7 @@ pub fn route(args: &RouteArgs) -> RouteDecision {
             output_width: None,
             output_height: None,
             tone_map: false,
+            downscale_stage: false,
             source,
         };
     }
@@ -207,6 +213,8 @@ pub fn route(args: &RouteArgs) -> RouteDecision {
         args.display_width,
         args.display_height,
     );
+    let hdr_or_wide = matches!(source.transfer, Some(MF_TRANSFER_PQ | MF_TRANSFER_HLG))
+        || source.primaries == Some(MF_PRIMARIES_BT2020);
     RouteDecision {
         rav1g,
         buffer_ms: Some(BUFFER_MS),
@@ -215,6 +223,7 @@ pub fn route(args: &RouteArgs) -> RouteDecision {
         output_width: downscale.then_some(args.display_width as i32),
         output_height: downscale.then_some(args.display_height as i32),
         tone_map: args.sdr_display,
+        downscale_stage: downscale && !hdr_or_wide,
         source,
     }
 }
@@ -357,6 +366,10 @@ pub struct VerdictArgs {
     pub sdr_display: bool,
     /// bale_gpu cannot write P010, so the stage writes NV12 (as FfmpegVideoOutputGuard allows).
     pub allow_nv12_stage: bool,
+    /// Bale asked this mount's stage or rav1g's display pass for dithered 8-bit output
+    /// (`bale_tonemap_output_depth=8`, an 8-bit SDR display): marked NV12 is the request met.
+    #[serde(default)]
+    pub nv12_requested: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -406,7 +419,7 @@ pub fn output_verdict(args: &VerdictArgs) -> Verdict {
                 && output.transfer == Some(MF_TRANSFER_709)
                 && output.matrix == Some(MF_MATRIX_BT709)
                 && output.range == Some(MF_RANGE_16_235);
-            if !(p010 || nv12 && args.allow_nv12_stage) {
+            if !(p010 || nv12 && (args.allow_nv12_stage || args.nv12_requested)) {
                 Verdict::reject("stage format")
             } else if !bt709 {
                 Verdict::reject("stage colour")
@@ -657,6 +670,33 @@ mod tests {
         assert_eq!(dav1d.decode_ahead_frames, None);
         assert_eq!(dav1d.output_width, None);
         assert!(!dav1d.tone_map);
+        assert!(!dav1d.downscale_stage);
+    }
+
+    #[test]
+    fn only_sdr_larger_than_the_display_gets_rav1gs_downscale_stage() {
+        // 4K SDR BT.709 on a 1080p display: rav1g's display pass scales it.
+        assert!(route(&route_args("rav1g")).downscale_stage);
+        let mut fits = route_args("rav1g");
+        (fits.video_width, fits.video_height) = (Some(1920), Some(1080));
+        assert!(!route(&fits).downscale_stage);
+        // Unknown colour tags are SDR to the fork (BT.709 assumed at 720p and up).
+        let mut untagged = route_args("rav1g");
+        untagged.versions = None;
+        assert!(route(&untagged).downscale_stage);
+        // PQ/HLG or BT.2020 get no stage from the size alone: the tone map on SDR, passthrough on HDR.
+        for (primaries, transfer, space) in [
+            ("bt2020", "smpte2084", "bt2020nc"),
+            ("bt2020", "arib-std-b67", "bt2020nc"),
+            ("bt2020", "bt709", "bt2020nc"),
+            ("bt709", "smpte2084", "bt709"),
+        ] {
+            let mut hdr = route_args("rav1g");
+            hdr.versions = Some(vec![version(primaries, transfer, space, "24")]);
+            let decision = route(&hdr);
+            assert!(decision.rav1g && decision.output_width.is_some());
+            assert!(!decision.downscale_stage, "{primaries} {transfer}");
+        }
     }
 
     #[test]
@@ -764,6 +804,7 @@ mod tests {
             output,
             sdr_display: true,
             allow_nv12_stage: false,
+            nv12_requested: false,
         })
     }
 
@@ -815,6 +856,7 @@ mod tests {
             },
             sdr_display: false,
             allow_nv12_stage: false,
+            nv12_requested: false,
         };
         assert_eq!(output_verdict(&args).kind, "direct");
     }
@@ -839,6 +881,7 @@ mod tests {
             output,
             sdr_display: false,
             allow_nv12_stage: false,
+            nv12_requested: false,
         };
         assert_eq!(output_verdict(&args).kind, "direct");
         args.output.transfer = Some(5);
@@ -871,11 +914,24 @@ mod tests {
         assert_eq!(verdict(Some(10), nv12.clone()).kind, "reject");
         let args = VerdictArgs {
             source: SourceFacts::default(),
-            output: nv12,
+            output: nv12.clone(),
             sdr_display: true,
             allow_nv12_stage: true,
+            nv12_requested: false,
         };
         assert_eq!(output_verdict(&args).kind, "stage");
+        // Dithered 8-bit output Bale asked for (an 8-bit SDR display) is the stage's NV12 too.
+        let requested = VerdictArgs {
+            source: SourceFacts {
+                bit_depth: Some(10),
+                ..SourceFacts::default()
+            },
+            output: nv12,
+            sdr_display: true,
+            allow_nv12_stage: false,
+            nv12_requested: true,
+        };
+        assert_eq!(output_verdict(&requested).kind, "stage");
         let mut colour = stage.clone();
         colour.range = Some(1);
         assert_eq!(verdict(Some(10), colour).kind, "reject");

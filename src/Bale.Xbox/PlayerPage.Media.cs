@@ -354,7 +354,8 @@ public sealed partial class PlayerPage
                 FfmpegSource.ApplyDisplaySize(config, media.Route, DisplayHdrOutput.CurrentRawSize());
                 // Phase 2 of the bit-depth rule: decide the stage's depth with the engine output, once per open.
                 media.EngineOutput = DecideEngineOutput(attempt, media, ConsoleToneMapRuntime.SupportsDitheredNv12);
-                media.StageOutput8Bit = FfmpegSource.ApplyStageOutputDepth(config, media.Route, media.EngineOutput);
+                media.StageOutput8Bit = FfmpegSource.ApplyStageOutputDepth(config, media.Route, media.EngineOutput,
+                    rav1gRoute && rav1g.DownscaleStage);
                 if (!media.StageOutput8Bit && media.EngineOutput.StageOutputDepth == 8)
                     media.EngineOutput = DecideEngineOutput(attempt, media, stageNv12Dithered: false);
                 FfmpegSource.ApplySubtitleSink(config, media.SubtitleStreamIndex, media.SubtitleSinkToken);
@@ -428,7 +429,8 @@ public sealed partial class PlayerPage
                 {
                     // Design §4: direct output only with the rav1g mark, the source depth and colour; stage output marked as
                     // today; unmarked output is the open's dav1d fallback, reported and accepted (the chain's next decoder).
-                    media.Rav1gCheck = new Rav1gOutputCheck(rav1g.Source, sdrDisplay, !ConsoleToneMapRuntime.SupportsP010);
+                    media.Rav1gCheck = new Rav1gOutputCheck(rav1g.Source, sdrDisplay, !ConsoleToneMapRuntime.SupportsP010,
+                        nv12Requested: media.StageOutput8Bit);
                     media.VideoOutputGuard = new FfmpegVideoOutputGuard(media.FfmpegSource, () =>
                         _ = DispatchAsync(() => QueueFailure(attempt, media, 0, isDecoder: false, isNetwork: false)), media.Rav1gCheck);
                 }
@@ -689,9 +691,11 @@ public sealed partial class PlayerPage
 #endif
         try
         {
+            // rav1g's display pass is the downscale stage of a rav1g mount (route.rs marks only its tone map).
             return attempt.Plan is { } plan
                 ? EngineOutputPolicy.Decide(plan, media.Route, attempt.Request.Detail.Versions, ConsoleToneMapRuntime.SupportsP010,
-                    DisplayHdrOutput.CurrentBitsPerPixel(), ceiling, stageNv12Dithered)
+                    DisplayHdrOutput.CurrentBitsPerPixel(), ceiling, stageNv12Dithered,
+                    rav1gDownscale: media.Rav1gRoute && media.Rav1g is { DownscaleStage: true })
                 : new EngineOutputDecision("bgra", "unknown", "no plan");
         }
         catch (Exception ex)

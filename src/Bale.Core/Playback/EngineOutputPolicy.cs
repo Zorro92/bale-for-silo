@@ -19,9 +19,10 @@ public sealed record EngineOutputDecision(string Target, string Frames, string R
 
 /// <summary>
 /// Owner's bit-depth rule (AGENTS.md): work at source depth, deliver at display depth. P010 gets R10G10B10A2
-/// for HDR passthrough or SDR on a 30+ bpp display; AV1 keeps 10-bit output until rav1g is stable. Other P010,
-/// NV12 and unknown frames get B8G8R8A8. Phase 2: on an 8-bit SDR display the console stage writes dithered NV12
-/// (AV1 excepted) when bale_gpu dithers it. Implemented in Rust (native/bale-core/src/engine_output.rs).
+/// for HDR passthrough or SDR on a 30+ bpp display. Other P010, NV12 and unknown frames get B8G8R8A8, AV1 included
+/// (owner, 2026-11-26: its temporary 10-bit exception ended with rav1g as the default). Phase 2: on an 8-bit SDR display
+/// the console stage, and rav1g's display pass where it does that work, writes dithered NV12 when bale_gpu dithers it.
+/// Implemented in Rust (native/bale-core/src/engine_output.rs).
 /// </summary>
 public static class EngineOutputPolicy
 {
@@ -29,9 +30,12 @@ public static class EngineOutputPolicy
     /// <param name="displayBitsPerPixel">The current HDMI mode's depth; unknown caps SDR at 8 bits.</param>
     /// <param name="ceiling">display (default), or source to keep P010 at 10 bits regardless of the display.</param>
     /// <param name="stageNv12Dithered">bale_gpu dithers the stage's NV12 (ConsoleToneMapRuntime.SupportsDitheredNv12).</param>
+    /// <param name="rav1gDownscale">The mount's rav1g route scales SDR down to the display (Rav1gRouteDecision.DownscaleStage):
+    /// rav1g's display pass is this mount's downscale stage.</param>
     public static EngineOutputDecision Decide(PlaybackPlan plan, PlaybackRouteDecision route,
         IReadOnlyList<FileVersion>? versions = null, bool stageP010 = true,
-        int? displayBitsPerPixel = null, string ceiling = "display", bool stageNv12Dithered = false) =>
+        int? displayBitsPerPixel = null, string ceiling = "display", bool stageNv12Dithered = false,
+        bool rav1gDownscale = false) =>
         BaleCoreNative.Call("engine_output.decide", writer =>
         {
             writer.Server("plan", plan);
@@ -39,6 +43,7 @@ public static class EngineOutputPolicy
             writer.Record("route", route, BaleCoreJson.Default.PlaybackRouteDecision);
             writer.WriteBoolean("stage_p010", stageP010);
             writer.WriteBoolean("stage_nv12_dithered", stageNv12Dithered);
+            writer.WriteBoolean("rav1g_downscale", rav1gDownscale);
             if (displayBitsPerPixel is { } bpp) writer.WriteNumber("display_bits_per_pixel", bpp);
             else writer.WriteNull("display_bits_per_pixel");
             writer.WriteString("ceiling", ceiling);

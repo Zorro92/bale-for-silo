@@ -258,8 +258,8 @@ For Bale, a normal app with hevcPlayback on the Series X:
   docs/software-decode.md): a software H.264/HEVC/VP9 route takes both, and a software frame above 1080p plays only
   through it or on a display known to fit it. Details, evidence and gates: docs/player-plan.md "4K SDR downscale on
   smaller displays".
-- **Bit-depth rule (owner, revised 2026-11-18):** work at source depth, deliver at display depth;
-  AV1 keeps 10-bit output until rav1g is stable. Every stage that
+- **Bit-depth rule (owner, revised 2026-11-18):** work at source depth, deliver at display depth, AV1
+  included (owner, 2026-11-26: its temporary 10-bit exception ended with rav1g as the default). Every stage that
   processes video (tone map, film grain, scaling, colour or format conversion, repack, FFmpeg sws/filters,
   bale_gpu shaders, the fork, rav1g) keeps the source's depth: 8-bit in, 8-bit out (NV12); more than 8 bits
   in, 10-bit out (P010; 12-bit is capped to 10). Never reduce processing depth. Don't raise 8-bit to
@@ -271,10 +271,13 @@ For Bale, a normal app with hevcPlayback on the Series X:
   Bale requested 8-bit for that mount. **Phase 2 (2026-11-19):** on an 8-bit SDR display (current HDMI mode
   below 30 bpp or unknown, not HDR passthrough, not debug `output-depth source`) the console stage (tone map
   or SDR downscale) writes **dithered 8-bit NV12** in the same pass instead of P010, rounding once at full
-  precision (static 8x8 Bayer, bale_gpu bit `BALE_TONEMAP_OUTPUT_NV12_DITHERED`); AV1 is excepted (keeps P010
-  until rav1g is stable). The decision is Rust (`engine_output.rs`, `stage_output_depth`), sets the fork key
-  `bale_tonemap_output_depth=8`, and the guard then accepts NV12 only with the tone-map mark. P010 output is
-  unchanged. Needs a fork wrapper that reads the key; older ones keep P010.
+  precision (static 8x8 Bayer, bale_gpu bit `BALE_TONEMAP_OUTPUT_NV12_DITHERED`). On the rav1g route the fork hands
+  the same key to rav1g's display pass (tone map, or SDR scaled to the display: `Rav1gRouteDecision.DownscaleStage`),
+  which writes ordered-dithered NV12 itself after grain and tone map (rav1g 0.7.0-alpha.1+; its threshold is R2
+  quasirandom, not bale_gpu's Bayer, accepted). The decision is Rust (`engine_output.rs`, `stage_output_depth`),
+  sets the fork key `bale_tonemap_output_depth=8`, and the guards (`FfmpegVideoOutputGuard`, `Rav1gOutputCheck`)
+  then accept NV12 only with the tone-map mark, and marked P010 still (HDR passthrough, a 30+ bpp display, a
+  wrapper that ignores the key). Needs a fork wrapper that reads the key; older ones keep P010.
   FFmpeg software decode outputs P010 for every source above 8 bits (fork bale.41+) and NV12 for 8-bit sources, also 4:2:2, 4:4:4, full range, RGB and grey (bale.42+).
   dav1d now hands MF CPU NV12 for 8-bit AV1 and P010 for 10-bit on D3D11 (owner, 2026-11-19);
   rav1g takes NV12 textures for 8-bit and P010 for 10-bit. Only debug `dav1d-path zerocopy` keeps
@@ -283,8 +286,7 @@ For Bale, a normal app with hevcPlayback on the Series X:
   `engine_output.rs`, passed to `bale_gpu_engine_session_open_target` as `MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT`,
   logged once per open with current HDMI bpp): P010 → R10G10B10A2 for HDR passthrough (not console tone-mapped),
   or SDR output on a current HDMI mode of at least 30 bpp; otherwise B8G8R8A8. Unknown display depth treats SDR
-  as 8-bit. AV1 on the route or source temporarily keeps P010 → R10G10B10A2 until rav1g is stable, behind one
-  named Rust constant. NV12 (8-bit sources, 8-bit AV1 included, server transcodes, a stage on a bale_gpu without
+  as 8-bit, AV1 included. NV12 (8-bit sources, 8-bit AV1 included, server transcodes, a stage on a bale_gpu without
   P010) and unknown frames always keep B8G8R8A8. Frame depth, decoders, tone map and scaling are unchanged.
   See docs/player-plan.md, "First 10-bit video after a boot slows the console GPU". The MediaPlayer fallback
   is unchanged. Debug `bale-debug.sh output-depth display|source` selects the display ceiling (default, as in

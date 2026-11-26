@@ -149,7 +149,10 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
 /// mark with the source's depth and colour, stage output the tone-map mark; unmarked output is the open's dav1d fallback,
 /// accepted and reported. The verdict is computed once per distinct media type, not per sample.
 /// </summary>
-internal sealed class Rav1gOutputCheck(Av1SourceFacts source, bool sdrDisplay, bool allowNv12Stage)
+/// <param name="nv12Requested">Bale asked this mount's stage or rav1g's display pass for dithered 8-bit output
+/// (FfmpegSource.ApplyStageOutputDepth): marked NV12 is accepted; marked P010 (HDR passthrough, a 30+ bpp display, an older
+/// wrapper ignoring the key) still is.</param>
+internal sealed class Rav1gOutputCheck(Av1SourceFacts source, bool sdrDisplay, bool allowNv12Stage, bool nv12Requested = false)
 {
     private Rav1gOutputFacts? _last;
     private Rav1gVerdict? _verdict;
@@ -168,7 +171,7 @@ internal sealed class Rav1gOutputCheck(Av1SourceFacts source, bool sdrDisplay, b
         var facts = Facts(format);
         if (_verdict is null || facts != _last)
         {
-            var verdict = Rav1gPolicy.OutputVerdict(source, facts, sdrDisplay, allowNv12Stage);
+            var verdict = Rav1gPolicy.OutputVerdict(source, facts, sdrDisplay, allowNv12Stage, nv12Requested);
             _last = facts;
             Volatile.Write(ref _verdict, verdict);
             // Fixed words and media-type numbers only.

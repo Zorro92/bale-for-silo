@@ -125,6 +125,28 @@ public sealed class Rav1gPlayerTests
     }
 
     [Fact]
+    public void GuardAcceptsMarkedNv12OnlyWhenEightBitsWereRequested()
+    {
+        var source = new FFmpegMediaSource();
+        source.VideoStreams.Add(new() { CodecName = "av1", DecoderEngine = DecoderEngine.FFmpegD3D11HardwareDecoder });
+        var failures = 0;
+        // rav1g's display pass at depth 8 (an 8-bit SDR display): marked, dithered NV12.
+        var requested = new Rav1gOutputCheck(new Av1SourceFacts(10, 2, 5, 1, null), true, false, nv12Requested: true);
+        using (new FfmpegVideoOutputGuard(source, () => failures++, requested))
+            Assert.NotNull(source.Source.Request(new VideoStreamDescriptor
+                { EncodingProperties = Format("NV12", rav1gMark: false, toneMapMark: true) }).Sample);
+        Assert.Equal("stage", requested.Verdict);
+        Assert.Equal(0, failures);
+        var unrequested = new FFmpegMediaSource();
+        unrequested.VideoStreams.Add(new() { CodecName = "av1", DecoderEngine = DecoderEngine.FFmpegD3D11HardwareDecoder });
+        var check = new Rav1gOutputCheck(new Av1SourceFacts(10, 2, 5, 1, null), true, false);
+        using (new FfmpegVideoOutputGuard(unrequested, () => failures++, check))
+            Assert.Null(unrequested.Source.Request(new VideoStreamDescriptor
+                { EncodingProperties = Format("NV12", rav1gMark: false, toneMapMark: true) }).Sample);
+        Assert.Equal(1, failures);
+    }
+
+    [Fact]
     public void GuardAcceptsStageOutputAndTheUnmarkedDav1dFallback()
     {
         var source = new FFmpegMediaSource();

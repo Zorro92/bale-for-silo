@@ -1,11 +1,12 @@
 //! The IMFMediaEngine swap-chain format of one mount (owner's bit-depth rule, AGENTS.md): work at
 //! source depth, deliver at display depth. P010 gets R10G10B10A2 (`rgb10`) for HDR passthrough or a
-//! 30+ bpp SDR display, otherwise B8G8R8A8 (`bgra`). AV1 temporarily keeps 10-bit output until rav1g
-//! is stable. NV12 and unknown frames keep `bgra`.
+//! 30+ bpp SDR display, otherwise B8G8R8A8 (`bgra`). NV12 and unknown frames keep `bgra`. AV1 follows
+//! the same rule (owner, 2026-11-26: its temporary 10-bit exception ended with rav1g as the default).
 //!
-//! Phase 2 (2026-11-19): on an 8-bit SDR display the console stage (tone map or SDR downscale) is
-//! asked for dithered 8-bit NV12 (`stage_output_depth` 8, the fork's `bale_tonemap_output_depth`)
-//! when bale_gpu dithers it, except for AV1. Otherwise no stage output depth changes here.
+//! Phase 2 (2026-11-19): on an 8-bit SDR display the console stage (tone map or SDR downscale), and
+//! rav1g's display pass where it does that work, is asked for dithered 8-bit NV12 (`stage_output_depth`
+//! 8, the fork's `bale_tonemap_output_depth`, which the fork also hands rav1g's display pass) when
+//! bale_gpu dithers it. Otherwise no stage output depth changes here.
 
 use serde::{Deserialize, Serialize};
 
@@ -20,9 +21,6 @@ const COPIED_VIDEO_DELIVERIES: [&str; 4] = [
     "server_remux_progressive",
     "server_remux_hls",
 ];
-
-/// Owner's temporary exception: retain realistic 10-bit resource use while developing rav1g.
-const AV1_KEEPS_10_BIT_OUTPUT_UNTIL_RAV1G_IS_STABLE: bool = true;
 
 #[derive(Deserialize, Default, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -55,6 +53,11 @@ pub struct DecideArgs {
     /// BALE_TONEMAP_OUTPUT_NV12_DITHERED); only then is 8-bit stage output requested.
     #[serde(default)]
     stage_nv12_dithered: bool,
+    /// The mount's rav1g route scales SDR down to the display in rav1g's display pass, or the fork's
+    /// stage on rav1g's frames (`av1_decoder::RouteDecision::downscale_stage`): a downscale stage like
+    /// the console one, which route.rs keeps to HEVC/VP9/H.264. Its tone map is `console_tone_map`.
+    #[serde(default)]
+    rav1g_downscale: bool,
     /// Current HDMI mode, not the display's supported modes. Unknown caps SDR at 8 bits.
     display_bits_per_pixel: Option<i32>,
     #[serde(default)]
@@ -87,13 +90,13 @@ fn output(frames: &'static str, reason: &'static str) -> EngineOutput {
     }
 }
 
-/// Whether the console stage writes dithered 8-bit NV12 for this mount, and why (fixed log text).
-/// Only on an SDR display whose current HDMI mode is below 30 bpp (unknown counts as 8-bit, as for
-/// the engine output), never for AV1 (temporary exception) or HDR passthrough, and only when
-/// bale_gpu dithers its NV12. Debug `output-depth source` keeps today's P010.
+/// Whether the console stage (or rav1g's display pass) writes dithered 8-bit NV12 for this mount,
+/// and why (fixed log text). Only on an SDR display whose current HDMI mode is below 30 bpp (unknown
+/// counts as 8-bit, as for the engine output), never for HDR passthrough, and only when bale_gpu
+/// dithers its NV12. Debug `output-depth source` keeps today's P010.
 fn stage_output(args: &DecideArgs, depth: &Depth) -> (u8, &'static str) {
     let route = &args.route;
-    if !route.console_tone_map && !route.console_downscale {
+    if !route.console_tone_map && !route.console_downscale && !args.rav1g_downscale {
         return (0, "no console stage");
     }
     if args.ceiling == Ceiling::Source {
@@ -102,9 +105,6 @@ fn stage_output(args: &DecideArgs, depth: &Depth) -> (u8, &'static str) {
     if !args.stage_nv12_dithered {
         return (10, "bale_gpu without dithered NV12");
     }
-    if AV1_KEEPS_10_BIT_OUTPUT_UNTIL_RAV1G_IS_STABLE && is_av1(args) {
-        return (10, "AV1 keeps 10-bit output (until rav1g is stable)");
-    }
     if !route.console_tone_map && matches!(depth, Depth::Hdr | Depth::Known { hdr: true, .. }) {
         return (10, "HDR passthrough");
     }
@@ -112,18 +112,6 @@ fn stage_output(args: &DecideArgs, depth: &Depth) -> (u8, &'static str) {
         return (10, "SDR 10-bit display");
     }
     (8, "SDR 8-bit display")
-}
-
-fn is_av1(args: &DecideArgs) -> bool {
-    [
-        args.route.video_codec.as_deref(),
-        args.plan
-            .source
-            .as_ref()
-            .and_then(|s| s.video_codec.as_deref()),
-    ]
-    .iter()
-    .any(|&codec| normalize_codec(codec).as_deref() == Some("av1"))
 }
 
 pub fn decide(args: &DecideArgs) -> EngineOutput {
@@ -173,10 +161,20 @@ fn decide_frames(args: &DecideArgs, depth: &Depth) -> EngineOutput {
                 "console downscale writes NV12 (bale_gpu without P010)",
             )
         }
+    } else if args.rav1g_downscale {
+        // The fork's processing contract on the rav1g route is the stage's: P010, or NV12 without it.
+        if args.stage_p010 {
+            output("p010", "rav1g display pass writes P010")
+        } else {
+            output(
+                "nv12",
+                "rav1g display pass writes NV12 (bale_gpu without P010)",
+            )
+        }
     } else {
         // Every other route keeps the delivered video's depth: the system decoder (Windows' source or
         // FFmpeg passthrough, DV base layers) and FFmpeg software decode output NV12 for 8-bit and P010
-        // above 8 bits. Both dav1d CPU output on D3D11 and rav1g take NV12 for 8-bit AV1.
+        // above 8 bits. Both dav1d CPU output on D3D11 and rav1g's direct output take NV12 for 8-bit AV1.
         match depth {
             Depth::Known { bits, .. } if bits > 8 => output("p010", "source above 8 bits"),
             Depth::Known { .. } => output("nv12", "8-bit source"),
@@ -192,8 +190,6 @@ fn decide_frames(args: &DecideArgs, depth: &Depth) -> EngineOutput {
     }
     if !route.console_tone_map && matches!(depth, Depth::Hdr | Depth::Known { hdr: true, .. }) {
         decision.reason = "HDR passthrough: 10-bit output";
-    } else if AV1_KEEPS_10_BIT_OUTPUT_UNTIL_RAV1G_IS_STABLE && is_av1(args) {
-        decision.reason = "AV1 keeps 10-bit output (until rav1g is stable)";
     } else if args.display_bits_per_pixel.is_some_and(|bpp| bpp >= 30) {
         decision.reason = "SDR 10-bit display: 10-bit output";
     } else {
@@ -357,6 +353,7 @@ mod tests {
             route,
             stage_p010,
             stage_nv12_dithered: false,
+            rav1g_downscale: false,
             display_bits_per_pixel: Some(30),
             ceiling: Ceiling::Display,
         })
@@ -369,6 +366,7 @@ mod tests {
             versions: None,
             stage_p010: true,
             stage_nv12_dithered: false,
+            rav1g_downscale: false,
             display_bits_per_pixel: bpp,
             ceiling: Ceiling::Display,
         }
@@ -428,23 +426,33 @@ mod tests {
     }
 
     #[test]
-    fn av1_on_the_route_or_source_keeps_10_bit_output_until_rav1g_is_stable() {
-        let mut no_route_codec = route("av1");
-        no_route_codec.video_codec = None;
-        let mut no_source_codec = plan("original_http", "hevc", Some(10));
-        no_source_codec.source.as_mut().unwrap().video_codec = None;
-        for (p, r) in [
-            (plan("original_http", " AV1 ", Some(10)), route("av1")),
-            (plan("original_http", "av1", Some(10)), no_route_codec),
-            (no_source_codec, route(" AV1 ")),
+    fn av1_delivers_at_display_depth_like_every_codec() {
+        // Owner, 2026-11-26: the temporary 10-bit AV1 exception ended with rav1g as the default.
+        let mut software = route(" AV1 ");
+        software.software_video = true;
+        for (bpp, target, reason) in [
+            (Some(24), "bgra", "SDR 8-bit display: 8-bit output"),
+            (None, "bgra", "SDR 8-bit display: 8-bit output"),
+            (Some(30), "rgb10", "SDR 10-bit display: 10-bit output"),
         ] {
-            let out = decide(&display_args(p, r, Some(24)));
-            assert_eq!((out.target, out.frames), ("rgb10", "p010"));
+            let out = decide(&display_args(
+                plan("original_http", "av1", Some(10)),
+                software.clone(),
+                bpp,
+            ));
             assert_eq!(
-                out.reason,
-                "AV1 keeps 10-bit output (until rav1g is stable)"
+                (out.target, out.frames, out.reason),
+                (target, "p010", reason)
             );
         }
+        // HDR AV1 passing through to an HDR display keeps 10 bits, as any codec does.
+        let mut hdr = plan("original_http", "av1", Some(10));
+        hdr.source.as_mut().unwrap().dynamic_range = Some("hdr10".into());
+        let out = decide(&display_args(hdr, software, Some(24)));
+        assert_eq!(
+            (out.target, out.reason),
+            ("rgb10", "HDR passthrough: 10-bit output")
+        );
     }
 
     #[test]
@@ -530,7 +538,7 @@ mod tests {
             true,
         );
         assert_eq!(ten.target, "rgb10");
-        // dav1d CPU output and rav1g both deliver NV12 for 8-bit AV1.
+        // dav1d CPU output and rav1g's direct output both deliver NV12 for 8-bit AV1.
         let eight = run(
             plan("original_http", "av1", Some(8)),
             software.clone(),
@@ -617,6 +625,7 @@ mod tests {
             route: route("hevc"),
             stage_p010: true,
             stage_nv12_dithered: false,
+            rav1g_downscale: false,
             display_bits_per_pixel: Some(30),
             ceiling: Ceiling::Display,
         });
@@ -715,31 +724,79 @@ mod tests {
         }
     }
 
+    /// The rav1g route of an AV1 original: its tone map is route.rs's `console_tone_map` (HDR on an
+    /// SDR display); its SDR downscale is `rav1g_downscale` (route.rs keeps AV1 off the console one).
+    fn rav1g_args(bits: i64, range: &str, tone_map: bool, bpp: Option<i32>) -> DecideArgs {
+        let mut args = stage_args("av1", bits, range, tone_map, bpp);
+        args.route.software_video = true;
+        args.route.console_downscale = false;
+        args.rav1g_downscale = !tone_map;
+        args
+    }
+
     #[test]
-    fn av1_keeps_the_10_bit_stage_until_rav1g_is_stable() {
-        for tone_map in [true, false] {
-            let range = if tone_map { "hdr10" } else { "sdr" };
-            let args = stage_args(" AV1 ", 10, range, tone_map, Some(24));
-            let out = decide(&args);
-            assert_eq!(
-                (
-                    out.target,
-                    out.frames,
-                    out.stage_output_depth,
-                    out.stage_reason
-                ),
-                (
-                    "rgb10",
-                    "p010",
-                    10,
-                    "AV1 keeps 10-bit output (until rav1g is stable)"
-                )
-            );
-            // AV1 known only from the source (route codec missing) counts too.
-            let mut source_only = stage_args("av1", 10, range, tone_map, Some(24));
-            source_only.route.video_codec = None;
-            assert_eq!(decide(&source_only).stage_output_depth, 10);
+    fn rav1gs_display_pass_writes_dithered_nv12_on_an_8_bit_sdr_display() {
+        // With depth 8 rav1g's display pass dithers NV12 itself, after grain and tone map (rav1g
+        // 0.7.0-alpha.1+, the fork's BaleRav1g.h maps bale_tonemap_output_depth into it).
+        for (bits, range, tone_map) in [
+            (10, "hdr10", true),
+            (10, "hlg", true),
+            (8, "sdr", false),
+            (10, "sdr", false),
+        ] {
+            for bpp in [Some(24), None] {
+                let out = decide(&rav1g_args(bits, range, tone_map, bpp));
+                assert_eq!(
+                    (
+                        out.target,
+                        out.frames,
+                        out.reason,
+                        out.stage_output_depth,
+                        out.stage_reason
+                    ),
+                    ("bgra", "nv12", DITHERED, 8, "SDR 8-bit display"),
+                    "{bits} {range} {bpp:?}"
+                );
+            }
         }
+        // A 30+ bpp display keeps P010 from the pass; without the dither bit, or in source mode, so does 8-bit.
+        let out = decide(&rav1g_args(8, "sdr", false, Some(30)));
+        assert_eq!(
+            (out.target, out.frames, out.reason, out.stage_output_depth),
+            ("rgb10", "p010", "SDR 10-bit display: 10-bit output", 10)
+        );
+        let mut old = rav1g_args(10, "sdr", false, Some(24));
+        old.stage_nv12_dithered = false;
+        let out = decide(&old);
+        assert_eq!(
+            (
+                out.target,
+                out.frames,
+                out.stage_output_depth,
+                out.stage_reason
+            ),
+            ("bgra", "p010", 10, "bale_gpu without dithered NV12")
+        );
+        // HDR scaled for an HDR display passes through at 10 bits.
+        let out = decide(&rav1g_args(10, "hdr10", false, Some(24)));
+        assert_eq!(
+            (out.target, out.stage_output_depth, out.stage_reason),
+            ("rgb10", 10, "HDR passthrough")
+        );
+        // Without rav1g's downscale the route has no stage: direct output at the source depth.
+        let mut direct = rav1g_args(10, "sdr", false, Some(24));
+        direct.rav1g_downscale = false;
+        let out = decide(&direct);
+        assert_eq!(
+            (out.target, out.frames, out.stage_output_depth),
+            ("bgra", "p010", 0)
+        );
+        let mut eight = rav1g_args(8, "sdr", false, Some(30));
+        eight.rav1g_downscale = false;
+        assert_eq!(
+            (decide(&eight).target, decide(&eight).frames),
+            ("bgra", "nv12")
+        );
     }
 
     #[test]

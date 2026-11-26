@@ -154,7 +154,7 @@ public sealed class Rav1gReleaseTests
         Assert.Contains("var config = FfmpegSource.Configuration(media.Route, media.Rav1g, attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits);", media);
         Assert.Contains("FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route, rav1gRoute);", media);
         Assert.Contains("media.Rav1gActive = media.FfmpegStreams?.Value?.Video?.DecoderEngine == DecoderEngine.FFmpegD3D11HardwareDecoder;", media);
-        Assert.Contains("media.Rav1gCheck = new Rav1gOutputCheck(rav1g.Source, sdrDisplay, !ConsoleToneMapRuntime.SupportsP010);", media);
+        Assert.Contains("media.Rav1gCheck = new Rav1gOutputCheck(rav1g.Source, sdrDisplay, !ConsoleToneMapRuntime.SupportsP010,", media);
         Assert.Contains("int? bufferOverrideMs = rav1gRoute ? rav1g.BufferMs : null;", media);
         Assert.DoesNotContain("DebugRav1gLog", media);
         Assert.DoesNotContain("DebugRav1gTuning", media);

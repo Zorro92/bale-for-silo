@@ -20,8 +20,8 @@ public sealed class EngineOutputPolicyTests
 
     private static EngineOutputDecision Engine(PlaybackPlan plan, PlaybackRouteDecision route, bool stageP010 = true,
         IReadOnlyList<FileVersion>? versions = null, int? displayBitsPerPixel = 30, string ceiling = "display",
-        bool stageNv12Dithered = false) =>
-        EngineOutputPolicy.Decide(plan, route, versions, stageP010, displayBitsPerPixel, ceiling, stageNv12Dithered);
+        bool stageNv12Dithered = false, bool rav1gDownscale = false) =>
+        EngineOutputPolicy.Decide(plan, route, versions, stageP010, displayBitsPerPixel, ceiling, stageNv12Dithered, rav1gDownscale);
 
     private const string DitheredReason = "console stage writes dithered NV12 (SDR 8-bit display)";
 
@@ -67,12 +67,36 @@ public sealed class EngineOutputPolicyTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void Av1NeverAsksForAn8BitStage(bool toneMap)
+    public void Av1AsksItsStageForDitheredNv12LikeEveryCodec(bool toneMap)
     {
+        // Owner, 2026-11-26: the AV1 exception ended; rav1g's display pass dithers NV12 itself at depth 8.
         var (plan, route) = Stage(toneMap, "av1");
         var output = Engine(plan, route, displayBitsPerPixel: 24, stageNv12Dithered: true);
-        Assert.Equal((10, "AV1 keeps 10-bit output (until rav1g is stable)"), (output.StageOutputDepth, output.StageReason));
-        Assert.Equal("p010", output.Frames);
+        Assert.Equal(("bgra", "nv12", DitheredReason, 8, "SDR 8-bit display"),
+            (output.Target, output.Frames, output.Reason, output.StageOutputDepth, output.StageReason));
+        var deep = Engine(plan, route, displayBitsPerPixel: 30, stageNv12Dithered: true);
+        Assert.Equal(("rgb10", "p010", 10), (deep.Target, deep.Frames, deep.StageOutputDepth));
+    }
+
+    [Theory]
+    [InlineData(8)]
+    [InlineData(10)]
+    public void Rav1gsDownscaleIsAStageForTheDepth(int bits)
+    {
+        // 4K SDR AV1 on a 1080p display: route.rs leaves AV1 off the console downscale; rav1g's display pass scales it.
+        var plan = Plan("original_http", "av1", bits, "sdr", 3840, 2160);
+        var route = PlaybackRoutePolicy.Decide(plan, false, display: (1920, 1080), sdrDownscale: true);
+        Assert.True(route.SoftwareVideo);
+        Assert.False(route.ConsoleStage);
+        var eight = Engine(plan, route, displayBitsPerPixel: 24, stageNv12Dithered: true, rav1gDownscale: true);
+        Assert.Equal(("bgra", "nv12", 8, "SDR 8-bit display"), (eight.Target, eight.Frames, eight.StageOutputDepth, eight.StageReason));
+        var deep = Engine(plan, route, displayBitsPerPixel: 30, stageNv12Dithered: true, rav1gDownscale: true);
+        Assert.Equal(("rgb10", "p010", "SDR 10-bit display: 10-bit output", 10),
+            (deep.Target, deep.Frames, deep.Reason, deep.StageOutputDepth));
+        // The direct route (no rav1g downscale) has no stage: source depth, never raised.
+        var direct = Engine(plan, route, displayBitsPerPixel: 30, stageNv12Dithered: true);
+        Assert.Equal((bits > 8 ? "rgb10" : "bgra", bits > 8 ? "p010" : "nv12", 0),
+            (direct.Target, direct.Frames, direct.StageOutputDepth));
     }
 
     [Fact]
@@ -150,12 +174,11 @@ public sealed class EngineOutputPolicyTests
     [Theory]
     [InlineData("av1")]
     [InlineData(" AV1 ")]
-    public void Av1TemporarilyKeeps10BitOutputOnAn8BitDisplay(string codec)
+    public void Av1DeliversAtDisplayDepthOnAn8BitDisplay(string codec)
     {
         var plan = Plan("original_http", codec, 10);
         var output = Engine(plan, PlaybackRoutePolicy.Decide(plan, false), displayBitsPerPixel: 24);
-        Assert.Equal(("rgb10", "p010", "AV1 keeps 10-bit output (until rav1g is stable)"),
-            (output.Target, output.Frames, output.Reason));
+        Assert.Equal(("bgra", "p010", "SDR 8-bit display: 8-bit output"), (output.Target, output.Frames, output.Reason));
     }
 
     [Theory]
@@ -280,11 +303,13 @@ public sealed class EngineOutputPolicyTests
         var media = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("var displayBitsPerPixel = DisplayHdrOutput.CurrentBitsPerPixel();", media);
         Assert.Contains("EngineOutputPolicy.Decide(plan, media.Route, attempt.Request.Detail.Versions, ConsoleToneMapRuntime.SupportsP010,", media);
-        Assert.Contains("DisplayHdrOutput.CurrentBitsPerPixel(), ceiling, stageNv12Dithered)", media);
-        // FFmpeg mounts decide once at configuration: the stage depth key, the guard and the engine share it.
+        Assert.Contains("DisplayHdrOutput.CurrentBitsPerPixel(), ceiling, stageNv12Dithered,\n                    rav1gDownscale: media.Rav1gRoute && media.Rav1g is { DownscaleStage: true })", media);
+        // FFmpeg mounts decide once at configuration: the stage depth key, the guards and the engine share it.
         Assert.Contains("media.EngineOutput = DecideEngineOutput(attempt, media, ConsoleToneMapRuntime.SupportsDitheredNv12);", media);
-        Assert.Contains("media.StageOutput8Bit = FfmpegSource.ApplyStageOutputDepth(config, media.Route, media.EngineOutput);", media);
+        Assert.Contains("media.StageOutput8Bit = FfmpegSource.ApplyStageOutputDepth(config, media.Route, media.EngineOutput,\n                    rav1gRoute && rav1g.DownscaleStage);", media);
         Assert.Contains("nv12Requested: media.StageOutput8Bit", media);
+        Assert.Contains("new Rav1gOutputCheck(rav1g.Source, sdrDisplay, !ConsoleToneMapRuntime.SupportsP010,\n                        nv12Requested: media.StageOutput8Bit);", media);
+        Assert.DoesNotContain("until rav1g is stable", File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "PlayerPage.Media.cs.txt")));
         Assert.True(media.IndexOf("FfmpegSource.ApplyStageOutputDepth(", StringComparison.Ordinal)
             < media.IndexOf("FFmpegMediaSource.CreateFromInputStreamAsync", StringComparison.Ordinal));
         Assert.Contains("frames={output.Frames} display={display} reason={output.Reason}", media);

@@ -225,14 +225,22 @@ internal static class FfmpegSource
     /// <summary>
     /// Phase 2 of the bit-depth rule (AGENTS.md): on an 8-bit SDR display ask the fork's stage for dithered 8-bit NV12
     /// (<c>bale_tonemap_output_depth=8</c>, next to the output size keys) when the mount's EngineOutputPolicy decision
-    /// says so; unset keeps today's P010. Older wrappers ignore the key and keep P010, which the guard still accepts.
-    /// Only when the stage is still configured (a debug decoder override may have removed it). Logs once per open.
+    /// says so; unset keeps today's P010. On the rav1g route the fork hands the same depth to rav1g's display pass, which
+    /// dithers NV12 itself after grain and tone map (rav1g 0.7.0-alpha.1+; owner, 2026-11-26: AV1 follows the rule too).
+    /// Older wrappers ignore the key and keep P010, which the guards still accept. Only when the stage is still configured
+    /// (a debug decoder override may have removed it). Logs once per open.
     /// </summary>
+    /// <param name="rav1gDownscale">The mount's rav1g route scales SDR down to the display (Rav1gRouteDecision.DownscaleStage):
+    /// a stage route.rs does not mark (its tone map is the route's ConsoleToneMap).</param>
     /// <returns>True when 8-bit stage output was requested for this mount.</returns>
-    internal static bool ApplyStageOutputDepth(MediaSourceConfig config, PlaybackRouteDecision route, EngineOutputDecision output)
+    internal static bool ApplyStageOutputDepth(MediaSourceConfig config, PlaybackRouteDecision route, EngineOutputDecision output,
+        bool rav1gDownscale = false)
     {
-        if (!route.ConsoleStage) return false;
-        var requested = output.StageOutputDepth == 8 && config.FFmpegOptions.ContainsKey("bale_tonemap");
+        if (!route.ConsoleStage && !rav1gDownscale) return false;
+        // bale_tonemap (the tone map, the console downscale), or the rav1g route's display-size output.
+        var configured = config.FFmpegOptions.ContainsKey("bale_tonemap")
+            || rav1gDownscale && config.FFmpegOptions.ContainsKey("bale_tonemap_output_width");
+        var requested = output.StageOutputDepth == 8 && configured;
         if (requested) config.FFmpegOptions["bale_tonemap_output_depth"] = "8";
         else config.FFmpegOptions.Remove("bale_tonemap_output_depth");
         var reason = output.StageOutputDepth == 8 && !requested ? "stage not configured" : output.StageReason;
