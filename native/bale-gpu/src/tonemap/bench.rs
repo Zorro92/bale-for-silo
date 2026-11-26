@@ -440,8 +440,8 @@ fn bench_case(
         // Create holds the device lock, as the fork's decode thread does.
         let _lock = Lock::enter(&device.multithread);
         [
-            ToneMapGpu::create_with_switches(&device.device, config, words[0])?,
-            ToneMapGpu::create_with_switches(&device.device, config, words[1])?,
+            ToneMapGpu::create_unrecorded(&device.device, config, words[0])?,
+            ToneMapGpu::create_unrecorded(&device.device, config, words[1])?,
         ]
     };
     if stages[0].dither() != cpu::Dither::Bayer || stages[1].dither() != cpu::Dither::R2 {

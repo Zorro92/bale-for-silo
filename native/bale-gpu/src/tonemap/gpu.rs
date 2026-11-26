@@ -138,6 +138,19 @@ impl ToneMapGpu {
         Self::create_with(device, config, DebugSwitches::parse(words))
     }
 
+    #[cfg(feature = "stage-timing")]
+    /// The bench's stage: `words` as `create_with_switches`, but it takes no stage number and never
+    /// publishes a peak, so a bench run leaves playback's peak report as it was.
+    pub(super) fn create_unrecorded(
+        device: &ID3D11Device,
+        config: BaleToneMapConfig,
+        words: &str,
+    ) -> Result<Self> {
+        let mut debug = DebugSwitches::parse(words);
+        debug.unrecorded = true;
+        Self::create_with(device, config, debug)
+    }
+
     fn create_with(
         device: &ID3D11Device,
         config: BaleToneMapConfig,
@@ -226,7 +239,10 @@ impl ToneMapGpu {
         {
             gpu.timing = super::timing_gpu::Timing::create(&gpu.device);
         }
-        gpu.stage = super::peak::start(&gpu.config, gpu.options.fixed_peak);
+        // Stage numbers start at 1; 0 marks a stage that never reports (the bench's).
+        if !debug.unrecorded {
+            gpu.stage = super::peak::start(&gpu.config, gpu.options.fixed_peak);
+        }
         Ok(gpu)
     }
 
@@ -247,7 +263,7 @@ impl ToneMapGpu {
     /// Reports this stage's peak when it changes (the first PQ or HLG frame, or new metadata), for
     /// Bale's once-per-stream log line. SDR frames have no tone curve and leave it as it was.
     fn note_peak(&mut self, frame: &BaleToneMapFrameInfo) {
-        if cpu::mode(frame.transfer) == cpu::MODE_SDR {
+        if self.stage == 0 || cpu::mode(frame.transfer) == cpu::MODE_SDR {
             return;
         }
         let (nits, source) = cpu::source_peak(&self.config, frame, self.options.fixed_peak);
@@ -805,6 +821,9 @@ struct DebugSwitches {
     fixed_peak: bool,
     bilinear_chroma: bool,
     r2_dither: bool,
+    /// Not a word: the bench's stages (`create_unrecorded`) never touch the peak report that
+    /// playback's once-per-stream log line reads.
+    unrecorded: bool,
 }
 
 impl DebugSwitches {
