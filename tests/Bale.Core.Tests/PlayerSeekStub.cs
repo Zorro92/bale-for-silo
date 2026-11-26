@@ -114,7 +114,9 @@ namespace Bale.Xbox
             QueueSkip(forward);
             await WaitForSkipAsync().WaitAsync(TimeSpan.FromSeconds(5));
         }
-        private async Task WaitForSkipAsync() { while (_skipProcessing) await Task.Yield(); }
+        // The queue's continuations run on xUnit's worker threads, not one UI thread: read the flag ProcessSkipsAsync
+        // publishes last (Volatile.Write, after its final pause) with acquire semantics.
+        private async Task WaitForSkipAsync() { while (Volatile.Read(ref _skipProcessing)) await Task.Yield(); }
 
         private bool IsCurrent(Attempt attempt, Mount media) => ReferenceEquals(_attempt, attempt) && ReferenceEquals(attempt.Media, media);
         private void Pause(Attempt attempt) => attempt.Media!.Player.Pause();
@@ -173,7 +175,7 @@ namespace Bale.Xbox
             EndReplanSeeks();
         }
         internal void Skip(bool forward) => QueueSkip(forward);
-        internal bool SkipsPending => _skipProcessing;
+        internal bool SkipsPending => Volatile.Read(ref _skipProcessing);
         internal Task SkipsDoneAsync() => WaitForSkipAsync().WaitAsync(TimeSpan.FromSeconds(5));
         private void ShowSkipFeedback(int delta, double target) => LastSkipLabel = _skipLabel;
         internal string? LastSkipLabel { get; private set; }

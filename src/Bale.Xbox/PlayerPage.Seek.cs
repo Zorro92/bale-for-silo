@@ -83,9 +83,12 @@ public sealed partial class PlayerPage
         finally
         {
             _pendingSkipTarget = _skipTarget = null;
-            _skipProcessing = false;
             // A skip ended playback while this seek ran (EndAtSkip): the stream it landed on, a remount's too, stays paused.
             if (_attempt is { EndedAt: not null } ended) Pause(ended);
+            // Idle only after that last effect, so whatever finds the queue idle finds the stream paused too. On the
+            // console both run in one UI-thread step; the Linux tests resume this method on a worker thread and wait for
+            // the flag from another, so the write publishes the pause (it was cleared first and the wait could win).
+            Volatile.Write(ref _skipProcessing, false);
         }
     }
 

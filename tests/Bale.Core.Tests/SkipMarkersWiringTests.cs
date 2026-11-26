@@ -152,8 +152,11 @@ public class SkipMarkersWiringTests
         var seek = Read("PlayerPage.Seek.cs.txt");
         InOrder(Section(seek, "private double SourcePosition(", "private void QueueSkip("),
             "if (attempt.EndedAt is { } ended) attempt.Position = ended;", "else if (attempt.Media is");
-        InOrder(Section(seek, "private async Task ProcessSkipsAsync()", "private async Task<SeekResult> SeekAsync("),
-            "finally", "if (_attempt is { EndedAt: not null } ended) Pause(ended);");
+        // The queue reads as idle only after that pause (a wait that found it idle first saw the stream still playing).
+        var queue = Section(seek, "private async Task ProcessSkipsAsync()", "private async Task<SeekResult> SeekAsync(");
+        InOrder(queue, "finally", "if (_attempt is { EndedAt: not null } ended) Pause(ended);", "Volatile.Write(ref _skipProcessing, false);");
+        Assert.Single(queue.Split('\n'), line => line.Contains("_skipProcessing = false", StringComparison.Ordinal)
+            || line.Contains("Volatile.Write(ref _skipProcessing, false)", StringComparison.Ordinal));
         InOrder(Section(seek, "private async Task<SeekResult> SeekAsync(", "BeginReplanSeeks()"),
             "return new(SeekOutcome.InvalidPosition);", "attempt.EndedAt = null;");
     }
