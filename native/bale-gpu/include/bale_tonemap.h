@@ -91,6 +91,7 @@ typedef struct BaleToneMapPeakInfo {
     uint32_t transfer;           /* that frame's H.273 transfer: 16 PQ, 18 HLG */
     uint32_t flags;              /* bit 0: debug fixedpeak (config peak despite the metadata) */
 } BaleToneMapPeakInfo;
+/* Debug-package export (Cargo feature debug-probes), absent in production: resolve dynamically. */
 HRESULT bale_tonemap_peak_read(BaleToneMapPeakInfo* info);
 
 /* Optional debug-package exports (Cargo feature stage-timing), additive to ABI 1.

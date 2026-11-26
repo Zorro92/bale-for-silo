@@ -11,8 +11,11 @@ use windows::Win32::Graphics::Direct3D10::ID3D10Multithread;
 use windows::Win32::Graphics::Direct3D11::ID3D11Device;
 use windows::Win32::Graphics::Dxgi::IDXGIDevice3;
 use windows::Win32::Media::MediaFoundation::IMFDXGIDeviceManagerSource;
+#[cfg(feature = "debug-probes")]
 use windows::Win32::System::Com::{IAgileObject, IAgileObject_Impl};
-use windows::core::{GUID, IUnknown, Interface, Result, implement};
+#[cfg(feature = "debug-probes")]
+use windows::core::{GUID, implement};
+use windows::core::{IUnknown, Interface, Result};
 
 static DEVICES: Mutex<Vec<Weak<Device>>> = Mutex::new(Vec::new());
 static TRIMMED: AtomicU64 = AtomicU64::new(0);
@@ -57,17 +60,25 @@ impl Drop for Device {
     }
 }
 
+// Device release counts: a debug probe (`debug-probes` feature, DEBUG_SERVER tone-map churn), so production devices
+// carry no sentinel.
+#[cfg(feature = "debug-probes")]
 static WATCHED: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "debug-probes")]
 static RELEASED: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "debug-probes")]
 const RELEASE_SENTINEL: GUID = GUID::from_u128(0x6b3a_51d2_0f4e_4c6a_9d27_b41e_5a0c_8e13);
 
 /// Held only by a device's private data: the device releases it when it is really destroyed,
 /// so watched minus released counts devices something still keeps alive.
+#[cfg(feature = "debug-probes")]
 #[implement(IAgileObject)]
 struct ReleaseSentinel;
 
+#[cfg(feature = "debug-probes")]
 impl IAgileObject_Impl for ReleaseSentinel_Impl {}
 
+#[cfg(feature = "debug-probes")]
 impl Drop for ReleaseSentinel {
     fn drop(&mut self) {
         RELEASED.fetch_add(1, Ordering::Relaxed);
@@ -75,6 +86,7 @@ impl Drop for ReleaseSentinel {
 }
 
 /// Counts this device's final destruction (diagnostic; see [`bale_gpu_device_release_counts`]).
+#[cfg(feature = "debug-probes")]
 pub(crate) fn watch_release(device: &ID3D11Device) {
     let sentinel: IAgileObject = ReleaseSentinel.into();
     // SAFETY: live device; private data takes its own reference and drops it with the device.
@@ -86,6 +98,7 @@ pub(crate) fn watch_release(device: &ID3D11Device) {
 /// Watched D3D11 devices and how many of them were really destroyed.
 /// # Safety
 /// Non-null pointers are writable for one u64 each.
+#[cfg(feature = "debug-probes")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bale_gpu_device_release_counts(watched: *mut u64, released: *mut u64) {
     // SAFETY: caller guarantees writable storage for non-null pointers.

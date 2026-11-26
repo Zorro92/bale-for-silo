@@ -101,24 +101,35 @@ public class NativeFfmpegPackageTests
     {
         var workflow = Read("ci.yml.txt");
         var start = workflow.IndexOf("$entry = $zip.GetEntry('bale_gpu.dll')", StringComparison.Ordinal);
-        var end = workflow.IndexOf("removed exports absent\"", start, StringComparison.Ordinal);
+        var end = workflow.IndexOf("exports present, $($absent.Count) absent\"", start, StringComparison.Ordinal);
         Assert.True(start >= 0 && end > start);
         var inspection = workflow[start..end];
         Assert.Contains("ExtractToFile($entry, $packagedDll)", inspection);
         Assert.Contains("$exports = & $dumpbin.FullName /exports $packagedDll", inspection);
         Assert.Contains("if ($LASTEXITCODE -ne 0)", inspection);
-        var required = inspection.IndexOf("$required = @(", StringComparison.Ordinal);
+        var common = inspection.IndexOf("$common = @(", StringComparison.Ordinal);
+        var debug = inspection.IndexOf("$debugOnly = @(", StringComparison.Ordinal);
         var removed = inspection.IndexOf("$removed = @(", StringComparison.Ordinal);
-        Assert.True(required >= 0 && removed > required);
-        // Grain ABI 2: the GPU exports the wrapper loads stay required; CPU grain must be gone.
+        Assert.True(common >= 0 && debug > common && removed > debug);
+        // Grain ABI 2: the GPU exports the wrapper loads stay required, and so does the ledger's accounting the fork calls;
+        // CPU grain must be gone. The ledger's readers are debug-server exports (Cargo feature debug-probes).
         foreach (var symbol in new[] { "bale_grain_abi_version", "bale_grain_validate", "bale_grain_gpu_create",
-            "bale_grain_gpu_apply", "bale_grain_gpu_destroy", "bale_mem_abi_version", "bale_mem_account",
-            "bale_mem_snapshot", "bale_mem_reset_peaks", "bale_mem_underflows" })
-            Assert.Contains($"'{symbol}'", inspection[required..removed]);
+            "bale_grain_gpu_apply", "bale_grain_gpu_destroy", "bale_mem_abi_version", "bale_mem_account" })
+            Assert.Contains($"'{symbol}'", inspection[common..debug]);
+        foreach (var symbol in new[] { "bale_mem_snapshot", "bale_mem_reset_peaks", "bale_mem_underflows" })
+        {
+            Assert.Contains($"'{symbol}'", inspection[debug..removed]);
+            Assert.DoesNotContain($"'{symbol}'", inspection[common..debug]);
+        }
         Assert.Contains("'bale_grain_cpu_apply'", inspection[removed..]);
-        Assert.DoesNotContain("'bale_grain_cpu_apply'", inspection[required..removed]);
+        Assert.DoesNotContain("'bale_grain_cpu_apply'", inspection[common..removed]);
+        // Debug-server DLLs need the debug list too; production DLLs must not export it.
+        Assert.Contains("if ('${{ matrix.debug_server }}' -eq 'true') { $required = $common + $debugOnly; $absent = $removed }", inspection);
+        Assert.Contains("else { $required = $common; $absent = $removed + $debugOnly }", inspection);
         Assert.Contains("throw \"Packaged bale_gpu.dll is missing export $symbol\"", inspection);
-        Assert.Contains("throw \"Packaged bale_gpu.dll still exports removed $symbol\"", inspection);
+        Assert.Contains("throw \"Packaged bale_gpu.dll (debug_server=${{ matrix.debug_server }}) still exports $symbol\"", inspection);
+        // The debug-server DLL is built with both features, production with neither.
+        Assert.Contains("if ('${{ matrix.debug_server }}' -eq 'true') { $debugFeatures = @('--features', 'stage-timing,debug-probes') }", workflow);
     }
 
     private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));

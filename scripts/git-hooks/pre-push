@@ -54,15 +54,16 @@ for crate in native/*/; do
     exit 1
   fi
 done
-# Optional GPU measurement code is absent from production but must receive the same lint coverage.
-(cd native/bale-gpu && cargo clippy --all-targets --locked -q --features stage-timing -- -D warnings)
+# Optional GPU measurement and debug-probe code is absent from production but must receive the same lint coverage
+# (debug-server DLLs build with both features, ci.yml).
+(cd native/bale-gpu && cargo clippy --all-targets --locked -q --features stage-timing,debug-probes -- -D warnings)
 if rustup target list --installed 2>/dev/null | grep -qx x86_64-pc-windows-msvc; then
   echo "pre-push: linting native/bale-gpu for x86_64-pc-windows-msvc..." >&2
   if ! (cd native/bale-gpu && cargo clippy --all-targets --locked -q --target x86_64-pc-windows-msvc -- -D warnings); then
     echo "pre-push: Windows-target Rust lint failed in native/bale-gpu; push stopped." >&2
     exit 1
   fi
-  (cd native/bale-gpu && cargo clippy --all-targets --locked -q --target x86_64-pc-windows-msvc --features stage-timing -- -D warnings)
+  (cd native/bale-gpu && cargo clippy --all-targets --locked -q --target x86_64-pc-windows-msvc --features stage-timing,debug-probes -- -D warnings)
 else
   echo "pre-push: x86_64-pc-windows-msvc target not installed; Windows-target lint left to CI." >&2
 fi

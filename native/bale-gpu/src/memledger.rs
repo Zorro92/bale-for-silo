@@ -4,7 +4,8 @@
 //! 18 dav1d upload pool/staging, 19 rav1g output images, 20 rav1g process device present, 21 decoder copy
 //! pool/rav1g direct-copy textures, 22 rav1g decoder buffers (streams); 23–31 reserved for
 //! FFmpegInteropX; 32 player swap chain (estimate); 33–63 reserved.
-//! 0 is unassigned. See `include/bale_mem.h` and docs/gpu-tone-map.md.
+//! 0 is unassigned. See `include/bale_mem.h` and docs/gpu-tone-map.md. Every build accounts (bale_gpu and the
+//! FFmpegInteropX fork call `bale_mem_account`); reading the ledger back is a debug probe (`debug-probes` feature).
 
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 
@@ -102,6 +103,7 @@ impl Ledger {
         }
     }
 
+    #[cfg(any(feature = "debug-probes", test))]
     fn snapshot(&self, mut write: impl FnMut(BaleMemEntry)) -> u32 {
         let mut needed = 0;
         for (category, entry) in self.0.iter().enumerate() {
@@ -121,6 +123,7 @@ impl Ledger {
         needed
     }
 
+    #[cfg(any(feature = "debug-probes", test))]
     fn reset_peaks(&self) {
         for entry in &self.0 {
             entry
@@ -153,6 +156,7 @@ pub extern "C" fn bale_mem_account(category: u32, delta_bytes: i64, delta_count:
 ///
 /// # Safety
 /// A non-null `out` points to `capacity` writable BaleMemEntry slots.
+#[cfg(any(feature = "debug-probes", test))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bale_mem_snapshot(out: *mut BaleMemEntry, capacity: u32) -> u32 {
     let mut written = 0;
@@ -166,12 +170,14 @@ pub unsafe extern "C" fn bale_mem_snapshot(out: *mut BaleMemEntry, capacity: u32
 }
 
 /// Sets each peak to its current bytes, leaving residency, history and underflow counts intact.
+#[cfg(any(feature = "debug-probes", test))]
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_mem_reset_peaks() {
     LEDGER.reset_peaks();
 }
 
 /// Lifetime number of underflowing account calls for a category; 0 for an invalid category.
+#[cfg(any(feature = "debug-probes", test))]
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_mem_underflows(category: u32) -> u64 {
     LEDGER

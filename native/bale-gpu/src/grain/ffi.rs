@@ -157,14 +157,14 @@ pub unsafe extern "C" fn bale_grain_gpu_destroy(handle: *mut super::gpu::BaleGra
 ///
 /// # Safety
 /// A non-null `report` must point to `capacity` exclusively writable bytes for this call.
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bale_grain_gpu_probe(report: *mut u8, capacity: u32) -> u32 {
     // SAFETY: the caller supplies writable report storage as documented above.
     unsafe { probe_report_boundary(report, capacity, super::probe::run) }
 }
 
-#[cfg(any(windows, test))]
+#[cfg(any(all(windows, feature = "debug-probes"), test))]
 unsafe fn probe_report_boundary(
     report: *mut u8,
     capacity: u32,

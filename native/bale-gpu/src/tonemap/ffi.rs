@@ -9,6 +9,7 @@ use super::{
     gpu::ToneMapGpu,
     types::{BaleToneMapConfig, BaleToneMapFrameInfo},
 };
+#[cfg(any(windows, feature = "debug-probes", feature = "stage-timing", test))]
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub const S_OK: i32 = 0;
@@ -16,6 +17,7 @@ pub const S_FALSE: i32 = 1;
 pub const E_INVALIDARG: i32 = super::cpu::E_INVALIDARG;
 pub const E_UNEXPECTED: i32 = 0x8000ffffu32 as i32;
 
+#[cfg(any(windows, feature = "debug-probes", feature = "stage-timing", test))]
 fn boundary(f: impl FnOnce() -> i32) -> i32 {
     catch_unwind(AssertUnwindSafe(f)).unwrap_or(E_UNEXPECTED)
 }
@@ -152,9 +154,10 @@ pub unsafe extern "C" fn bale_tonemap_destroy(handle: *mut ToneMapGpu) {
 /// The source peak the most recently created stage applies: from the stream's HDR metadata for PQ
 /// (`cpu::source_peak`), else the config peak (additive to ABI 1, 2026-11-24, every build). For Bale's
 /// once-per-stream log line and stats row. No GPU work and no wait: S_FALSE while apply updates the
-/// record (output untouched; read again later).
+/// record (output untouched; read again later). Debug probe: debug-server packages only (`debug-probes`).
 /// # Safety
 /// out is writable for one complete BaleToneMapPeakInfo record.
+#[cfg(feature = "debug-probes")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bale_tonemap_peak_read(
     out: *mut super::types::BaleToneMapPeakInfo,
@@ -230,6 +233,7 @@ mod tests {
             assert_eq!(stats.session, 0);
         }
     }
+    #[cfg(feature = "debug-probes")]
     #[test]
     fn peak_snapshot_validates_arguments_and_never_waits() {
         // SAFETY: null is rejected before any write; the second output is complete storage.

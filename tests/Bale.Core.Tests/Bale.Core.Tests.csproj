@@ -96,6 +96,8 @@
     <Compile Include="../../src/Bale.Xbox/Services/ClosedCaptions.cs" Link="ClosedCaptions.cs" />
     <None Include="../../src/Bale.Xbox/Services/ClosedCaptions.cs" Link="ClosedCaptions.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../native/bale-gpu/src/lib.rs" Link="bale_gpu_lib.rs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Every bale_gpu source, for BaleGpuDebugExportTests (the debug-server feature gates against CI's export lists). -->
+    <None Include="../../native/bale-gpu/src/**/*.rs" LinkBase="bale-gpu-src" CopyToOutputDirectory="PreserveNewest" Visible="false" />
     <None Include="../../native/bale-gpu/src/subs/cc/mod.rs" Link="bale_gpu_cc_mod.rs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../native/bale-gpu/src/subs/cc/ass.rs" Link="bale_gpu_cc_ass.rs.txt" CopyToOutputDirectory="PreserveNewest" />
     <!-- The player's caption wiring (a decoder per mount, the CC row, the pick) and its debug readout, pinned by source. -->

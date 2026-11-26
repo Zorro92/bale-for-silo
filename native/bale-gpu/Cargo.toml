@@ -9,6 +9,11 @@ publish = false
 [features]
 # Only development packages opt in; independent of Rust optimisation/debug assertions.
 stage-timing = []
+# Debug-server packages only (ci.yml builds them with stage-timing): the debug server's probes and readouts, no
+# production caller in the app or the FFmpegInteropX fork. The std/D3D11/engine/libass/grain/audio probes, the audio
+# Initialize variants, the tone-map churn and peak readout, D3D11 device release counts, the memory ledger readout,
+# memprobe and the engine session frame log. CI requires them in debug-server DLLs and refuses them in production ones.
+debug-probes = []
 
 [lib]
 name = "bale_gpu"
@@ -23,7 +28,7 @@ version = "0.62.2"
 features = [
     "Foundation",
     "Media_Core",
-    # Debug audio passthrough probe: MediaDevice's default render id (audio_probe.rs).
+    # MediaDevice's default render id: the exclusive-mode audio output (audio_out/) and the debug passthrough probe.
     "Media_Devices",
     "Media_Playback",
     "Media_MediaProperties",
@@ -35,7 +40,7 @@ features = [
     "Win32_Graphics_Direct3D12",
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
-    # Debug audio passthrough probe: IAudioClient. mmdevapi.dll is loaded by the caller, never imported.
+    # IAudioClient: the audio output (audio_out/) and the debug probe. mmdevapi.dll is loaded by the caller, never imported.
     "Win32_Media_Audio",
     "Win32_Media_MediaFoundation",
     # Zero-copy repack: D3D12/DXGI shared handles and events take SECURITY_ATTRIBUTES.

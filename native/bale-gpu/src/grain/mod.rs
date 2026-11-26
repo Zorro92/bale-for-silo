@@ -16,7 +16,8 @@ pub mod gpu;
 mod lfsr;
 mod offsets;
 pub mod params;
-#[cfg(windows)]
+// The debug GPU grain probe (DEBUG_SERVER, `debug-probes` feature).
+#[cfg(all(windows, feature = "debug-probes"))]
 #[allow(unsafe_code)]
 mod probe;
 mod scaling;

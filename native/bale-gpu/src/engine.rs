@@ -661,6 +661,7 @@ pub(crate) unsafe fn open_engine(
         .step("D3D11CreateDevice")?;
         let device = device.ok_or(Step("D3D11CreateDevice", HRESULT(0x8000_4003u32 as i32)))?;
         *device_lifetime = Some(crate::lifecycle::Device::track(&device));
+        #[cfg(feature = "debug-probes")]
         crate::lifecycle::watch_release(&device);
         let _ = writeln!(report, "D3D11 feature level: 0x{:04X}", level.0);
         let format = DXGI_FORMAT(target.dxgi_format() as i32);

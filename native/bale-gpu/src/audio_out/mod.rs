@@ -26,11 +26,13 @@ pub mod ring;
 pub mod sync;
 pub mod table;
 pub mod timeline;
+// The debug Initialize variants (DEBUG_SERVER `audio-out-test variants`, `debug-probes` feature).
+#[cfg(feature = "debug-probes")]
 pub mod variants;
 #[cfg(windows)]
 mod wasapi;
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 pub use variants::bale_audio_out_init_variants;
 #[cfg(windows)]
 pub use wasapi::{

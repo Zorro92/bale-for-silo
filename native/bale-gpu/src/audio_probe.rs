@@ -535,40 +535,53 @@ pub fn not_probed(step: &str, hr: i32) -> String {
     format!("Summary: not probed ({} at {step})\n", hresult_text(hr))
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 pub use wasapi::bale_gpu_audio_probe;
 
 /// The probe's COM side. Activation (`Mta`, `activation_function`, `activate_client`) is shared with the
-/// exclusive-mode output (`audio_out`), which gets its `IAudioClient` the same way.
+/// exclusive-mode output (`audio_out`), which gets its `IAudioClient` the same way; the probe itself
+/// (`bale_gpu_audio_probe`) exists only with the `debug-probes` feature.
 #[cfg(windows)]
 pub(crate) mod wasapi {
     use std::ffi::c_void;
-    use std::fmt::Write as _;
-    use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::sync::mpsc::{RecvTimeoutError, SyncSender, sync_channel};
     use std::sync::{Mutex, PoisonError};
     use std::time::{Duration, Instant};
 
-    use windows::Media::Devices::{AudioDeviceRole, MediaDevice};
     use windows::Win32::Foundation::{
         E_INVALIDARG, E_NOINTERFACE, E_POINTER, E_UNEXPECTED, HMODULE,
     };
     use windows::Win32::Media::Audio::{
-        AUDCLNT_SHAREMODE_EXCLUSIVE, AUDCLNT_STREAMOPTIONS_NONE, AudioCategory_Movie,
-        AudioClientProperties, IActivateAudioInterfaceAsyncOperation,
-        IActivateAudioInterfaceCompletionHandler, IActivateAudioInterfaceCompletionHandler_Impl,
-        IAudioClient, IAudioClient2, WAVEFORMATEX,
+        IActivateAudioInterfaceAsyncOperation, IActivateAudioInterfaceCompletionHandler,
+        IActivateAudioInterfaceCompletionHandler_Impl, IAudioClient,
     };
-    use windows::Win32::System::Com::{
-        COINIT_MULTITHREADED, CoInitializeEx, CoTaskMemFree, CoUninitialize,
-    };
+    use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize};
     use windows::Win32::System::LibraryLoader::GetProcAddress;
-    use windows::core::{BOOL, GUID, HRESULT, IUnknown, Interface, PCWSTR, Ref, implement, s};
+    use windows::core::{GUID, HRESULT, IUnknown, Interface, PCWSTR, Ref, implement, s};
 
+    use super::{E_PROC_NOT_FOUND, E_TIMEOUT};
+
+    // The debug probe's own needs.
+    #[cfg(feature = "debug-probes")]
     use super::{
-        Candidate, E_NOT_SET, E_PROC_NOT_FOUND, E_TIMEOUT, WAVEFORMATEX_SIZE, WaveFormat,
-        candidates, hresult_text, not_probed, result_line, summary,
+        Candidate, E_NOT_SET, WAVEFORMATEX_SIZE, WaveFormat, candidates, hresult_text, not_probed,
+        result_line, summary,
     };
+    #[cfg(feature = "debug-probes")]
+    use std::fmt::Write as _;
+    #[cfg(feature = "debug-probes")]
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    #[cfg(feature = "debug-probes")]
+    use windows::Media::Devices::{AudioDeviceRole, MediaDevice};
+    #[cfg(feature = "debug-probes")]
+    use windows::Win32::Media::Audio::{
+        AUDCLNT_SHAREMODE_EXCLUSIVE, AUDCLNT_STREAMOPTIONS_NONE, AudioCategory_Movie,
+        AudioClientProperties, IAudioClient2, WAVEFORMATEX,
+    };
+    #[cfg(feature = "debug-probes")]
+    use windows::Win32::System::Com::CoTaskMemFree;
+    #[cfg(feature = "debug-probes")]
+    use windows::core::BOOL;
 
     /// How long the probe waits for `ActivateCompleted`. Activation of a render `IAudioClient` normally
     /// completes in milliseconds; the wait only bounds a wedged audio service.
@@ -595,6 +608,7 @@ pub(crate) mod wasapi {
     /// # Safety
     /// `mmdevapi` must be null or a module the caller keeps loaded for the call; `report` must point to
     /// `report_capacity` writable bytes.
+    #[cfg(feature = "debug-probes")]
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn bale_gpu_audio_probe(
         mmdevapi: HMODULE,
@@ -611,8 +625,12 @@ pub(crate) mod wasapi {
         unsafe { crate::write_report(&text, report, report_capacity) }
     }
 
-    /// A failed step: its name and HRESULT, nothing else (no system error text).
-    pub(crate) struct Failed(pub(crate) &'static str, pub(crate) i32);
+    /// A failed step: its name and HRESULT, nothing else (no system error text). Only the debug reports (the
+    /// probe and the Initialize variants) name the step; the audio output keeps the HRESULT.
+    pub(crate) struct Failed(
+        #[cfg_attr(not(feature = "debug-probes"), allow(dead_code))] pub(crate) &'static str,
+        pub(crate) i32,
+    );
 
     trait StepResult<T> {
         fn step(self, name: &'static str) -> Result<T, Failed>;
@@ -666,6 +684,7 @@ pub(crate) mod wasapi {
         }
     }
 
+    #[cfg(feature = "debug-probes")]
     fn run(mmdevapi: HMODULE) -> String {
         let mut report = String::from(
             "Audio passthrough probe: default render endpoint, exclusive-mode IsFormatSupported only (never Initialize or Start)\n",
@@ -690,6 +709,7 @@ pub(crate) mod wasapi {
         report
     }
 
+    #[cfg(feature = "debug-probes")]
     fn probe(mmdevapi: HMODULE, report: &mut String) -> Result<Vec<(Candidate, i32)>, Failed> {
         let activate = activation_function(mmdevapi)?;
         let id = MediaDevice::GetDefaultAudioRenderId(AudioDeviceRole::Default)
@@ -865,6 +885,7 @@ pub(crate) mod wasapi {
     ///
     /// # Safety
     /// `format` must point to a `WAVEFORMATEX` followed by its `cbSize` extra bytes.
+    #[cfg(feature = "debug-probes")]
     unsafe fn read_format(format: *const WAVEFORMATEX) -> Option<WaveFormat> {
         // SAFETY: the caller guarantees a readable WAVEFORMATEX (packed, alignment 1).
         let header = unsafe { format.read_unaligned() };

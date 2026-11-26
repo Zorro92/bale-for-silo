@@ -1070,7 +1070,8 @@ fn staged_downscale_matches_the_per_plane_path() {
 /// PQ frames take their source peak from the stream's MaxCLL / mastering metadata exactly as the CPU
 /// reference does, the debug `fixedpeak` option restores the config peak, `bale_tonemap_peak_read`
 /// reports each change once with its source, and the constant buffer is uploaded only when a frame
-/// needs other constants (the same frame again uploads nothing).
+/// needs other constants (the same frame again uploads nothing). The readout is a debug probe.
+#[cfg(feature = "debug-probes")]
 #[test]
 fn pq_peak_follows_the_stream_metadata_and_constants_upload_only_on_change() {
     let warp = Warp::new();

@@ -1,19 +1,25 @@
 //! The source peak the latest stage applies (2026-11-24), for Bale's once-per-stream log line and
 //! stats row: one small record under a mutex. Apply takes it only when its stage's peak or peak
 //! source changes (normally once per stream); `bale_tonemap_peak_read` only tries it (S_FALSE when
-//! busy), so it never waits, and neither side touches D3D or the wrapper's source lock.
+//! busy), so it never waits, and neither side touches D3D or the wrapper's source lock. The readout is a debug probe
+//! (`debug-probes` feature); production stages keep the record, which nothing reads.
+#[cfg(any(windows, feature = "debug-probes", test))]
 use super::types::BaleToneMapPeakInfo;
 #[cfg(any(windows, test))]
 use super::{
     cpu::{self, PeakSource},
     types::{BaleToneMapConfig, BaleToneMapFrameInfo},
 };
-use std::sync::{Mutex, TryLockError};
+#[cfg(any(windows, feature = "debug-probes", test))]
+use std::sync::Mutex;
+#[cfg(any(feature = "debug-probes", test))]
+use std::sync::TryLockError;
 
 /// `BaleToneMapPeakInfo.flags` bit 0: the stage runs the debug `fixedpeak` switch.
 #[cfg(any(windows, test))]
 pub const FLAG_FIXED_PEAK: u32 = 1;
 
+#[cfg(any(windows, feature = "debug-probes", test))]
 const EMPTY: BaleToneMapPeakInfo = BaleToneMapPeakInfo {
     stage: 0,
     changes: 0,
@@ -25,6 +31,7 @@ const EMPTY: BaleToneMapPeakInfo = BaleToneMapPeakInfo {
     transfer: 0,
     flags: 0,
 };
+#[cfg(any(windows, feature = "debug-probes", test))]
 static REPORT: Mutex<BaleToneMapPeakInfo> = Mutex::new(EMPTY);
 
 /// A new stage owns the report from now on: its number (1, 2, ...), and no frame applied yet.
@@ -92,6 +99,7 @@ pub(super) fn publish(
 }
 
 /// A copy of the report, or None while apply holds it (the caller reads again later).
+#[cfg(any(feature = "debug-probes", test))]
 pub(super) fn snapshot() -> Option<BaleToneMapPeakInfo> {
     match REPORT.try_lock() {
         Ok(report) => Some(*report),

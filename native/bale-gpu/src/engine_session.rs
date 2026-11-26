@@ -370,7 +370,9 @@ impl Session {
     }
 
     /// Debug frame log on or off: while on, each playback event also records the engine position at the
-    /// event, read in the engine's callback through `Shared::engine_clock`.
+    /// event, read in the engine's callback through `Shared::engine_clock`. Debug probes only: production
+    /// sessions keep it off.
+    #[cfg(feature = "debug-probes")]
     pub fn set_frame_log(&self, on: bool) -> HRESULT {
         hr(self.with(|inner| {
             if on {

@@ -380,7 +380,7 @@ source against the reference, `fixedpeak`, the report and the upload count, and 
 branch and clamp.
 
 Log: no tone-map call logs (see "Ownership and GPU work"), so the additive export `bale_tonemap_peak_read`
-(every build, `BaleToneMapPeakInfo` in the header) reports the peak the most recently created stage
+(debug-server DLLs only since 2026-11-26, Cargo feature `debug-probes`; `BaleToneMapPeakInfo` in the header) reports the peak the most recently created stage
 applies, its source and the metadata it saw. Debug builds read it in the one-second stats refresh: the
 **Tone-map peak** stats row, and one log line per stream (again only when the peak changes), for example
 `Bale tone map peak: 1500 nits from maxcll (PQ · MaxCLL 1500 · mastering 4000 · config 1000) · stage 3`.
@@ -515,10 +515,14 @@ typedef struct BaleMemEntry {
 } BaleMemEntry;
 uint32_t bale_mem_abi_version(void); /* 1 */
 void bale_mem_account(uint32_t category, int64_t delta_bytes, int32_t delta_count);
+/* Debug-server DLLs only (Cargo feature debug-probes): */
 uint32_t bale_mem_snapshot(BaleMemEntry* out, uint32_t capacity);
 void bale_mem_reset_peaks(void);
 uint64_t bale_mem_underflows(uint32_t category);
 ```
+
+Every build accounts (bale_gpu itself and the FFmpegInteropX fork call `bale_mem_account`); only debug-server DLLs
+export the readers, which the debug server's `mem` and memprobe use (2026-11-26, Store readiness).
 
 `BaleMemEntry` is 24 bytes, with fields at offsets 0, 4, 8, 16. The snapshot returns
 the **total needed**, writes `min(capacity, total)` entries in ascending category order,
@@ -703,6 +707,8 @@ over ~1.2 GB; the biggest single item on that route is the 20-slice d3d11va deco
 Development packages opt into the native Cargo feature `stage-timing`, even though the DLL is built
 with `--release`. Production (`BaleDebugServer=false` in CI) omits the feature, event queries, poll thread
 and debug exports entirely; feature-dependent DLL caches and the MSIX export check enforce the separation.
+The same packages also build with `debug-probes` (the peak read, the ledger readers, memprobe, the churn and the
+other probes; Cargo.toml lists them), which production omits the same way.
 Timing is **off after app launch**. Before starting a new playback:
 
 ```sh

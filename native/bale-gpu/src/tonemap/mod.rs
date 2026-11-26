@@ -1,5 +1,5 @@
 //! HDR to SDR tone mapping, independent C ABI 1. Production routing remains server-side.
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 pub mod churn;
 pub mod cpu;
 pub mod ffi;

@@ -32,7 +32,10 @@ uint32_t bale_mem_abi_version(void); /* 1 */
  * independently to 0 on underflow. Pair each allocation (+bytes,+count) with its final release (-bytes,-count).
  */
 void bale_mem_account(uint32_t category, int64_t delta_bytes, int32_t delta_count);
-/* Returns TOTAL needed; writes min(capacity,total) entries in ascending ID order.
+/* The readers below are debug-package exports (Cargo feature debug-probes), absent in production: resolve them
+ * dynamically. Accounting is in every build.
+ *
+ * Returns TOTAL needed; writes min(capacity,total) entries in ascending ID order.
  * NULL out queries size without writing. Entries remain after first use, even at
  * zero bytes/count/peak. Uses only atomic reads, no locks or D3D calls. Counters
  * are sampled independently during concurrent updates; peak is at least sampled bytes.

@@ -124,8 +124,9 @@ jobs:
         run: rustup component add rustfmt clippy
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo clippy --all-targets --locked --features stage-timing -- -D warnings
-      - run: cargo test --release --locked --features stage-timing
+      # Debug-server DLLs build with both features (xbox job below); production with neither.
+      - run: cargo clippy --all-targets --locked --features stage-timing,debug-probes -- -D warnings
+      - run: cargo test --release --locked --features stage-timing,debug-probes
 
   rust-windows:
     name: Rust GPU layer (Windows)
@@ -197,7 +198,7 @@ jobs:
           Push-Location native/bale-gpu
           cargo clippy --all-targets --locked --target x86_64-pc-windows-msvc -- -D warnings
           if ($LASTEXITCODE -ne 0) { throw 'production cargo clippy failed' }
-          cargo clippy --all-targets --locked --target x86_64-pc-windows-msvc --features stage-timing -- -D warnings
+          cargo clippy --all-targets --locked --target x86_64-pc-windows-msvc --features stage-timing,debug-probes -- -D warnings
           $cargoExit = $LASTEXITCODE
           Pop-Location
           if ($cargoExit -ne 0) { throw 'cargo clippy failed' }
@@ -211,7 +212,7 @@ jobs:
           # One test at a time: zero_copy_warp crashed (access violation) about 1 run in 30 when its
           # WARP tests ran in parallel, and always passed serially. Cause not found yet (our shared
           # state or WARP). Serial also names a crashing test: libtest prints the name before it runs.
-          cargo test --release --locked --target x86_64-pc-windows-msvc --features stage-timing -- --nocapture --test-threads=1
+          cargo test --release --locked --target x86_64-pc-windows-msvc --features stage-timing,debug-probes -- --nocapture --test-threads=1
           $cargoExit = $LASTEXITCODE
           Pop-Location
           if ($cargoExit -ne 0) { throw 'cargo test failed' }
@@ -351,10 +352,11 @@ jobs:
           Push-Location native/bale-gpu
           rustup target add x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { throw 'rustup target add failed' }
-          # Optimised development DLLs opt in explicitly; production has no timing queries/exports.
-          $timingFeatures = @()
-          if ('${{ matrix.debug_server }}' -eq 'true') { $timingFeatures = @('--features', 'stage-timing') }
-          cargo build --release --locked --target x86_64-pc-windows-msvc @timingFeatures
+          # Optimised development DLLs opt in explicitly; production has no timing queries, debug probes or readouts
+          # (Cargo.toml features; the export check below holds both builds to it).
+          $debugFeatures = @()
+          if ('${{ matrix.debug_server }}' -eq 'true') { $debugFeatures = @('--features', 'stage-timing,debug-probes') }
+          cargo build --release --locked --target x86_64-pc-windows-msvc @debugFeatures
           $cargoExit = $LASTEXITCODE
           Pop-Location
           if ($cargoExit -ne 0) { throw 'cargo build failed' }
@@ -516,48 +518,52 @@ jobs:
             if (-not $dumpbin) { throw 'dumpbin.exe is required to inspect the packaged bale_gpu.dll' }
             $exports = & $dumpbin.FullName /exports $packagedDll
             if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect packaged bale_gpu.dll exports' }
-            # Live exports: the wrapper's grain and zero-copy loaders (patch 0020), and the app's P/Invokes.
-            $required = @('bale_tonemap_abi_version', 'bale_tonemap_create', 'bale_tonemap_apply', 'bale_tonemap_destroy', 'bale_tonemap_output_formats',
-              'bale_tonemap_peak_read',
-              'bale_grain_abi_version', 'bale_grain_validate',
-              'bale_grain_gpu_create', 'bale_grain_gpu_apply', 'bale_grain_gpu_destroy', 'bale_grain_gpu_probe',
+            # Every build: the wrapper's tone-map, grain, zero-copy, caption, bitmap-subtitle and ledger loaders (patch 0020
+            # onward) and the app's P/Invokes.
+            $common = @('bale_tonemap_abi_version', 'bale_tonemap_create', 'bale_tonemap_apply', 'bale_tonemap_destroy', 'bale_tonemap_output_formats',
+              'bale_grain_abi_version', 'bale_grain_validate', 'bale_grain_gpu_create', 'bale_grain_gpu_apply', 'bale_grain_gpu_destroy',
               'bale_zc_abi_version', 'bale_zc_register_d3d12', 'bale_zc_create', 'bale_zc_alloc', 'bale_zc_release',
               'bale_zc_repack', 'bale_zc_repack_into', 'bale_zc_repack_into_bits', 'bale_zc_stats', 'bale_zc_destroy',
-              'bale_gpu_abi_version', 'bale_gpu_std_probe', 'bale_gpu_d3d11_probe', 'bale_gpu_audio_probe',
+              'bale_gpu_abi_version',
               'bale_audio_out_abi_version', 'bale_audio_out_create', 'bale_audio_out_write', 'bale_audio_out_start',
               'bale_audio_out_pause', 'bale_audio_out_flush', 'bale_audio_out_sync', 'bale_audio_out_stats',
-              'bale_audio_out_format', 'bale_audio_out_destroy', 'bale_audio_out_init_variants',
-              'bale_mem_abi_version', 'bale_mem_account', 'bale_mem_snapshot', 'bale_mem_reset_peaks', 'bale_mem_underflows',
-              'bale_gpu_lifecycle_abi_version', 'bale_gpu_trim', 'bale_gpu_trimmed_count',
-              'bale_gpu_device_count', 'bale_gpu_device_release_counts', 'bale_tonemap_debug_churn',
+              'bale_audio_out_format', 'bale_audio_out_destroy',
+              'bale_mem_abi_version', 'bale_mem_account',
+              'bale_gpu_lifecycle_abi_version', 'bale_gpu_trim', 'bale_gpu_trimmed_count', 'bale_gpu_device_count',
               'bale_gpu_trim_device', 'bale_gpu_media_device_hold', 'bale_gpu_media_device_release',
-              'bale_gpu_engine_probe', 'bale_gpu_engine_probe_source', 'bale_gpu_engine_session_open_target',
-              'bale_gpu_engine_session_frame_log',
-              'bale_ass_probe', 'bale_ass_probe_png',
+              'bale_gpu_engine_session_open_target',
               'bale_sub_pgs_decode', 'bale_sub_pgs_bind', 'bale_sub_pgs_destroy',
               'bale_sub_abi_version', 'bale_sub_overlay_load_text_styled',
+              'bale_sub_bitmap_abi_version', 'bale_sub_bitmap_push', 'bale_sub_bitmap_flush',
               'bale_cc_abi_version', 'bale_cc_push', 'bale_cc_flush', 'bale_cc_create', 'bale_cc_register', 'bale_cc_select',
               'bale_cc_seen', 'bale_cc_stats', 'bale_cc_attach', 'bale_cc_detach', 'bale_cc_destroy',
               'bale_frame_observer_create', 'bale_frame_observer_attach_engine', 'bale_frame_observer_mark', 'bale_frame_observer_drain',
               'bale_frame_observer_status', 'bale_frame_observer_video_descriptor', 'bale_frame_observer_destroy')
-            $timingExports = @('bale_tonemap_debug_timing_enable', 'bale_tonemap_debug_timing_read', 'bale_tonemap_debug_bench')
-            if ('${{ matrix.debug_server }}' -eq 'true') { $required += $timingExports }
-            # Removed with the staging upload, CPU grain, debug repack and upload/zero-copy probes.
+            # Debug-server DLLs only (features stage-timing and debug-probes): the debug server's probes and readouts. No
+            # production caller in the app or the fork, so a production DLL must not export them.
+            $debugOnly = @('bale_tonemap_debug_timing_enable', 'bale_tonemap_debug_timing_read', 'bale_tonemap_debug_bench', 'bale_tonemap_peak_read',
+              'bale_tonemap_debug_churn', 'bale_grain_gpu_probe', 'bale_gpu_std_probe', 'bale_gpu_d3d11_probe', 'bale_gpu_audio_probe',
+              'bale_audio_out_init_variants', 'bale_mem_snapshot', 'bale_mem_reset_peaks', 'bale_mem_underflows',
+              'bale_gpu_device_release_counts', 'bale_gpu_engine_probe', 'bale_gpu_engine_probe_source',
+              'bale_gpu_engine_session_frame_log', 'bale_ass_probe', 'bale_ass_probe_png',
+              'bale_memprobe_abi_version', 'bale_memprobe_create', 'bale_memprobe_step', 'bale_memprobe_destroy')
+            # Gone from every build: the staging upload, CPU grain, debug repack and upload/zero-copy probes.
             $removed = @('bale_grain_cpu_apply', 'bale_repack_abi_version', 'bale_repack_gpu_create',
               'bale_repack_gpu_apply', 'bale_repack_gpu_destroy',
               'bale_gpu_upload_probe', 'bale_gpu_d3d12_probe', 'bale_gpu_zero_copy_probe')
-            if ('${{ matrix.debug_server }}' -ne 'true') { $removed += $timingExports }
+            if ('${{ matrix.debug_server }}' -eq 'true') { $required = $common + $debugOnly; $absent = $removed }
+            else { $required = $common; $absent = $removed + $debugOnly }
             foreach ($symbol in $required) {
               if (-not ($exports | Select-String -Pattern "\s$([regex]::Escape($symbol))\s*$" -Quiet)) {
                 throw "Packaged bale_gpu.dll is missing export $symbol"
               }
             }
-            foreach ($symbol in $removed) {
+            foreach ($symbol in $absent) {
               if ($exports | Select-String -Pattern "\s$([regex]::Escape($symbol))\s*$" -Quiet) {
-                throw "Packaged bale_gpu.dll still exports removed $symbol"
+                throw "Packaged bale_gpu.dll (debug_server=${{ matrix.debug_server }}) still exports $symbol"
               }
             }
-            Write-Output "Packaged bale_gpu.dll: $($required.Count) live exports present, $($removed.Count) removed exports absent"
+            Write-Output "Packaged bale_gpu.dll (debug_server=${{ matrix.debug_server }}): $($required.Count) exports present, $($absent.Count) absent"
           } finally { Remove-Item $inspection -Recurse -Force }
 
       - name: Check packaged bale_core.dll

@@ -7,6 +7,9 @@
 //! `bale_cc_*` in this file), the debug audio passthrough probe ([`audio_probe`],
 //! `bale_gpu_audio_probe`) and the exclusive-mode audio output ([`audio_out`], audio output ABI,
 //! `bale_audio_out_*`).
+//!
+//! The debug probes and readouts exist only with the `debug-probes` feature (Cargo.toml), which CI enables for
+//! debug-server packages alone; production DLLs export none of them (ci.yml's export lists).
 
 #[cfg(windows)]
 mod ass;
@@ -28,9 +31,11 @@ pub mod grain;
 #[cfg(windows)]
 pub mod lifecycle;
 pub mod memledger;
+#[cfg(feature = "debug-probes")]
 pub mod memprobe;
 #[cfg(windows)]
 mod panel;
+#[cfg(feature = "debug-probes")]
 pub mod png;
 pub mod subs;
 pub mod tonemap;
@@ -39,14 +44,16 @@ pub use tonemap::ffi::bale_tonemap_abi_version;
 pub use tonemap::ffi::{bale_tonemap_apply, bale_tonemap_create, bale_tonemap_destroy};
 pub mod zc_frame;
 
+#[cfg(feature = "debug-probes")]
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "debug-probes")]
 use std::time::Instant;
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 use windows::Win32::Foundation::HMODULE;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL};
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_CREATE_DEVICE_VIDEO_SUPPORT, D3D11_SDK_VERSION,
     D3D11CreateDevice, ID3D11Device,
@@ -64,7 +71,8 @@ pub extern "C" fn bale_gpu_abi_version() -> u32 {
 }
 
 /// Runs a worker thread that shares a mutex with the caller, and returns the round trip in microseconds
-/// (or `u64::MAX` if the thread could not run), proving std threading and synchronisation load.
+/// (or `u64::MAX` if the thread could not run), proving std threading and synchronisation load. Debug probe.
+#[cfg(feature = "debug-probes")]
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_std_probe() -> u64 {
     let start = Instant::now();
@@ -95,7 +103,7 @@ pub extern "C" fn bale_gpu_std_probe() -> u64 {
 /// # Safety
 /// `feature_level` must be null or point to writable memory for one `u32`.
 #[unsafe(no_mangle)]
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 pub unsafe extern "C" fn bale_gpu_d3d11_probe(feature_level: *mut u32) -> i32 {
     let mut device: Option<ID3D11Device> = None;
     let mut level = D3D_FEATURE_LEVEL::default();
@@ -141,7 +149,7 @@ pub unsafe extern "C" fn bale_gpu_d3d11_probe(feature_level: *mut u32) -> i32 {
 /// `url` must point to `url_len` readable `u16`s and `target` to `target_len` (or be null with 0);
 /// `report` must point to `report_capacity` writable bytes.
 #[unsafe(no_mangle)]
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 pub unsafe extern "C" fn bale_gpu_engine_probe(
     url: *const u16,
     url_len: u32,
@@ -185,7 +193,7 @@ pub unsafe extern "C" fn bale_gpu_engine_probe(
 /// # Safety
 /// `source` must be a live COM pointer for the call; `report` must point to `report_capacity` writable bytes.
 #[unsafe(no_mangle)]
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 pub unsafe extern "C" fn bale_gpu_engine_probe_source(
     source: *mut core::ffi::c_void,
     seconds: u32,
@@ -678,7 +686,7 @@ pub unsafe extern "C" fn bale_gpu_engine_session_events(
 /// # Safety
 /// `session` must be null or a live, unclosed session pointer.
 #[unsafe(no_mangle)]
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 pub unsafe extern "C" fn bale_gpu_engine_session_frame_log(
     session: *mut core::ffi::c_void,
     on: u32,
@@ -790,7 +798,7 @@ pub unsafe extern "C" fn bale_gpu_panel_set_swap_chain_handle(
 /// `font` must point to `font_len` readable bytes (or be null with 0); `report` must point to
 /// `report_capacity` writable bytes.
 #[unsafe(no_mangle)]
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 pub unsafe extern "C" fn bale_ass_probe(
     font: *const u8,
     font_len: u32,
@@ -814,7 +822,7 @@ pub unsafe extern "C" fn bale_ass_probe(
 /// # Safety
 /// As [`bale_ass_probe`], with `out` pointing to `out_capacity` writable bytes.
 #[unsafe(no_mangle)]
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 pub unsafe extern "C" fn bale_ass_probe_png(
     font: *const u8,
     font_len: u32,
@@ -1442,7 +1450,7 @@ pub unsafe extern "C" fn bale_cc_destroy(captions: *const subs::cc::Captions) {
     }));
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 unsafe fn borrowed_bytes<'a>(data: *const u8, length: u32) -> &'a [u8] {
     if data.is_null() || length == 0 {
         return &[];
