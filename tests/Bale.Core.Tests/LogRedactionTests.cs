@@ -36,7 +36,7 @@ public sealed class LogRedactionTests
     [InlineData("Launched 812 on Windows.Xbox, package 0.1.812.0, OS 10.0.26100.4652")]
     [InlineData("player: seek target=12.5 player=10.0 ranges=1 action=native")]
     [InlineData("HTTP 404 Not Found at 12:30:45")]
-    [InlineData("in /home/x/Bale.Xbox/PlayerPage.cs:line 42")]
+    [InlineData("at Bale.Xbox.PlayerPage.OnSeek() in PlayerPage.Seek.cs:line 42")]
     public void OrdinaryDiagnosticsPassUnchanged(string line)
     {
         Assert.Equal(line, LogRedaction.MaskCredentials(line));
@@ -45,12 +45,12 @@ public sealed class LogRedactionTests
 
     [Theory]
     [InlineData("Artwork 404 (https://media.example.com:8096/api/v2/images/item/abc/poster.jpg)", "Artwork 404 (https://[redacted])")]
-    [InlineData("open ms-appx:///Assets/x.png and http://192.168.1.20/x", "open ms-appx://[redacted] and http://[redacted]")]
+    [InlineData("open ms-appx:///Assets/x.png and http://192.0.2.20/x", "open ms-appx://[redacted] and http://[redacted]")]
     [InlineData("range /api/v2/stream/s/f?st=abc&start=5 failed", "range /api/v2/stream/s/f?[redacted] failed")]
-    [InlineData("No connection could be made because the target machine actively refused it. (192.168.1.20:8096)",
+    [InlineData("No connection could be made because the target machine actively refused it. (192.0.2.20:8096)",
         "No connection could be made because the target machine actively refused it. ([redacted]:8096)")]
     [InlineData("No such host is known. (silo.example.com:443)", "No such host is known. ([redacted]:443)")]
-    [InlineData("discovered 10.0.0.7 and fe80 link", "discovered [redacted] and fe80 link")]
+    [InlineData("discovered 198.51.100.7 and fe80 link", "discovered [redacted] and fe80 link")]
     [InlineData("Was it /api/x? No.", "Was it /api/x? No.")]
     public void ProductionDropsUrlsQueriesAndAddresses(string line, string redacted) =>
         Assert.Equal(redacted, LogRedaction.ForProduction(line));
