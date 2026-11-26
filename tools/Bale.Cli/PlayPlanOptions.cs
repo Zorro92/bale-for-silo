@@ -2,7 +2,7 @@ using System.Globalization;
 using Bale.Core.Playback;
 
 internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldSeconds, string? SaveHead = null, int HeadMegabytes = 0,
-    string? SaveRange = null, long RangeOffset = 0, int RangeBytes = 0, string? FileId = null, int Av1MaxHeight = 1080,
+    string? SaveRange = null, long RangeOffset = 0, int RangeBytes = 0, string? FileId = null, int Av1MaxHeight = 2160,
     int? SubtitleIndex = null, string Delivery = "auto", double? StartSeconds = null,
     IReadOnlyList<double>? ReanchorSeconds = null, bool InspectHls = false, bool Hdr10 = false, bool FallbackClaims = false)
 {
@@ -123,7 +123,9 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
         },
     };
 
-    // --claim-av1 remains a compatibility no-op; only the explicit height probe expands AV1.
+    // --claim-av1 remains a compatibility no-op. AV1 is claimed as the app does with a usable rav1g.dll
+    // (owner, 2026-11-26: rav1g's 2160p60 entry at 40 Mbps beside dav1d's 1080p60, and its HDR AV1 tone
+    // map); --av1-max-height 1080 plans like a build without rav1g (dav1d's 1080p60 alone).
     // The Series X decoder report (docs/player-plan.md "GPU decode"): what PlaybackClaims.DetectAsync
     // claims after a successful probe on the owner's console.
     internal static HardwareDecodeLimits SeriesXDecoders { get; } = new(H264: new(1920, 1080),
@@ -137,16 +139,15 @@ internal sealed record PlayPlanOptions(bool ClaimAv1, string? UrlFile, int HoldS
         // with its production defaults. --hdr10 plans like the app's `hdr pretend`: the same decoders
         // and an exact HDR10 display, so 4K HDR originals can be checked. --fallback-claims plans like
         // a console whose decoder probe failed (H.264/HEVC 1080p baseline, no VP9/VC-1/MPEG-2).
-        var device = FallbackClaims
-            ? ConsoleEvidence.Default
-            : ConsoleEvidence.ForHardware(SeriesXDecoders) with
+        var rav1g = Av1MaxHeight == 2160;
+        return FallbackClaims
+            ? ConsoleEvidence.ForHardware(null, rav1g)
+            : ConsoleEvidence.ForHardware(SeriesXDecoders, rav1g) with
             {
                 Hdr = Hdr10 ? new() { Hdr10 = true } : new(),
                 DisplayHdrEvidence = "exact",
                 OriginalDynamicRangeMappingSupported = !Hdr10,
+                Av1DynamicRangeMappingSupported = rav1g,
             };
-        if (Av1MaxHeight != 2160) return device;
-        var av1 = ConsoleEvidence.BuildVideoDecode(3840, 2160).Where(decode => decode.Codec == "av1");
-        return device with { VideoDecode = device.VideoDecode.Where(decode => decode.Codec != "av1").Concat(av1).ToArray() };
     }
 }

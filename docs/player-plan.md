@@ -85,9 +85,11 @@ owner-maintained allowlist; nothing else may be added without them. Other unsupp
 goes to the server to transcode, never FFmpeg software or D3D11 video. The measured AV1 evidence is
 8/10-bit, max 1920×1080, max 60 fps: 0.1.230 Fight Club (1080p23.976 10-bit, ~1.3 cores) and 0.1.439
 SmackDown (1080p59.94 10-bit, 6.4 Mbps, zero-copy, 0 late frames over ~4.5 min, ~3 of 8 cores).
-**4K software AV1 is not claimed in production.** Only with `av1-decoder rav1g` does the debug
-`av1-claim 2160` bound add a separate 3840×2160 entry capped at 30 fps; the server's platform-attested
-rates are absolute and it accepts a source that any one entry admits. Audio may use FFmpeg software whenever the system path cannot handle it.
+**4K AV1 is claimed through rav1g (owner, 2026-11-26).** With a usable rav1g.dll every build adds a separate
+rav1g entry, Main 8/10-bit up to 3840×2160 at 60 fps and 40 000 kbps (the owner's soft ceiling: rav1g was tested to
+4K60 on the console and plays reliably to about 40–60 Mbps; real content stays under 40), beside dav1d's measured
+1080p60 entry; the server's platform-attested rates are absolute and it accepts a source that any one entry admits.
+Without a usable library only dav1d's 1080p60 entry is claimed. See "rav1g" below. Audio may use FFmpeg software whenever the system path cannot handle it.
 
 Current production capability claims (`ConsoleEvidence.ForHardware` over the decoder probe, plus runtime display detection, max audio channels **8**):
 
@@ -96,7 +98,7 @@ Current production capability claims (`ConsoleEvidence.ForHardware` over the dec
 | H.264 / HEVC / VP9 video | Media Foundation, hardware | The largest size the console's decoder reports per codec, 60 fps, no bitrate limit. H.264 is 8-bit; HEVC is 8-bit if Main is present and 10-bit if Main10 is; VP9 is 8-bit for profile 0 and 10-bit for profile 2. Series X: H.264 1920×1080, HEVC 7680×4320 8/10-bit, VP9 3840×2160 8/10-bit. VP9 is claimed only when the decoder reports it. If the probe fails or finds nothing: H.264 and HEVC at 1920×1080, 60 fps, no bitrate limit, no VP9; a partial probe keeps its measured profiles and gives only the unmeasured H.264/HEVC depths that baseline |
 | H.264 / HEVC / VP9 past the hardware decoder (phases A and B, 2026-11-24, owner) | FFmpeg ordinary software output, **non-hardware**, through the console stage where one applies (wrapper bale.80+); `software_video_decode_v1` opt-in | Bounded entries (`software_decode::FALLBACK_ENVELOPES`). At **1920×1080**, no bitrate bound: H.264 `high 10` 8/10-bit and HEVC `rext` 12-bit at **60 fps**; H.264 `high 4:2:2` / `high 4:4:4 predictive` 8/10-bit, HEVC `rext` 8/10/12-bit and VP9 `profile 1` / `profile 3` at **30 fps**. Phase B: 8-bit H.264 `constrained baseline`–`high` up to **3840×2160, 30 fps, 50 000 kbps**, claimed only where the stage takes software frames. The route takes a mount only when one of the attempt's software entries admits the delivered file, a file not known to be 4:2:0 stays at or under 30 fps, a needed stage takes software frames, and a frame above 1080p goes through the downscale unless the display fits it (`route.software_fallback`); otherwise `FfmpegSource` refuses and the replan withdraws the codec, so the server transcodes. HDR (PQ/HLG, 10/12-bit, any chroma) inside the envelopes is promised the console tone map. Console-measured at 1080p: 0.8–2.1 cores, 0 missed frames; 4K30 H.264 1.97–2.87 cores (before the stage). Phase B console checks pending (docs/software-decode.md) |
 | VC-1 / MPEG-2 video | FFmpeg demuxer, Media Foundation system decoder | Only when the matching NV12 VLD profile reports a supported size; 8-bit, probed bounds. Series X: both report 1920×1080. Original files only; HLS and `ffmpeg off` withdraw these codecs. Software video decoding remains forbidden |
-| AV1 video | dav1d CPU buffers/grain on D3D11, **non-hardware**; `software_video_decode_v1` opt-in | 8/10-bit, **1920×1080, 60 fps**; no 4K claim |
+| AV1 video | rav1g (D3D12 compute, the fork's GPU provider) where rav1g.dll is usable, else dav1d CPU buffers/grain on D3D11; both **non-hardware**; `software_video_decode_v1` opt-in | Main 8/10-bit: dav1d **1920×1080, 60 fps**, no bitrate bound; with rav1g also **3840×2160, 60 fps, 40 000 kbps** (owner, 2026-11-26) |
 | MPEG-4 Part 2 video | FFmpeg ordinary software output, **non-hardware**; `software_video_decode_v1` opt-in | Simple / Advanced Simple Profile, 8-bit, **1920×1080, 30 fps**; original_http, and since 2026-11-16 the progressive remux and HLS (FFmpeg reads both); no AV1 zero-copy/GPU-grain options |
 | Everything else FFmpeg decodes (2026-11-17, owner, as AetherEngine; narrowed 2026-11-24) | FFmpeg ordinary software output | Software entry per codec bounded only at 60 fps (VP8, MPEG-1, MS-MPEG4 v1–3, WMV1–3, H.263, Theora, QuickTime RLE, MJPEG, ProRes, DNxHD); the hardware codecs have their hardware entries and, for H.264/HEVC/VP9, the bounded fallback above (VC-1/MPEG-2 none); original_http only for the new ones (packages keep their verified codecs); containers MOV/M4V/TS/M2TS/MTS/3GP/MPEG/VOB/OGG/WebM/FLV/ASF via FFmpeg's demuxer. Console verification pending |
 | AVI container | FFmpeg demuxer on original_http | Never progressive/HLS; system video for hardware codecs, software for MPEG-4 Part 2 |
@@ -184,13 +186,14 @@ Delivered-ahead was ~1.3/~2.3 s, not a renderer queue-depth measurement; start/s
 was ~0.2–0.3/~0.5–0.7 s. The user prefers the 1 s default for less start/seek buffering;
 these results do not establish a CPU improvement.
 
-**Software AV1 path (owner decision, 2026-11-19; wrapper `2.1.0-bale.59`).**
-The chain is **rav1g (D3D12, debug default since da3e045) → dav1d on D3D11, max 1080p → server transcode**.
-Keep dav1d for older consoles; the existing measured Series/AVX2 software-device claim gate remains.
+**Software AV1 path (owner decisions, 2026-11-19 and 2026-11-26; wrapper `2.1.0-bale.59`).**
+The chain is **rav1g (D3D12; debug default since da3e045, release default since 2026-11-26) → the fork's in-open dav1d
+fallback (max 1080p) → one dav1d remount after a rav1g failure at max 1080p → server transcode**.
+Keep dav1d for older consoles; the existing measured Series/AVX2 software-device claim gate remains, for both decoders.
 dav1d must work without D3D12: decode and grain run on the CPU by default, with MF CPU NV12 (8-bit) or P010 (10-bit) buffers.
-Claims and the default dav1d configuration never call `ZeroCopyRuntime.Register()`. The production claim
-stays 1080p60; debug 2160/4K30 applies only with rav1g, and `av1-decoder dav1d` logs the ignored raised claim
-once per attempt. This decision does not claim new performance measurements.
+Claims and the default dav1d configuration never call `ZeroCopyRuntime.Register()`. The claim is dav1d's 1080p60, plus
+rav1g's 2160p60 at 40 Mbps where rav1g.dll is usable (see "rav1g"); debug `av1-decoder dav1d` and `av1-claim 1080` keep
+1080p60 and log why once per attempt.
 
 Settings › Playback › **EXPERIMENTAL** offers **GPU film grain (AV1 fallback)**, an owner-requested
 deviation from the official Silo apps. `AppSettings.Dav1dGpuFilmGrain` is device-wide, persisted and off
@@ -2508,8 +2511,8 @@ about 1.2 GB). The normal mount start budget bounds probing too.
 The existing route policy, `FfmpegSource.Configuration`/`ApplyRav1g`, d3d11va, tone-map/downscale stage,
 display matching, output depth, backend and debug switches apply. `av1-decoder`, `av1-claim`,
 `ffmpeg-tune` and `rav1g-tune` are captured as for Silo playback. **There is no server planner**, so
-`av1-claim` changes the captured capabilities but cannot impose a server size/fps gate: a 4K60 AV1
-file can be attempted with `av1-decoder rav1g` regardless of the server's 4K30 claim ceiling.
+`av1-claim` changes the captured capabilities but cannot impose a server size/fps/bitrate gate: a 4K AV1
+file above the claims' 2160p60 / 40 Mbps ceiling can still be attempted with `av1-decoder rav1g`.
 This does not broaden production claims. Probe/route facts and decoder selection are included in
 the response; a failure returns a fixed diagnostic and HRESULT, with rav1g's fixed decline/failure
 reason where available. A small SDR AV1 file may still use the fork's ordinary open-time dav1d
@@ -2626,7 +2629,7 @@ Timestamp in integer 100 ns ticks**, exactly the value the fork handed MF: join 
   native ring overflow (4096 records, ~68 s of 60 fps without a drain) fails the observer closed with
   `player: native frame delivery unavailable`, and a writer backlog over 16384 records logs `frame-log: N records dropped`.
 
-## rav1g (debug), 2026-11-18
+## rav1g (release default since 2026-11-26; debug since 2026-11-18)
 
 The owner approved testing [rav1g](https://github.com/Zorro92/rav1g) (AV1 in D3D12 compute shaders) inside Bale behind
 a debug switch. The fork's side (wrapper 2.1.0-bale.44: `GpuDecoderSampleProvider`, `BaleRav1g.h`) is described in its
@@ -2634,15 +2637,33 @@ a debug switch. The fork's side (wrapper 2.1.0-bale.44: `GpuDecoderSampleProvide
 Owner decision, 2026-11-19: **rav1g (D3D12, debug) → dav1d (D3D11 only, max 1080p) → server transcode**.
 Keep dav1d as the fallback for older consoles.
 It must not require D3D12; it uses CPU decode, CPU grain and MF CPU NV12/P010 buffers.
-Release packages carry no rav1g.dll and keep the 1080p60 claim.
+**Owner decision, 2026-11-26: rav1g is the default AV1 decoder in release builds too** (since the commit that wrote
+this), with the same chain: rav1g → the fork's in-open dav1d fallback (max 1080 lines) → one same-plan dav1d remount
+→ the ordinary replan or server transcode. Every build packages the pinned rav1g.dll. **Claim:** rav1g was tested to
+4K60 on the console and plays reliably to about 40–60 Mbps, and real content stays under 40 Mbps, so with a usable
+library every build claims AV1 Main 8/10-bit up to **3840×2160 at 60 fps with `max_bitrate_kbps` 40 000** (the soft
+ceiling: silo-server's `videoDecodeTakesSourceV3` holds the source's bitrate to it, a file of unknown bitrate passes)
+beside dav1d's 1080p60 entry with no bitrate bound, and promises the HDR AV1 tone map of rav1g's display pass
+(`Av1DynamicRangeMappingSupported`). A faster 4K AV1 file takes a lower version or a server transcode. Auto's display
+matching counts the same entries, so a 4K display now prefers a 4K AV1 version within them.
 
-- **Switch:** `bale-debug.sh av1-decoder [dav1d|rav1g]` (memory only, captured per playback attempt,
-  absent from production like the other `Debug*Switch` classes). **Since 2026-11-19 debug builds start on rav1g with
-  the 4K AV1 claim (`av1-claim 2160`) on** (owner: rav1g is the default for testing); `av1-decoder dav1d` and
-  `av1-claim 1080` go back until restart. The raised claim applies only with rav1g; dav1d always claims
-  1080p60 even when 2160 is set, with one log per attempt explaining the cap. No argument prints the switch,
-  whether the package carries rav1g.dll, and rav1g's `loaded <version> (interface N)` line once an open tried the library. Decisions:
-  `Rav1gPolicy` (Rust `av1_decoder.rs`).
+- **Library check (every build):** once per process, on the thread pool (first used by the launch's version match),
+  `Rav1gLibrary` checks rav1g.dll as the fork's loader will (`BaleRav1gExports`): packaged, loads (`NativeLibrary`),
+  has the 12 exports the fork resolves and interface version 3 (`rav1g_abi_version`, a constant); then frees it, since
+  the fork loads it again for its first stream. No D3D12 device is created, and consoles without measured software
+  video (Xbox One, no AVX2), which claim no software AV1 at all, skip the load. The verdict is Rust's
+  (`av1_decoder::library_status`; the export list and interface version are tested against scripts/rav1g-common.ps1 and
+  scripts/rav1g.json) and is logged once (`player: rav1g.dll usable (interface 3)`, `… not packaged`, `… failed to
+  load`, `… lacks <export>`, `… interface N, expected 3`). Not usable: no rav1g route, no 2160 claim, AV1 on dav1d at
+  1080p60 with dav1d's own tuning, exactly as before rav1g. A device or stream rav1g can't take is still the fork's
+  open-time fallback. Each attempt logs its AV1 claim (`player: av1 claim=2160p60 40 Mbps (rav1g)` or
+  `… 1080p60 (dav1d; <why>)`).
+- **Switch (debug only):** `bale-debug.sh av1-decoder [dav1d|rav1g]` (memory only, captured per playback attempt,
+  absent from production like the other `Debug*Switch` classes) and `av1-claim [1080|2160|2160-dav1d]`. Their defaults
+  are the release behaviour (rav1g, 2160); `av1-decoder dav1d` and `av1-claim 1080` keep dav1d's 1080p60 until restart,
+  and `2160-dav1d` adds rav1g's entry with dav1d too (memory/stress tests). Neither can take rav1g without a usable
+  library. No argument prints the switch, whether the package carries rav1g.dll, the library check's verdict and rav1g's
+  `loaded <version> (interface N)` line once an open tried the library. Decisions: `Rav1gPolicy` (Rust `av1_decoder.rs`).
 - **Keys** (`FfmpegSource.ApplyRav1g`, software AV1 only): `bale_av1_decoder=1` and
   `bale_av1_fallback_max_height=1080` (bale.59). dav1d's D3D11 output and captured grain setting (mode 0
   by default, mode 3 when enabled) are configured for the fork's in-open fallback (missing library, interface mismatch, unsupported
@@ -2672,8 +2693,9 @@ Release packages carry no rav1g.dll and keep the 1080p60 claim.
   packaged; a missing export is caught). It creates rav1g's process device and starts its ~99 pipeline compiles (about
   6.5 s on a Series X, 6 compile threads) so the first open does not; the log reads `player: rav1g prewarm started
   (return 0)`, `already started (return 1)` or `failed (could not start its thread) (return -1)`, then the fork's
-  `ffmpeg: Bale rav1g: prewarm ready ms=N`. Never in production or at app start. **Later (owner-approved plan):** if
-  rav1g reaches production, the call moves to Detail opening an AV1 version, not app start.
+  `ffmpeg: Bale rav1g: prewarm ready ms=N`. Never in production or at app start. **Open (owner-approved plan):** rav1g
+  reached production on 2026-11-26 without it; the call is to move to Detail opening an AV1 version, not app start, so
+  a release build's first rav1g open still does the ~6.5 s of compiles itself (inside the 45 s start budget).
 - **UI thread (all routes, after the 2026-11-18 deadlock):** with `av1-decoder rav1g` the fork's `get_image` waited
   (fixed in bale.48) while the sample thread held the wrapper's source lock, and the UI thread blocked in
   `CurrentVideoStream` for the stats panel, which stopped the start budget (driven from the UI tick) and the debug
@@ -2694,15 +2716,15 @@ Release packages carry no rav1g.dll and keep the 1080p60 claim.
 
   Not on the lock: `VideoStreams`, `AudioStreams`, `SubtitleStreams` (read in MediaOpened) return the open-time lists.
   `FfmpegUiThreadTests` pins the UI-thread files, the open-time read, the session order and the pool close.
-- **Guard** (`FfmpegVideoOutputGuard` + `Rav1gOutputCheck`, attached on every rav1g mount): direct output must carry
+- **Guard** (`FfmpegVideoOutputGuard` + `Rav1gOutputCheck`, attached on every rav1g mount in every build): direct output must carry
   the rav1g mark (media-type attribute `{6d553633-9287-4856-bc9f-0c23af00e184}` = UINT32 1, set by
   `BaleRav1gDecoder::DescribeOutput` on the stream descriptor), the source's depth (8-bit NV12, more P010; never NV12
   for 10-bit) and the container's colour as the catalog reports it (primaries, transfer, matrix; the HDR policy may
   omit BT.2020 primaries and HDR transfers but never changes them; PQ/HLG direct output on an SDR display means the
   stage declined and is rejected). Stage output must carry the tone-map mark as P010 limited BT.709, as today. No mark
-  means the open fell back to dav1d: logged (`player: rav1g output unmarked …`) and shown in stats, not rejected. A
-  rejection fails the mount like any guard rejection.
-- **Remount:** when a rav1g mount fails after rav1g opened (the fork's latched `stream failed` → `NotifyError` →
+  means the open fell back to dav1d: logged (`player: rav1g output unmarked …`) and shown in stats, not rejected (the
+  chain's next decoder). A rejection fails the mount like any guard rejection.
+- **Remount (every build):** when a rav1g mount fails after rav1g opened (the fork's latched `stream failed` → `NotifyError` →
   MediaFailed, or a guard rejection), the same plan is remounted once on dav1d/D3D11 **only with a known source
   height of at most 1080**, with no server replan, through
   the helper the console-downscale-declined remount uses (`RemountSamePlanAsync`). The attempt then stays on dav1d; a
@@ -2712,20 +2734,23 @@ Release packages carry no rav1g.dll and keep the 1080p60 claim.
   from the start request and every delivery; it never rebuilds the raised debug claim. Never loops.
 - **Reading it:** the stats/`where` row `AV1 decoder` says what the open used: `rav1g direct · output WxH NV12|P010
   direct hdr=N`, `rav1g + stage · output … processed …`, `dav1d (rav1g fallback to dav1d (reason, status=0x…))`,
-  `dav1d (no rav1g mark: open fell back)`, `rav1g failed: stream failed (reason, hr=0x…)` or `dav1d (remounted after a
-  rav1g failure)`, plus `rav1g.dll not packaged` when it is missing. It combines the engine FFmpegInteropX reports
+  `dav1d (no rav1g mark: open fell back)`, `rav1g failed: stream failed (reason, hr=0x…)`, `dav1d (remounted after a
+  rav1g failure)` or `dav1d (rav1g unavailable)`, plus the library check's words (`rav1g.dll not packaged`, …) when it
+  is not usable. Release builds' HUD Stats tab names the decoder `rav1g` (rav1g's D3D11 engine on a rav1g mount) or
+  `FFmpeg software` (dav1d). The debug row combines the engine FFmpegInteropX reports
   (rav1g's provider reports the D3D11 engine, dav1d the software one), the guard's mark verdict and the fork's
   `Bale rav1g:` lines (debug FFmpeg log provider). The log carries `player: AV1 decoder rav1g buffer=… output=…
   tonemap=… library=…`, `player: AV1 open used rav1g|dav1d …`, `ffmpeg: Bale rav1g: active WxH bits=N slots=S …`,
   `… output WxH P010 direct hdr=0`, `… destroyed (frames=… blocked=…)` (pool counters at stream end) and, on a
   failure, `player: rav1g failed; remounting the same plan on dav1d`.
 - **Package:** `scripts/rav1g.json` pins the release (tag, source commit, interface version, SHA256 of `rav1g.dll`,
-  `rav1g.h` and `rav1g-licenses.zip`); `scripts/restore-rav1g.ps1` verifies them before the Windows build and the
-  debug-server MSIX carries `rav1g.dll` next to `bale_gpu.dll` with `Licenses/rav1g/`. CI
-  (`scripts/check-rav1g-package.ps1`) checks the packaged hash, the 12 exports the fork resolves, no desktop CRT, and
-  the `Microsoft.VCLibs.140.00` dependency the DLL's app CRT needs; production and an empty pin
-  (`"release_tag": null`) carry none, the switch then reports rav1g unavailable and the fork falls back to dav1d. A new
-  release: update every field of the pin, never a hash alone.
+  `rav1g.h` and `rav1g-licenses.zip`); `scripts/restore-rav1g.ps1` verifies them before the Windows build (every CI
+  matrix entry, production included) and every MSIX, debug-server and production alike since 2026-11-26, carries
+  `rav1g.dll` next to `bale_gpu.dll` with `Licenses/rav1g/`. CI (`scripts/check-rav1g-package.ps1`, fixture-tested by
+  `scripts/test-rav1g-checks.ps1` for both builds) checks each package's hash, the 12 exports the fork resolves, no
+  desktop CRT, and the `Microsoft.VCLibs.140.00` dependency the DLL's app CRT needs; only an empty pin
+  (`"release_tag": null`) carries none, and the library check then keeps AV1 on dav1d at 1080p60. A new release:
+  update every field of the pin, never a hash alone (and the interface version in `av1_decoder.rs` with the wrapper's).
 - **Console test list** (the fork's design §9; check the rav1g thread and that `uwp_dx12_player.exe` is not running
   first): `av1-decoder rav1g`, then `play <id>` and `stats`/`where` for each.
   1. Parity with dav1d: the same AV1 clips up to 1080p (8-bit, 10-bit, film grain) with `av1-decoder dav1d` and
@@ -2735,9 +2760,11 @@ Release packages carry no rav1g.dll and keep the 1080p60 claim.
   3. HDR AV1 tone-mapped on SDR (only when the plan delivers the HDR original; the server normally tone-maps AV1), and
      4K SDR AV1 downscaled: 40 opens (`play` loop) for the platform-leak check.
   4. Seeks forward/back 20× (`seek`), stop/start 20×; the `destroyed (…)` pool counters stay steady.
-  5. Fallbacks: a build with `"release_tag": null` (missing DLL → `fallback to dav1d (library missing, …)`), and a
-     forced 1080p stream failure to see the one dav1d remount. Above 1080, an open/runtime decoder failure
-     must replan to server transcode.
+  5. Fallbacks: a build with `"release_tag": null` (missing DLL → `player: rav1g.dll not packaged`, AV1 claim
+     `1080p60 (dav1d; …)`, no rav1g route), and a forced 1080p stream failure to see the one dav1d remount. Above 1080,
+     an open/runtime decoder failure must replan to server transcode.
+  6. Release build (`BaleDebugServer=false`, only with the owner's go-ahead for a production package): the log's library
+     line and AV1 claim, a 4K60 AV1 title at or under 40 Mbps on rav1g, the HUD's `rav1g` decoder row.
 
 ## Debug: IMFMediaEngine rendering mode (windowless swap chain)
 

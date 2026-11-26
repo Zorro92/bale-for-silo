@@ -1,5 +1,6 @@
 # Exercises restore-rav1g.ps1 and check-rav1g-package.ps1 on small local fixtures (no network): the empty pin, a
-# verified restore, tampered assets, a wrong interface version, unexpected licence entries and the MSIX checks.
+# verified restore, tampered assets, a wrong interface version, unexpected licence entries and the MSIX checks of
+# debug-server and production packages.
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/rav1g-common.ps1"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -102,21 +103,23 @@ try {
         New-Zip $msix $Files
         & "$PSScriptRoot/check-rav1g-package.ps1" -PackagePath $msix -DebugServer $DebugServer -PinPath $Pin
     }
-    if ((Test-Package $packaged 'true') -notmatch 'SHA256 matches the pin') { throw 'A correct package must pass' }
-    $noDll = @{ 'AppxManifest.xml' = $vclibs }
-    if ((Test-Package $noDll 'false') -notmatch 'production build') { throw 'Production carries no rav1g.dll' }
-    Assert-Throws { Test-Package $packaged 'false' } 'only in debug-server builds'
-    Assert-Throws { Test-Package $noDll 'true' } 'rav1g.dll missing'
-    $changed = $packaged.Clone(); $changed['rav1g.dll'] = 'other'
-    Assert-Throws { Test-Package $changed 'true' } 'does not match the pin'
-    $noVcLibs = $packaged.Clone(); $noVcLibs['AppxManifest.xml'] = '<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" />'
-    Assert-Throws { Test-Package $noVcLibs 'true' } 'Microsoft.VCLibs.140.00'
-    $noLicense = $packaged.Clone(); $noLicense.Remove('Licenses/rav1g/LICENSE.txt')
-    Assert-Throws { Test-Package $noLicense 'true' } 'Licenses/rav1g/LICENSE.txt missing'
-    $emptyPin = Join-Path $root 'empty.json'
-    '{ "release_tag": null }' | Set-Content $emptyPin
-    if ((Test-Package $noDll 'true' $emptyPin) -notmatch 'no release pinned') { throw 'An empty pin packages nothing' }
-    Assert-Throws { Test-Package $packaged 'true' $emptyPin } 'only in debug-server builds'
+    # rav1g is the default AV1 decoder in every build (owner, 2026-11-26): debug-server and production packages alike.
+    foreach ($debugServer in @('true', 'false')) {
+        if ((Test-Package $packaged $debugServer) -notmatch 'SHA256 matches the pin') { throw "A correct package must pass (debug=$debugServer)" }
+        $noDll = @{ 'AppxManifest.xml' = $vclibs }
+        Assert-Throws { Test-Package $noDll $debugServer } 'rav1g.dll missing'
+        $changed = $packaged.Clone(); $changed['rav1g.dll'] = 'other'
+        Assert-Throws { Test-Package $changed $debugServer } 'does not match the pin'
+        $noVcLibs = $packaged.Clone(); $noVcLibs['AppxManifest.xml'] = '<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" />'
+        Assert-Throws { Test-Package $noVcLibs $debugServer } 'Microsoft.VCLibs.140.00'
+        $noLicense = $packaged.Clone(); $noLicense.Remove('Licenses/rav1g/LICENSE.txt')
+        Assert-Throws { Test-Package $noLicense $debugServer } 'Licenses/rav1g/LICENSE.txt missing'
+        $emptyPin = Join-Path $root 'empty.json'
+        '{ "release_tag": null }' | Set-Content $emptyPin
+        if ((Test-Package $noDll $debugServer $emptyPin) -notmatch 'no release pinned') { throw "An empty pin packages nothing (debug=$debugServer)" }
+        Assert-Throws { Test-Package $packaged $debugServer $emptyPin } 'only in builds with a pinned release'
+    }
+    if ((Test-Package $packaged 'false') -notmatch 'production build') { throw 'The result names the production build' }
     Write-Output 'rav1g restore and package checks: fixtures pass'
 }
 finally { Remove-Item $root -Recurse -Force }

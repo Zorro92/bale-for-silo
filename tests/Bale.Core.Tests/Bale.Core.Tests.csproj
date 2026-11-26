@@ -164,6 +164,14 @@
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Capabilities.cs" Link="DebugServer.Capabilities.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.cs" Link="DebugServer.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/Rav1gPrewarm.cs" Link="Rav1gPrewarm.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- rav1g in release builds (Rav1gReleaseTests): the library check, the guard and the switches as text, the pin and its scripts. -->
+    <None Include="../../src/Bale.Xbox/Services/Rav1gLibrary.cs" Link="Rav1gLibrary.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/FfmpegVideoOutputGuard.cs" Link="FfmpegVideoOutputGuard.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/Services/DebugAv1DecoderSwitch.cs" Link="DebugAv1DecoderSwitch.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/rav1g.json" Link="rav1g.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/rav1g-common.ps1" Link="rav1g-common.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/check-rav1g-package.ps1" Link="check-rav1g-package.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/test-rav1g-checks.ps1" Link="test-rav1g-checks.ps1.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/FfmpegStreamSnapshot.cs" Link="FfmpegStreamSnapshot.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugVideoMediaType.cs" Link="DebugVideoMediaType.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.Tracks.cs" Link="PlayerPage.Tracks.cs.txt" CopyToOutputDirectory="PreserveNewest" />

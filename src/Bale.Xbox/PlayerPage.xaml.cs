@@ -86,6 +86,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public Task SubtitleAppearanceRead { get; set; } = Task.CompletedTask;
         /// <summary>In-band closed captions: whether a mount found them and whether the viewer picked CC (PlayerPage.Captions.cs).</summary>
         public PlaybackClosedCaptions Captions { get; } = new();
+        /// <summary>A rav1g mount failed and the same plan was remounted on dav1d; later mounts stay on dav1d.</summary>
+        public bool Rav1gRemounted { get; set; }
 #if DEBUG_SERVER
         public DebugPlayUrlRequest? DebugUrl => Request.DebugUrl;
         // Match the capability claim and backend even if the debug toggle changes during a request/replan.
@@ -105,14 +107,12 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool UsePooledStreamAdapter => StreamAdapter == "pooled";
         /// <summary>The Rust range stream and its Rust IRandomAccessStream (docs/rust-port.md, slice 7).</summary>
         public bool UseRustTransport => StreamAdapter == "rust";
-        /// <summary>`av1-claim 2160-dav1d`: the 2160 claim also applies with dav1d (memory/stress tests only).</summary>
+        /// <summary>`av1-claim 2160-dav1d`: rav1g's AV1 claim also applies with dav1d (memory/stress tests only).</summary>
         public bool Av1ClaimDav1d { get; } = DebugAv1ClaimSwitch.Dav1dToo;
         public int Av1ClaimMaxHeight { get; } = DebugAv1ClaimSwitch.MaxHeight;
-        /// <summary>dav1d or rav1g for software AV1 (DebugAv1DecoderSwitch), captured when the attempt starts.</summary>
+        /// <summary>dav1d or rav1g for software AV1 (DebugAv1DecoderSwitch, default rav1g as in release), captured when the attempt starts.</summary>
         public string Av1Decoder { get; } = DebugAv1DecoderSwitch.Mode;
         public string Dav1dPath { get; } = DebugDav1dPathSwitch.Mode;
-        /// <summary>A rav1g mount failed and the same plan was remounted on dav1d; later mounts stay on dav1d.</summary>
-        public bool Rav1gRemounted { get; set; }
         public bool FfmpegEnabled => FfmpegMode != "off";
         public bool ForceFfmpeg => FfmpegMode == "direct";
 #else
@@ -122,6 +122,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool UseEngine => !EngineRefused;
         public bool FfmpegEnabled => true;
         public bool ForceFfmpeg => false;
+        /// <summary>Software AV1 decodes on rav1g (owner, 2026-11-26) wherever rav1g.dll is usable (Rav1gLibrary), else dav1d.</summary>
+        public string Av1Decoder => "rav1g";
 #endif
         /// <summary>
         /// HLS always plays through the Rust HLS reader and FFmpeg (owner, 2026-11-16 console A/B); Windows' HLS
@@ -270,30 +272,15 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 var startPosition = PlaybackStartPosition.ForStartRequest(request.OverridePosition,
                     request.Detail.PlaybackPositionSeconds,
                     request.SuppressResumeRewind ? 0 : PlaybackStartPosition.DefaultResumeRewindSeconds);
-                // The production claims, shared with Auto's display matching on the detail page.
-                var (capabilities, softwareVideo) = await PlaybackClaims.DetectAsync();
+                // The production claims, shared with Auto's display matching on the detail page: AV1 up to 2160p60 at
+                // 40 Mbps where rav1g.dll is usable (owner, 2026-11-26), else dav1d's 1080p60.
+                var capabilities = await DetectClaimsAsync(attempt);
                 ct.ThrowIfCancellationRequested();
-#if DEBUG_SERVER
-                // Keep the probed hardware claims; only the software AV1 bound is raised.
-                if (attempt.Av1ClaimMaxHeight == 2160 && (attempt.Av1Decoder == "rav1g" || attempt.Av1ClaimDav1d) && softwareVideo)
-                    capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(await HardwareDecodeProbe.Limits, 3840, 2160) };
-                // rav1g's display output tone-maps AV1 HDR to SDR itself (wrapper bale.74+), so HDR AV1 originals can
-                // be promised like HEVC/VP9 ones; without it the server has no SDR version to offer (2026-11-24).
-                if (attempt.Av1Decoder == "rav1g" && softwareVideo && DebugRav1gTuning.DisplayOutputOn)
-                    capabilities = capabilities with { Av1DynamicRangeMappingSupported = true };
-                capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
-                capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
-                capabilities = attempt.FfmpegTuning.ToneMapCapabilities(capabilities);
-#endif
                 var start = PlaybackStartBuilder.Build(request.Detail, request.Selection,
                     services.ProfileId, Guid.NewGuid().ToString(), startPosition, capabilities, DeviceIdentity.Current());
 #if DEBUG_SERVER
                 start = DebugPlaybackDelivery.Apply(attempt.DeliveryMode, start);
                 if (attempt.DeliveryMode != "auto") Log.Info("player: delivery forced=" + attempt.DeliveryMode);
-                if (attempt.Av1ClaimMaxHeight == 2160 && softwareVideo && attempt.FfmpegEnabled)
-                    Log.Info(attempt.Av1Decoder == "rav1g" ? "player: av1 claim=2160p (debug rav1g)"
-                        : attempt.Av1ClaimDav1d ? "player: av1 claim=2160p (debug av1-claim 2160-dav1d)"
-                        : "player: av1 claim=1080p (dav1d cap; debug av1-claim 2160 ignored)");
 #endif
                 attempt.Start = start;
                 // The route decodes a hardware codec in FFmpeg when these entries cannot take the file.
@@ -434,6 +421,40 @@ public sealed partial class PlayerPage : Page, IBackHandler
     }
 
     /// <summary>
+    /// This attempt's claims (PlaybackClaims): AV1 up to 2160p60 at the 40 Mbps soft ceiling with a usable rav1g.dll, else
+    /// dav1d's 1080p60. Debug builds apply the captured av1-decoder and av1-claim switches (defaults rav1g and 2160, as in
+    /// release; dav1d or 1080 keep dav1d's 1080p60; 2160-dav1d forces rav1g's entry for memory/stress tests) and the other
+    /// debug claim overrides. Logs the AV1 claim once per attempt.
+    /// </summary>
+    private static async Task<DeviceCapabilities> DetectClaimsAsync(Attempt attempt)
+    {
+#if DEBUG_SERVER
+        var (capabilities, softwareVideo, rav1g) = await PlaybackClaims.DetectAsync(
+            rav1g: attempt.Av1ClaimMaxHeight == 2160 && attempt.Av1Decoder == "rav1g");
+        // Keep the probed hardware claims; only rav1g's AV1 entry is added, also for dav1d.
+        var forced = attempt.Av1ClaimDav1d && softwareVideo && !rav1g;
+        if (forced) capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(await HardwareDecodeProbe.Limits, rav1g: true) };
+        // rav1g-tune display=off has the stage process rav1g's frames: HDR AV1 stays server tone-mapped, as before 2026-11-24.
+        if (!DebugRav1gTuning.DisplayOutputOn) capabilities = capabilities with { Av1DynamicRangeMappingSupported = false };
+        capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
+        capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
+        capabilities = attempt.FfmpegTuning.ToneMapCapabilities(capabilities);
+        if (softwareVideo && attempt.FfmpegEnabled)
+            Log.Info(rav1g ? "player: av1 claim=2160p60 40 Mbps (rav1g)"
+                : forced ? "player: av1 claim=2160p60 40 Mbps (debug av1-claim 2160-dav1d)"
+                : !Rav1gLibrary.Usable ? $"player: av1 claim=1080p60 (dav1d; {Rav1gLibrary.Detail})"
+                : attempt.Av1Decoder != "rav1g" ? "player: av1 claim=1080p60 (dav1d; debug av1-decoder dav1d)"
+                : "player: av1 claim=1080p60 (dav1d; debug av1-claim 1080)");
+        return capabilities;
+#else
+        var (capabilities, softwareVideo, rav1g) = await PlaybackClaims.DetectAsync();
+        if (softwareVideo)
+            Log.Info(rav1g ? "player: av1 claim=2160p60 40 Mbps (rav1g)" : $"player: av1 claim=1080p60 (dav1d; {Rav1gLibrary.Detail})");
+        return capabilities;
+#endif
+    }
+
+    /// <summary>
     /// Remount the current plan once more on another local path (no server replan), from the same source position.
     /// The caller has marked the attempt so the new mount takes that path; a failed open takes the single replan.
     /// </summary>
@@ -552,8 +573,7 @@ public sealed partial class PlayerPage : Page, IBackHandler
                 : "player: console downscale declined; remounting on the system decoder");
             return;
         }
-#if DEBUG_SERVER
-        // Debug rav1g switch (owner, 2026-11-18): a rav1g mount that failed (the fork's latched NotifyError, or the guard
+        // rav1g (owner, 2026-11-26: every build): a rav1g mount that failed (the fork's latched NotifyError, or the guard
         // rejecting its output) remounts once on dav1d/D3D11 only up to 1080 lines; taller sources take the ordinary replan.
         if (attempt.Media is { } failedMount && Rav1gPolicy.RemountOnDav1d(failedMount.Rav1gRoute, failedMount.Rav1gActive,
                 attempt.Rav1gRemounted, hdrOutputFailed, PlaybackEmbeddedSubtitleFailure.Is(failure), keepsClaims, failedMount.Route.VideoHeight))
@@ -562,7 +582,6 @@ public sealed partial class PlayerPage : Page, IBackHandler
             await RemountSamePlanAsync(attempt, position, "player: rav1g failed; remounting the same plan on dav1d");
             return;
         }
-#endif
         if (attempt.Replanned)
         {
             await ShowErrorAsync(PlaybackMessages.PlaybackFailed);

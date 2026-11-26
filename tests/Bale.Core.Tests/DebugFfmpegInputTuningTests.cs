@@ -110,7 +110,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     public void BufferTimeIsAppliedAfterItemCreationWithOnlyTheOverrideDebugGuarded()
     {
         var player = Read("PlayerPage.Media.cs.txt");
-        Assert.Contains("int? bufferOverrideMs = null;\n                var softwareVideo = media.Route.SoftwareVideo;\n#if DEBUG_SERVER\n                // rav1g's pool is 8 images: a few frames of BufferTime, unless ffmpeg-tune buffer= overrides it.\n                bufferOverrideMs = attempt.FfmpegTuning.BufferMs ?? (rav1gRoute ? media.Rav1g!.BufferMs : null);\n                softwareVideo = media.SoftwareVideo;\n#endif\n                if (SoftwareDecodeTuning.BufferTimeMs(softwareVideo, bufferOverrideMs,\n                        media.Route.VideoWidth, media.Route.VideoHeight) is { } bufferMs)", player);
+        Assert.Contains("int? bufferOverrideMs = rav1gRoute ? rav1g.BufferMs : null;\n                var softwareVideo = media.Route.SoftwareVideo;\n#if DEBUG_SERVER\n                bufferOverrideMs = attempt.FfmpegTuning.BufferMs ?? bufferOverrideMs;\n                softwareVideo = media.SoftwareVideo;\n#endif\n                if (SoftwareDecodeTuning.BufferTimeMs(softwareVideo, bufferOverrideMs,\n                        media.Route.VideoWidth, media.Route.VideoHeight) is { } bufferMs)", player);
         var item = player.IndexOf("media.Item = media.FfmpegSource.CreateMediaPlaybackItem();", StringComparison.Ordinal);
         var buffering = player.IndexOf("if (SoftwareDecodeTuning.BufferTimeMs(", StringComparison.Ordinal);
         Assert.True(item >= 0 && buffering > item);
@@ -487,10 +487,11 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("private static bool SoftwareVideo() => DeviceIdentity.SoftwareVideoSupported;", claims);
         Assert.DoesNotContain("ZeroCopyRuntime.Register()", claims);
         Assert.Contains("SoftwareDecodePolicy.ForSoftwareVideo(capabilities, softwareVideo)", claims);
-        Assert.Contains("SoftwareDecodePolicy.ForSoftwareVideo(claims, SoftwareVideo())", claims);
+        Assert.Contains("SoftwareDecodePolicy.ForSoftwareVideo(claims, softwareVideo)", claims);
+        Assert.Contains("var softwareVideo = SoftwareVideo();", claims);
         Assert.DoesNotContain("#if", claims);
         var player = Read("PlayerPage.cs.txt");
-        var detect = player.IndexOf("var (capabilities, softwareVideo) = await PlaybackClaims.DetectAsync();", StringComparison.Ordinal);
+        var detect = player.IndexOf("var capabilities = await DetectClaimsAsync(attempt);", StringComparison.Ordinal);
         var build = player.IndexOf("PlaybackStartBuilder.Build(request.Detail", StringComparison.Ordinal);
         Assert.True(detect >= 0 && build > detect);
     }

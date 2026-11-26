@@ -1,6 +1,4 @@
-#if DEBUG_SERVER
 using Bale.Core.Playback;
-#endif
 using FFmpegInteropX;
 using Windows.Media.Core;
 using Windows.Media.MediaProperties;
@@ -32,9 +30,7 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
     private readonly bool _nv12Requested;
     private readonly bool _softwareStage;
     private readonly int? _baseLayerStreamIndex;
-#if DEBUG_SERVER
     private readonly Rav1gOutputCheck? _rav1g;
-#endif
     private readonly object _gate = new();
     private readonly HashSet<object> _nonVideo = new(ReferenceEqualityComparer.Instance);
     private bool _disposed;
@@ -47,19 +43,15 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
     /// comes from the software decoder's stream instead of d3d11va's, under the same output rule.</param>
     internal FfmpegVideoOutputGuard(FFmpegMediaSource source, Action failed, bool toneMap = true, int? baseLayerStreamIndex = null,
         bool allowNv12 = false, bool nv12Requested = false, bool softwareStage = false)
-#if DEBUG_SERVER
         : this(source, failed, null, toneMap, baseLayerStreamIndex, allowNv12, nv12Requested, softwareStage)
     {
     }
 
-    /// <param name="rav1g">The debug rav1g route's rule (Rav1gPolicy.OutputVerdict) instead of the stage/DV7 rules.</param>
+    /// <param name="rav1g">The rav1g route's rule (Rav1gPolicy.OutputVerdict) instead of the stage/DV7 rules.</param>
     internal FfmpegVideoOutputGuard(FFmpegMediaSource source, Action failed, Rav1gOutputCheck? rav1g, bool toneMap = true,
         int? baseLayerStreamIndex = null, bool allowNv12 = false, bool nv12Requested = false, bool softwareStage = false)
-#endif
     {
-#if DEBUG_SERVER
         _rav1g = rav1g;
-#endif
         _ffmpeg = source;
         _failed = failed;
         _toneMap = toneMap;
@@ -115,13 +107,11 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
                     return;
                 }
                 var current = _ffmpeg.CurrentVideoStream;
-#if DEBUG_SERVER
                 if (_rav1g is not null)
                 {
                     if (!_failure && _rav1g.Accept(video.EncodingProperties, current?.DecoderEngine)) return;
                 }
                 else
-#endif
                 // The stage's stream: d3d11va, or FFmpeg software on a software route (phase B); DV7 is d3d11va only.
                 if (!_failure && current?.DecoderEngine == (_softwareStage && _baseLayerStreamIndex is null
                         ? DecoderEngine.FFmpegSoftwareDecoder : DecoderEngine.FFmpegD3D11HardwareDecoder)
@@ -154,11 +144,10 @@ internal sealed partial class FfmpegVideoOutputGuard : IDisposable
     }
 }
 
-#if DEBUG_SERVER
 /// <summary>
-/// The debug rav1g route's output rule (fork bale.44, design §4; Rav1gPolicy.OutputVerdict): direct output carries
-/// the rav1g mark with the source's depth and colour, stage output the tone-map mark; unmarked output is the open's
-/// dav1d fallback, accepted and reported. The verdict is computed once per distinct media type, not per sample.
+/// The rav1g route's output rule (fork bale.44, design §4; Rav1gPolicy.OutputVerdict): direct output carries the rav1g
+/// mark with the source's depth and colour, stage output the tone-map mark; unmarked output is the open's dav1d fallback,
+/// accepted and reported. The verdict is computed once per distinct media type, not per sample.
 /// </summary>
 internal sealed class Rav1gOutputCheck(Av1SourceFacts source, bool sdrDisplay, bool allowNv12Stage)
 {
@@ -201,4 +190,3 @@ internal sealed class Rav1gOutputCheck(Av1SourceFacts source, bool sdrDisplay, b
     private static uint? Value(VideoEncodingProperties format, Guid key) =>
         format.Properties.TryGetValue(key, out var value) && value is uint number ? number : null;
 }
-#endif

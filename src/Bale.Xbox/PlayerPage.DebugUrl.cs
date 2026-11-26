@@ -13,12 +13,8 @@ public sealed partial class PlayerPage
         try
         {
             var url = attempt.DebugUrl!;
-            var (capabilities, softwareVideo) = await PlaybackClaims.DetectAsync();
-            if (attempt.Av1ClaimMaxHeight == 2160 && (attempt.Av1Decoder == "rav1g" || attempt.Av1ClaimDav1d) && softwareVideo)
-                capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(await HardwareDecodeProbe.Limits, 3840, 2160) };
-            capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);
-            capabilities = DebugHdrPlayback.Capabilities(attempt.PretendHdr, capabilities);
-            capabilities = attempt.FfmpegTuning.ToneMapCapabilities(capabilities);
+            // The attempt's claims as for Silo playback (av1-decoder, av1-claim and the other debug overrides applied).
+            var capabilities = await DetectClaimsAsync(attempt);
             attempt.Cancellation.Token.ThrowIfCancellationRequested();
             attempt.HardwareDecode = capabilities.VideoDecode.Where(decode => decode.Hardware).ToArray();
             attempt.Start = PlaybackStartBuilder.Build(DebugPlayUrlRequest.FileId, attempt.Client.ProfileId!,
@@ -91,8 +87,10 @@ public sealed partial class PlayerPage
         // Software H.264 takes the stage too since wrapper bale.80 (phase B).
         if (media.Route.ConsoleToneMap && media.Route.VideoCodec is not ("hevc" or "vp9")
             && !(media.Route.VideoCodec == "h264" && media.Route.SoftwareVideo)
-            && !(media.Route.VideoCodec == "av1" && attempt.Av1Decoder == "rav1g"))
-            throw new DebugPlayUrlException("tone map declined: requires HEVC/VP9, software H.264 or rav1g AV1");
+            && !(media.Route.VideoCodec == "av1" && attempt.Av1Decoder == "rav1g" && Rav1gLibrary.Usable))
+            throw new DebugPlayUrlException(media.Route.VideoCodec == "av1" && attempt.Av1Decoder == "rav1g"
+                ? $"tone map declined: AV1 needs rav1g ({Rav1gLibrary.Detail})"
+                : "tone map declined: requires HEVC/VP9, software H.264 or rav1g AV1");
     }
 
     private void DebugDescribeUrlRoute(Attempt attempt, Mount media)
@@ -108,6 +106,7 @@ public sealed partial class PlayerPage
         {
             route += !attempt.FfmpegTuning.SoftwareVideo(media.Route.SoftwareVideo) ? "; rav1g not applied: ffmpeg-tune decoder override"
                 : attempt.Av1Decoder != "rav1g" ? "; rav1g not selected (av1-decoder dav1d)"
+                : !Rav1gLibrary.Usable ? $"; rav1g unavailable ({Rav1gLibrary.Detail}); dav1d"
                 : media.Rav1g?.Rav1g == true ? "; rav1g requested (no server fps/size claim gate)"
                 : "; rav1g declined: route is not software AV1 or decoder was withdrawn";
         }

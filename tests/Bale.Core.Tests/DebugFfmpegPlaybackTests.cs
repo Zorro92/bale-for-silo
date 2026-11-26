@@ -40,7 +40,7 @@ public class DebugFfmpegPlaybackTests
     {
         Assert.Same(ConsoleEvidence.Default, DebugFfmpegPlayback.Capabilities("policy"));
         Assert.Same(ConsoleEvidence.Default, DebugFfmpegPlayback.Capabilities("direct"));
-        Assert.Same(new PlayPlanOptions(true, null, 0, FallbackClaims: true).Capabilities(), DebugFfmpegPlayback.Capabilities("policy"));
+        Assert.Same(new PlayPlanOptions(true, null, 0, Av1MaxHeight: 1080, FallbackClaims: true).Capabilities(), DebugFfmpegPlayback.Capabilities("policy"));
         var off = DebugFfmpegPlayback.Capabilities("off");
         Assert.DoesNotContain("av1", off.VideoCodecs);
         Assert.All(off.VideoDecode, decode => Assert.True(decode.Hardware));
@@ -74,8 +74,9 @@ public class DebugFfmpegPlaybackTests
     {
         var source = Read("PlayerPage.cs.txt");
         Assert.Contains("public string FfmpegMode { get; } = DebugFfmpegPlayback.Mode", source);
-        Assert.Contains("var (capabilities, softwareVideo) = await PlaybackClaims.DetectAsync()", source);
-        Assert.Contains("var capabilities = DisplayHdrOutput.DetectCapabilities(ConsoleEvidence.ForHardware(hardware))", Read("PlaybackClaims.cs.txt"));
+        Assert.Contains("var capabilities = await DetectClaimsAsync(attempt);", source);
+        Assert.Contains("await PlaybackClaims.DetectAsync(", source);
+        Assert.Contains("var capabilities = DisplayHdrOutput.DetectCapabilities(ConsoleEvidence.ForHardware(hardware, rav1g))", Read("PlaybackClaims.cs.txt"));
         Assert.Contains("capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities)", source);
         Assert.Contains("public bool FfmpegEnabled => true", source);
         Assert.Contains("public bool FfmpegEnabled => FfmpegMode != \"off\"", source);
@@ -98,12 +99,12 @@ public class DebugFfmpegPlaybackTests
         Assert.Contains("media.RandomStream = NativeRandomAccessStream(media.Stream!) ?? media.Stream!.AsRandomAccessStream()", source);
         Assert.Contains("Route = PlaybackRoutePolicy.Decide(attempt.Plan!, transport.IsHls, attempt.FfmpegEnabled, attempt.ForceFfmpeg,", source);
         Assert.Contains("if (media.Route.UseFfmpeg)", source);
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)", source);
+        Assert.Contains("FfmpegSource.Configuration(media.Route, media.Rav1g, attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)", source);
         Assert.Contains(": await FFmpegMediaSource.CreateFromStreamAsync(media.RandomStream!, config).AsTask()", source);
         // A progressive remux reaches FFmpeg through its non-seekable input, still as authenticated bytes.
         Assert.Contains("? await FFmpegMediaSource.CreateFromInputStreamAsync(forward, config).AsTask()", source);
         Assert.Contains("media.Progressive = attempt.UseRustTransport\n                        ? await OpenStepAsync(transport.OpenNativeProgressiveAsync(media.Token), media.Token)\n                        : await OpenStepAsync(transport.OpenProgressiveAsync(media.Token), media.Token);", source);
-        Assert.Contains("FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route)", source);
+        Assert.Contains("FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route, rav1gRoute)", source);
         Assert.Contains("media.Item = media.FfmpegSource.CreateMediaPlaybackItem()", source);
         Assert.Contains("media.Item ??= new MediaPlaybackItem(media.Source)", source);
         Assert.Contains("player.Source = media.Item", source);
@@ -171,7 +172,7 @@ public class DebugFfmpegPlaybackTests
             "if (media.FfmpegSource is not null)", "stats = ReadFfmpegStats(stats, media)",
             "else if (media is { Opened: true, Item: { } item })", "BackendDisplayName = \"FFmpegInteropX\"",
             "BackendRoute = media.Progressive is null ? \"FFmpeg Direct\" : media.Transport.IsHls ? \"FFmpeg HLS\" : \"FFmpeg Progressive\"", "CurrentVideoStream", "CurrentAudioStream",
-            "VideoDecoderName = FfmpegSource.DecoderName(video.DecoderEngine)",
+            "VideoDecoderName = FfmpegSource.DecoderName(video.DecoderEngine, media.Rav1gRoute)",
             "AudioDecoderName = FfmpegSource.DecoderName(audio.DecoderEngine)",
             "bandwidth = media.Throughput.Sample(stream.DownloadedBytes, stream.DownloadTime)",
         ];

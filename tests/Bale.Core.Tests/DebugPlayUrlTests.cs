@@ -65,7 +65,7 @@ public class DebugPlayUrlTests
         var plan = request.Plan(probe);
         var detail = request.Detail(probe);
         var route = PlaybackRoutePolicy.Decide(plan, false, sdrOutput: true, versions: detail.Versions);
-        var rav1g = Rav1gPolicy.Route("rav1g", route, plan, detail.Versions, (1920, 1080), true, false);
+        var rav1g = Rav1gPolicy.Route("rav1g", route, plan, detail.Versions, (1920, 1080), true, false, libraryUsable: true);
         var config = FfmpegSource.Configuration(route, new DebugFfmpegInputTuning(), rav1g);
 
         Assert.Equal("original_http", plan.Delivery);
@@ -96,7 +96,7 @@ public class DebugPlayUrlTests
         var plan = request.Plan(probe);
         var versions = request.Detail(probe).Versions;
         var route = PlaybackRoutePolicy.Decide(plan, false, sdrOutput: true, versions: versions);
-        var rav1g = gpuAv1 ? Rav1gPolicy.Route("rav1g", route, plan, versions, (1920, 1080), true, false) : null;
+        var rav1g = gpuAv1 ? Rav1gPolicy.Route("rav1g", route, plan, versions, (1920, 1080), true, false, libraryUsable: true) : null;
         var config = FfmpegSource.Configuration(route, new DebugFfmpegInputTuning(), rav1g);
 
         Assert.True(route.ConsoleToneMap);

@@ -23,14 +23,16 @@ public sealed class Rav1gPolicyTests
             VideoWidth: width, VideoHeight: height);
 
     private static Rav1gRouteDecision Decide(string selected = "rav1g", PlaybackRouteDecision? route = null,
-        (int, int)? display = null, bool sdr = true, bool withdrawn = false, FileVersion? version = null) =>
-        Rav1gPolicy.Route(selected, route ?? Route(), Plan(), [version ?? Version()], display ?? (1920, 1080), sdr, withdrawn);
+        (int, int)? display = null, bool sdr = true, bool withdrawn = false, FileVersion? version = null, bool usable = true) =>
+        Rav1gPolicy.Route(selected, route ?? Route(), Plan(), [version ?? Version()], display ?? (1920, 1080), sdr, withdrawn, usable);
 
     [Fact]
     public void OnlyTheSwitchOnASoftwareAv1RouteTakesRav1g()
     {
         Assert.True(Decide().Rav1g);
         Assert.False(Decide("dav1d").Rav1g);
+        // No usable rav1g.dll: the mount is dav1d's, with dav1d's own tuning.
+        Assert.Equal(Decide("dav1d"), Decide(usable: false));
         Assert.False(Decide(withdrawn: true).Rav1g);
         Assert.False(Decide(route: Route(software: false)).Rav1g);
         Assert.False(Decide(route: Route(codec: "mpeg4")).Rav1g);
@@ -159,16 +161,33 @@ public sealed class Rav1gPolicyTests
     [Fact]
     public void DescribesWhichDecoderTheOpenUsed()
     {
-        Assert.Equal("dav1d · switch dav1d", Rav1gPolicy.Describe("dav1d", false, true, false, null, null, null, null, false));
+        Assert.Equal("dav1d · switch dav1d", Rav1gPolicy.Describe("dav1d", false, null, false, null, null, null, null, false));
         Assert.Equal("rav1g direct · output 1920x1080 NV12 direct hdr=0",
-            Rav1gPolicy.Describe("rav1g", true, true, true, "direct", null, null, "output 1920x1080 NV12 direct hdr=0", false));
+            Rav1gPolicy.Describe("rav1g", true, null, true, "direct", null, null, "output 1920x1080 NV12 direct hdr=0", false));
         Assert.Equal("dav1d (rav1g fallback to dav1d (library missing, status=0x8007007E)) · rav1g.dll not packaged",
-            Rav1gPolicy.Describe("rav1g", true, false, false, "dav1d", "fallback to dav1d (library missing, status=0x8007007E)",
+            Rav1gPolicy.Describe("rav1g", true, "rav1g.dll not packaged", false, "dav1d", "fallback to dav1d (library missing, status=0x8007007E)",
                 null, null, false));
         Assert.Equal("rav1g failed: stream failed (decode, hr=0x80042B23)",
-            Rav1gPolicy.Describe("rav1g", true, true, true, null, null, "stream failed (decode, hr=0x80042B23)", null, false));
+            Rav1gPolicy.Describe("rav1g", true, null, true, null, null, "stream failed (decode, hr=0x80042B23)", null, false));
         Assert.Equal("dav1d (remounted after a rav1g failure) · switch rav1g",
-            Rav1gPolicy.Describe("rav1g", false, true, false, null, null, null, null, true));
+            Rav1gPolicy.Describe("rav1g", false, null, false, null, null, null, null, true));
+        // Without a usable library the route never asked for rav1g (release and debug alike).
+        Assert.Equal("dav1d (rav1g unavailable) · switch rav1g · rav1g.dll not packaged",
+            Rav1gPolicy.Describe("rav1g", false, "rav1g.dll not packaged", false, null, null, null, null, false));
+    }
+
+    [Fact]
+    public void TheLibraryIsUsableOnlyAsTheForkLoadsIt()
+    {
+        Assert.Equal(new Rav1gLibraryStatus(true, "rav1g.dll usable (interface 3)"), Rav1gPolicy.Library(true, true, null, 3));
+        Assert.Equal(new Rav1gLibraryStatus(false, "rav1g.dll not packaged"), Rav1gPolicy.Library(false, false, null, null));
+        Assert.Equal(new Rav1gLibraryStatus(false, "rav1g.dll failed to load"), Rav1gPolicy.Library(true, false, null, null));
+        Assert.Equal(new Rav1gLibraryStatus(false, "rav1g.dll lacks rav1g_decoder_drain"),
+            Rav1gPolicy.Library(true, true, "rav1g_decoder_drain", 3));
+        Assert.Equal(new Rav1gLibraryStatus(false, "rav1g.dll interface 2, expected 3"), Rav1gPolicy.Library(true, true, null, 2));
+        Assert.False(Rav1gPolicy.Library(true, true, null, null).Usable);
+        Assert.Equal(3u, Rav1gPolicy.LibraryAbiVersion);
+        Assert.Equal(12, Rav1gPolicy.LibraryExports.Count);
     }
 
     [Theory]

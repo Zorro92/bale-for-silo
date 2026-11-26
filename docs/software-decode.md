@@ -119,11 +119,12 @@ envelope is promised the console tone map on an SDR display (`DeviceCapabilities
 → `tone_map::can_manage`), never Dolby Vision; the server then plans it direct with `client_managed_dynamic_range`. A
 failed tone-map route withdraws only that promise (the server tone-maps), as for hardware.
 
-**AV1** is unchanged: release AV1 (dav1d on D3D11) never gets a stage key (the downscale's codec list; its tone map is
-refused as before), so the fork's new software stage never engages there. On the debug rav1g route the fork's in-open
-dav1d fallback (up to 1080 lines) now runs the stage when rav1g's keys are set (HDR on an SDR display, or SDR larger
-than a sub-1080p display): its output is marked, so the rav1g output check reports `stage` instead of `dav1d` and
-accepts it. Only the fork could restore the old unprocessed fallback (a key to skip the software stage).
+**AV1** is unchanged: dav1d's AV1 route (no usable rav1g.dll) never gets a stage key (the downscale's codec list; its
+tone map is refused as before), so the fork's new software stage never engages there. On the rav1g route (every build
+since 2026-11-26) the fork's in-open dav1d fallback (up to 1080 lines) now runs the stage when rav1g's keys are set
+(HDR on an SDR display, or SDR larger than a sub-1080p display): its output is marked, so the rav1g output check
+reports `stage` instead of `dav1d` and accepts it. Only the fork could restore the old unprocessed fallback (a key to
+skip the software stage).
 
 ### What the server plans now (phases A and B)
 
@@ -622,7 +623,7 @@ per open; Bale dies after ~23 such opens. Restart Bale (Device Portal) after at 
 Cross-check for any run: `scripts/bale-debug.sh playtest-ffmpeg "$M/<clip>" 30 software` (and `threads=4`), the standalone
 probe with no route gate (muted MediaPlayer, ratio and cores). Afterwards reset:
 `scripts/bale-debug.sh ffmpeg-tune decoder=default swfallback=default threads=default` and `scripts/bale-debug.sh
-av1-decoder rav1g` (the debug default).
+av1-decoder rav1g` (the default, as in release).
 
 ## Open questions
 
@@ -631,7 +632,7 @@ av1-decoder rav1g` (the debug default).
   stall there would be the case for a bound, or for phase C. The 4K30 H.264 entry stops at the 50 Mbps measured (no
   long-play check yet).
 - **Phase B is not console-tested**: the fork's software stage, the 4K30 route through it, the leak check and the HDR
-  software tone map all wait for "Verify phase B on the console". On the debug rav1g route the fork's in-open dav1d
+  software tone map all wait for "Verify phase B on the console". On the rav1g route the fork's in-open dav1d
   fallback now runs the stage when rav1g's keys are set (reported as `stage`, accepted); only a fork key could keep it
   unprocessed as before.
 - **High 4:4:4 Predictive** has no test clip yet (claimed with the 4:2:2 envelope as approved; screen recordings are

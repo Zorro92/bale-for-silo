@@ -73,7 +73,7 @@ public sealed class PlaybackVersionNoticeTests
     [Fact]
     public void ADecodeClaimThatFitsDoesNotBlameTheConsoleOrInventServerPolicy()
     {
-        var decode = ConsoleEvidence.BuildVideoDecode(av1MaxWidth: 3840, av1MaxHeight: 2160);
+        var decode = ConsoleEvidence.BuildVideoDecode(rav1g: true);
         Assert.Equal("Playing 1080p instead of the selected 4K version.",
             PlaybackVersionNotice.Describe(Plan(), Picked, Versions, decode));
         // A successful alternate's validated_original_playback does not carry the 4K-disabled refusal.

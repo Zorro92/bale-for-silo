@@ -727,7 +727,7 @@ mod fallback_tests {
             "vc1": null, "mpeg2": null, "partial": false
         }))
         .unwrap();
-        let claims = crate::evidence::video_decode(Some(&limits), 1920, 1080);
+        let claims = crate::evidence::video_decode(Some(&limits), false);
         serde_json::from_value(serde_json::to_value(claims).unwrap()).unwrap()
     }
 

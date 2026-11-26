@@ -134,6 +134,8 @@ public sealed record BaleCoreChecked<T>(T? Ok = default, string? InvalidData = n
 [JsonSerializable(typeof(Playback.Rav1gOutputFacts))]
 [JsonSerializable(typeof(Playback.Rav1gVerdict))]
 [JsonSerializable(typeof(Playback.Rav1gLogEvent))]
+[JsonSerializable(typeof(Playback.Rav1gLibraryStatus))]
+[JsonSerializable(typeof(uint))]
 [JsonSerializable(typeof(Playback.HardwareDecodeLimits))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(Playback.VideoDecodeCapability[]))]

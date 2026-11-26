@@ -56,19 +56,23 @@ Bale remains AGPL-3.0-or-later; third-party components retain their own licenses
 
 ## rav1g
 
-Development (debug-server) builds bundle [rav1g](https://github.com/Zorro92/rav1g) **0.8.0-alpha.1**
+All builds, release and development alike, bundle [rav1g](https://github.com/Zorro92/rav1g) **0.8.0-alpha.1**
 (`rav1g.dll`, x64), a GPU AV1 decoder in D3D12 compute shaders, from its
 [v0.8.0-alpha.1 release](https://github.com/Zorro92/rav1g/releases/tag/v0.8.0-alpha.1) (source commit
-`93bb36bb5cba420c493e91365c8dae5205c47092`). It is used only by the debug `av1-decoder rav1g` switch through
-the FFmpegInteropX fork; release builds do not carry it. rav1g is distributed under the **BSD-2-Clause**
-license and the **Alliance for Open Media Patent License 1.0**. It bundles
-[rav1d](https://github.com/memorysafety/rav1d) (BSD-2-Clause, with the AOM patent license), AOM code under
-`libav1` (BSD-2-Clause, AOM patent license) and Rust crates under MIT and/or Apache-2.0. The texts from the
+`93bb36bb5cba420c493e91365c8dae5205c47092`). Since 2026-11-26 it is Bale's default AV1 decoder, loaded by
+the FFmpegInteropX fork, with dav1d (below) as its fallback. rav1g is distributed under the **BSD-2-Clause**
+license and the **Alliance for Open Media Patent License 1.0**. It bundles the parse pass of
+[rav1d](https://github.com/memorysafety/rav1d), the Rust port of dav1d (BSD-2-Clause, © VideoLAN, the dav1d
+authors and the Internet Security Research Group, with the AOM patent license), AOM code under `libav1`
+(BSD-2-Clause, AOM patent license) and the Rust crates rav1d depends on plus the Windows bindings (each under
+the license it names: MIT and/or Apache-2.0 for most, `byteorder` Unlicense or MIT, `zerocopy` BSD-2-Clause,
+Apache-2.0 or MIT, `to_method` CC0-1.0). The texts from the
 release's `rav1g-licenses.zip` ship unchanged as `Licenses/rav1g/` (`LICENSE.txt`, `libav1/LICENSE`,
 `libav1/PATENTS`, `third_party/rav1d/COPYING`, `third_party/rav1d/doc/PATENTS`,
 `third_party/rust-crates/NOTICES.txt`, which lists each crate with its license text). The release, asset
-hashes and interface version are pinned in `scripts/rav1g.json`. rav1g.dll links the app CRT from the
-Microsoft.VCLibs.140.00 framework package, which the package already depends on.
+hashes and interface version are pinned in `scripts/rav1g.json`; a build without a pinned release carries none of
+it. rav1g.dll links the app CRT from the Microsoft.VCLibs.140.00 framework package, which the package already
+depends on.
 
 ## FFmpeg
 

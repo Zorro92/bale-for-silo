@@ -4,8 +4,9 @@ using Bale.Core.Playback;
 namespace Bale.Core.Tests;
 
 /// <summary>
-/// rav1g's display output tone-maps AV1 HDR on the console (debug rav1g route), so the original-file range promise covers
-/// AV1 only when the app says so; HEVC/VP9 keep their hardware-decode rule and AV1 Dolby Vision is never promised.
+/// rav1g's display pass tone-maps AV1 HDR on the console (the rav1g route, every build since 2026-11-26), so the
+/// original-file range promise covers AV1 only when the app says so (a usable rav1g.dll); HEVC/VP9 keep their
+/// hardware-decode rule and AV1 Dolby Vision is never promised.
 /// </summary>
 public sealed class Av1ToneMapPromiseTests
 {
@@ -22,7 +23,7 @@ public sealed class Av1ToneMapPromiseTests
     {
         DisplayHdrEvidence = "exact",
         OriginalDynamicRangeMappingSupported = true,
-        VideoDecode = ConsoleEvidence.BuildVideoDecode(3840, 2160),
+        VideoDecode = ConsoleEvidence.BuildVideoDecode(rav1g: true),
         Av1DynamicRangeMappingSupported = av1Mapping,
     };
 
@@ -47,7 +48,7 @@ public sealed class Av1ToneMapPromiseTests
     [Fact]
     public void Av1AboveTheDecodeClaimIsNotPromised()
     {
-        var device = Device(true) with { VideoDecode = ConsoleEvidence.BuildVideoDecode(1920, 1080) };
+        var device = Device(true) with { VideoDecode = ConsoleEvidence.BuildVideoDecode() };
         Assert.False(ConsoleToneMapPolicy.CanManage(Av1(), device));
     }
 }

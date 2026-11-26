@@ -159,12 +159,12 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
     #[derive(Deserialize)]
     struct VideoDecodeArgs {
         hardware: Option<hardware::Limits>,
-        av1_max_width: i32,
-        av1_max_height: i32,
+        rav1g: bool,
     }
     #[derive(Deserialize)]
     struct Hardware {
         hardware: Option<hardware::Limits>,
+        rav1g: bool,
     }
     #[derive(Deserialize)]
     struct AudioSelection {
@@ -219,10 +219,10 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
             evidence::EMBEDDED_BITMAP_SUBTITLE_CODECS
         }),
         "evidence.for_hardware" => with_json(name, input, |a: Hardware| {
-            evidence::for_hardware(a.hardware.as_ref())
+            evidence::for_hardware(a.hardware.as_ref(), a.rav1g)
         }),
         "evidence.video_decode" => with_json(name, input, |a: VideoDecodeArgs| {
-            evidence::video_decode(a.hardware.as_ref(), a.av1_max_width, a.av1_max_height)
+            evidence::video_decode(a.hardware.as_ref(), a.rav1g)
         }),
         "language.subtitle_language_key" => with_json(name, input, |v: Option<String>| {
             language::subtitle_language_key(v.as_deref())
@@ -298,6 +298,17 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         }),
         "av1_decoder.describe" => with_json(name, input, |a: crate::av1_decoder::DescribeArgs| {
             crate::av1_decoder::describe(&a)
+        }),
+        "av1_decoder.library_status" => {
+            with_json(name, input, |a: crate::av1_decoder::LibraryArgs| {
+                crate::av1_decoder::library_status(&a)
+            })
+        }
+        "av1_decoder.library_exports" => {
+            with_json(name, input, |(): ()| crate::av1_decoder::LIBRARY_EXPORTS)
+        }
+        "av1_decoder.library_abi_version" => with_json(name, input, |(): ()| {
+            crate::av1_decoder::LIBRARY_ABI_VERSION
         }),
         "av1_decoder.prewarm_supported" => with_json(name, input, |v: String| {
             crate::av1_decoder::prewarm_supported(&v)

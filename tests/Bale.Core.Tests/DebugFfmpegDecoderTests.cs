@@ -98,7 +98,7 @@ public sealed class DebugFfmpegDecoderTests
     [InlineData(null, "SystemDecoder", true)]
     public void ValidationAllowsOnlyTheRequestedEngines(string? decoder, string engine, bool allowed)
     {
-        var error = Record.Exception(() => FfmpegSource.ValidateVideoDecoders(Source(Enum.Parse<DecoderEngine>(engine)), Route(), new(Decoder: ParseDecoder(decoder))));
+        var error = Record.Exception(() => FfmpegSource.ValidateVideoDecoders(Source(Enum.Parse<DecoderEngine>(engine)), Route(), new DebugFfmpegInputTuning(Decoder: ParseDecoder(decoder))));
         if (allowed) Assert.Null(error);
         else Assert.IsType<InvalidDataException>(error);
     }

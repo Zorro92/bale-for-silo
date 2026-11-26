@@ -251,7 +251,7 @@ public class PlaybackReplanTests
     public void Rav1g4KFailureReplansWithoutReclaiming4KAv1(int hresult)
     {
         var baseline = Start();
-        var raised = ConsoleEvidence.Default with { VideoDecode = ConsoleEvidence.BuildVideoDecode(3840, 2160) };
+        var raised = ConsoleEvidence.Default with { VideoDecode = ConsoleEvidence.BuildVideoDecode(rav1g: true) };
         var start = baseline with { ClientCapabilities = baseline.ClientCapabilities with { VideoDecode = raised.VideoDecode } };
         Assert.Contains(start.ClientCapabilities.VideoDecode, entry => entry.Codec == "av1" && entry.MaxHeight == 2160);
         var plan = PlaybackRoutePolicyTests.Plan("original_http", "av1", "eac3");

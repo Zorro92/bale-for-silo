@@ -70,20 +70,20 @@ public class PlaybackCapabilitiesTests
     }
 
     [Fact]
-    public void RaisedBoundAddsA4K30Av1EntryBesideTheMeasured1080p60OneAndNeverMutatesTheDefault()
+    public void Rav1gAddsA2160p60EntryAtThe40MbpsCeilingBesideTheMeasured1080p60OneAndNeverMutatesTheDefault()
     {
-        var claims = ConsoleEvidence.BuildVideoDecode(3840, 2160);
+        var claims = ConsoleEvidence.BuildVideoDecode(rav1g: true);
         Assert.Equal(new[] { "h264", "hevc", "av1", "av1" },
             claims.Where(decode => decode.Hardware || decode.Codec == "av1").Select(decode => decode.Codec));
-        Assert.Equal(new[] { (1920, 1080, 60.0), (3840, 2160, 30.0) },
-            claims.Where(decode => decode.Codec == "av1").Select(decode => (decode.MaxWidth ?? 0, decode.MaxHeight ?? 0, decode.MaxFrameRate ?? 0)));
+        // Owner, 2026-11-26: rav1g is tested up to 4K60 and reliable to about 40-60 Mbps; 40 Mbps is the soft ceiling.
+        Assert.Equal(new (string?, int, int, double, int?)[] { ("dav1d", 1920, 1080, 60.0, null), ("rav1g", 3840, 2160, 60.0, 40_000) },
+            claims.Where(decode => decode.Codec == "av1").Select(decode =>
+                (decode.DecoderName, decode.MaxWidth ?? 0, decode.MaxHeight ?? 0, decode.MaxFrameRate ?? 0, decode.MaxBitrateKbps)));
         Assert.All(claims.Where(decode => decode.Codec == "av1"), av1 =>
         {
-            Assert.Equal("dav1d", av1.DecoderName);
             Assert.Equal(new[] { "main" }, av1.Profiles);
             Assert.Empty(av1.Levels);
             Assert.Equal(new[] { 8, 10 }, av1.BitDepths);
-            Assert.Null(av1.MaxBitrateKbps);
             Assert.False(av1.Hardware);
         });
         Assert.All(claims.Where(decode => decode.Hardware), decode =>
@@ -95,33 +95,42 @@ public class PlaybackCapabilitiesTests
             Assert.Null(decode.MaxBitrateKbps);
             Assert.True(decode.Hardware);
         });
+        // Everything but rav1g's entry is the claim without it.
+        Assert.Equal(ConsoleEvidence.BuildVideoDecode().Select(Text), claims.Where(decode => decode.DecoderName != "rav1g").Select(Text));
         var baseline = Assert.Single(ConsoleEvidence.Default.VideoDecode, decode => decode.Codec == "av1");
         Assert.Equal(1920, baseline.MaxWidth);
         Assert.Equal(1080, baseline.MaxHeight);
     }
 
-    [Theory]
-    [InlineData(0, 1080)]
-    [InlineData(-1, 1080)]
-    [InlineData(1920, 0)]
-    [InlineData(1920, -1)]
-    public void BuilderRejectsNonpositiveBounds(int width, int height) =>
-        Assert.Throws<ArgumentOutOfRangeException>(() => ConsoleEvidence.BuildVideoDecode(width, height));
+    /// <summary>A claim's every field, as the wire would carry it (the records' lists compare by reference).</summary>
+    private static string Text(VideoDecodeCapability decode) => JsonSerializer.Serialize(decode);
+
+    [Fact]
+    public void ForHardwareCarriesRav1gOnlyWhenAsked()
+    {
+        Assert.Same(ConsoleEvidence.Default, ConsoleEvidence.ForHardware(null));
+        var failedProbe = ConsoleEvidence.ForHardware(null, rav1g: true);
+        Assert.Equal(ConsoleEvidence.Default with { VideoDecode = failedProbe.VideoDecode }, failedProbe);
+        Assert.Contains(failedProbe.VideoDecode, decode => decode is { Codec: "av1", DecoderName: "rav1g", MaxHeight: 2160 });
+        Assert.DoesNotContain(ConsoleEvidence.Default.VideoDecode, decode => decode.DecoderName == "rav1g");
+    }
 
     [Theory]
-    [InlineData(1920, 1080)]
-    [InlineData(3840, 2160)]
-    public void PlaybackStartSerializesTheRequestedAv1BoundWithoutExpandingHls(int width, int height)
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PlaybackStartSerializesTheAv1ClaimsWithoutExpandingHls(bool rav1g)
     {
-        var device = ConsoleEvidence.Default with { VideoDecode = ConsoleEvidence.BuildVideoDecode(width, height) };
+        var device = ConsoleEvidence.Default with { VideoDecode = ConsoleEvidence.BuildVideoDecode(rav1g) };
         var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null,
             PlaybackSelection.Auto, device, PlaybackTestSupport.Identity);
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(start, PlaybackJson.Default.PlaybackStartRequestV3));
         var av1 = json.RootElement.GetProperty("client_capabilities").GetProperty("video_decode").EnumerateArray()
             .Where(decode => decode.GetProperty("codec").GetString() == "av1").ToArray();
-        Assert.Equal(width > 1920 ? [(1920, 1080, 60.0), (width, height, 30.0)] : new[] { (width, height, 60.0) },
+        // The server holds the source's bitrate to max_bitrate_kbps (capabilities_v3.go videoDecodeTakesSourceV3).
+        Assert.Equal(rav1g ? [(1920, 1080, 60.0, 0), (3840, 2160, 60.0, 40_000)] : new[] { (1920, 1080, 60.0, 0) },
             av1.Select(decode => (decode.GetProperty("max_width").GetInt32(), decode.GetProperty("max_height").GetInt32(),
-                decode.GetProperty("max_frame_rate").GetDouble())));
+                decode.GetProperty("max_frame_rate").GetDouble(),
+                decode.TryGetProperty("max_bitrate_kbps", out var kbps) && kbps.ValueKind == JsonValueKind.Number ? kbps.GetInt32() : 0)));
         Assert.All(av1, decode => Assert.False(decode.GetProperty("hardware").GetBoolean()));
         Assert.Same(device.VideoDecode, start.ClientCapabilities.VideoDecode);
         Assert.Contains(PlaybackProtocol.SoftwareVideoDecodeFeature, start.ClientFeatures);
@@ -132,7 +141,7 @@ public class PlaybackCapabilitiesTests
     [Fact]
     public void ReplansRetainTheRaisedSnapshotExceptWhenTheAv1DecoderFails()
     {
-        var device = ConsoleEvidence.Default with { VideoDecode = ConsoleEvidence.BuildVideoDecode(3840, 2160) };
+        var device = ConsoleEvidence.Default with { VideoDecode = ConsoleEvidence.BuildVideoDecode(rav1g: true) };
         var start = PlaybackStartBuilder.Build("file", "profile", "attempt", null,
             PlaybackSelection.Auto, device, PlaybackTestSupport.Identity);
         var plan = PlaybackRoutePolicyTests.Plan("original_http", "av1", "aac");
@@ -152,7 +161,7 @@ public class PlaybackCapabilitiesTests
         {
             Assert.Same(start.ClientCapabilities.VideoDecode, request.ClientCapabilities.VideoDecode);
             Assert.Contains(request.ClientCapabilities.VideoDecode,
-                decode => decode is { Codec: "av1", MaxWidth: 3840, MaxHeight: 2160, MaxFrameRate: 30 });
+                decode => decode is { Codec: "av1", MaxWidth: 3840, MaxHeight: 2160, MaxFrameRate: 60, MaxBitrateKbps: 40_000 });
         }
         var failed = PlaybackReplan.ForFailure(start, plan, "plan-attempt", [], 1, 42, new("decoder_failure"), route);
         Assert.DoesNotContain(failed.ClientCapabilities.VideoDecode, decode => decode.Codec == "av1");

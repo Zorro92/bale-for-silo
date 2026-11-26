@@ -56,17 +56,20 @@ public class PlayPlanOptionsTests
         Assert.False(options.ClaimAv1);
         Assert.Null(options.UrlFile);
         Assert.Null(options.FileId);
-        Assert.Equal(1080, options.Av1MaxHeight);
+        // The app's AV1 claim with a usable rav1g.dll (owner, 2026-11-26): rav1g's 2160p60 entry beside dav1d's 1080p60.
+        Assert.Equal(2160, options.Av1MaxHeight);
         Assert.Equal(0, options.HoldSeconds);
         Assert.False(options.FallbackClaims);
         // Plans like the app on a Series X with an SDR display: decoder report plus console tone map.
         var device = options.Capabilities();
-        Assert.Equal(ConsoleEvidence.ForHardware(PlayPlanOptions.SeriesXDecoders).VideoDecode
+        Assert.Equal(ConsoleEvidence.ForHardware(PlayPlanOptions.SeriesXDecoders, rav1g: true).VideoDecode
                 .Select(decode => (decode.Codec, decode.MaxWidth, decode.MaxHeight, decode.Hardware)),
             device.VideoDecode.Select(decode => (decode.Codec, decode.MaxWidth, decode.MaxHeight, decode.Hardware)));
+        Assert.Contains(device.VideoDecode, decode => decode is { Codec: "av1", DecoderName: "rav1g", MaxHeight: 2160, MaxBitrateKbps: 40_000 });
         Assert.Equal("exact", device.DisplayHdrEvidence);
         Assert.False(device.Hdr.Hdr10);
         Assert.True(device.OriginalDynamicRangeMappingSupported);
+        Assert.True(device.Av1DynamicRangeMappingSupported);
         foreach (var codec in new[] { "vp9", "vc1", "mpeg2video", "mpeg4", "av1" })
             Assert.Contains(device.VideoDecode, decode => decode.Codec == codec);
         Assert.Contains(device.VideoDecode, decode => decode.Codec == "hevc" && decode.MaxWidth == 7680);
@@ -75,9 +78,14 @@ public class PlayPlanOptionsTests
     [Fact]
     public void FallbackClaimsPlanLikeAFailedDecoderProbe()
     {
-        Assert.True(PlayPlanOptions.TryParse(["--fallback-claims"], out var options, out _));
+        Assert.True(PlayPlanOptions.TryParse(["--fallback-claims", "--av1-max-height", "1080"], out var options, out _));
         Assert.True(options.FallbackClaims);
         Assert.Same(ConsoleEvidence.Default, options.Capabilities());
+        // With rav1g (the default), the same baseline plus rav1g's AV1 entry.
+        Assert.True(PlayPlanOptions.TryParse(["--fallback-claims"], out var rav1g, out _));
+        Assert.Equal(ConsoleEvidence.ForHardware(null, rav1g: true).VideoDecode.Select(decode => (decode.Codec, decode.DecoderName, decode.MaxHeight)),
+            rav1g.Capabilities().VideoDecode.Select(decode => (decode.Codec, decode.DecoderName, decode.MaxHeight)));
+        Assert.Contains(rav1g.Capabilities().VideoDecode, decode => decode.DecoderName == "rav1g");
         Assert.False(PlayPlanOptions.TryParse(["--fallback-claims", "--fallback-claims"], out _, out _));
     }
 
@@ -120,7 +128,7 @@ public class PlayPlanOptionsTests
         var capabilities = options.Capabilities();
         Assert.Equal(ConsoleEvidence.Default with { VideoDecode = capabilities.VideoDecode }, capabilities);
         var av1 = capabilities.VideoDecode.Where(codec => codec.Codec == "av1").ToArray();
-        Assert.Equal(height == 2160 ? [(1920, 1080, 60.0), (width, height, 30.0)] : new[] { (width, height, 60.0) },
+        Assert.Equal(height == 2160 ? [(1920, 1080, 60.0), (width, height, 60.0)] : new[] { (width, height, 60.0) },
             av1.Select(codec => (codec.MaxWidth ?? 0, codec.MaxHeight ?? 0, codec.MaxFrameRate ?? 0)));
         Assert.All(av1, codec =>
         {
@@ -233,8 +241,8 @@ public class PlayPlanOptionsTests
     [Fact]
     public void LegacyAv1FlagIsANoOpAndCannotExpandTheMeasuredProductionClaim()
     {
-        Assert.True(PlayPlanOptions.TryParse(["--claim-av1", "--fallback-claims"], out var legacy, out _));
-        Assert.True(PlayPlanOptions.TryParse(["--fallback-claims"], out var normal, out _));
+        Assert.True(PlayPlanOptions.TryParse(["--claim-av1", "--fallback-claims", "--av1-max-height", "1080"], out var legacy, out _));
+        Assert.True(PlayPlanOptions.TryParse(["--fallback-claims", "--av1-max-height", "1080"], out var normal, out _));
         Assert.Same(ConsoleEvidence.Default, legacy.Capabilities());
         Assert.Same(normal.Capabilities(), legacy.Capabilities());
         var av1 = Assert.Single(legacy.Capabilities().VideoDecode, codec => codec.Codec == "av1");

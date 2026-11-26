@@ -1,11 +1,14 @@
-//! The debug AV1 decoder switch (owner, 2026-11-18): software AV1 routes may decode with rav1g (AV1 in
-//! D3D12 compute shaders) through the FFmpegInteropX fork's `GpuDecoderSampleProvider`
-//! (`bale_av1_decoder=1`, wrapper 2.1.0-bale.44; the fork's `bale/design-rav1g-provider.md`) instead of
-//! dav1d CPU decode/grain on D3D11. Debug builds only; production never asks for rav1g.
+//! The AV1 decoder (owner, 2026-11-26: rav1g is the default in every build; tested in debug builds
+//! since 2026-11-18): software AV1 routes decode with rav1g (AV1 in D3D12 compute shaders) through the
+//! FFmpegInteropX fork's `GpuDecoderSampleProvider` (`bale_av1_decoder=1`, wrapper 2.1.0-bale.44; the
+//! fork's `bale/design-rav1g-provider.md`) wherever rav1g.dll is usable, and with dav1d CPU decode/grain
+//! on D3D11 otherwise: rav1g, then the fork's in-open dav1d fallback (at most 1080 lines), then Bale's
+//! one dav1d remount, then the ordinary replan or server transcode.
 //!
-//! The decisions here: which mounts take rav1g and what they set ([`route`]), which output the live
-//! guard accepts ([`output_verdict`]), whether a failed rav1g mount remounts once on dav1d
-//! ([`remount_on_dav1d`]), and how the fork's fixed log lines read ([`parse_log`], [`describe`]).
+//! The decisions here: whether the packaged library is usable ([`library_status`]), which mounts take
+//! rav1g and what they set ([`route`]), which output the live guard accepts ([`output_verdict`]),
+//! whether a failed rav1g mount remounts once on dav1d ([`remount_on_dav1d`]), and how the fork's
+//! fixed log lines read ([`parse_log`], [`describe`]).
 
 use serde::{Deserialize, Serialize};
 
@@ -57,10 +60,91 @@ pub struct SourceFacts {
     pub frame_rate: Option<f64>,
 }
 
+/// The interface version the pinned wrapper's `BaleRav1g.h` is written against (its static_assert;
+/// scripts/rav1g.json `abi_version`, scripts/rav1g-common.ps1 `$Rav1gWrapperAbiVersion`). The fork
+/// refuses a library of any other version and decodes with dav1d.
+pub const LIBRARY_ABI_VERSION: u32 = 3;
+
+/// The exports the fork resolves from rav1g.dll (`BaleRav1gExports`; scripts/rav1g-common.ps1
+/// `$Rav1gExports`, which CI checks in the package). A library without one of them is refused.
+pub const LIBRARY_EXPORTS: &[&str] = &[
+    "rav1g_abi_version",
+    "rav1g_version",
+    "rav1g_peek_stream_info",
+    "rav1g_device_create",
+    "rav1g_device_d3d12_device",
+    "rav1g_settings_default",
+    "rav1g_decoder_create",
+    "rav1g_decoder_decode",
+    "rav1g_decoder_drain",
+    "rav1g_decoder_configuration",
+    "rav1g_decoder_output_fence",
+    "rav1g_decoder_destroy",
+];
+
+/// What the app's own check of rav1g.dll found (once per process, off the UI thread): the same
+/// steps as the fork's loader, short of creating rav1g's device.
+#[derive(Deserialize)]
+pub struct LibraryArgs {
+    /// rav1g.dll is in the package root (an empty pin in scripts/rav1g.json packages none).
+    pub present: bool,
+    pub loaded: bool,
+    /// The first of [`LIBRARY_EXPORTS`] the loaded library lacks.
+    pub missing_export: Option<String>,
+    /// What `rav1g_abi_version()` returned.
+    pub abi_version: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LibraryStatus {
+    /// The fork will load it: the rav1g route and its 2160p60 AV1 claim apply.
+    pub usable: bool,
+    /// Fixed words for the log and the debug stats, e.g. "rav1g.dll not packaged".
+    pub detail: String,
+}
+
+/// Whether rav1g.dll is usable, as the fork's loader will judge it (`BaleRav1gExports::Get`). Not
+/// usable keeps AV1 on dav1d at 1080p60; a device or stream rav1g can't take is still the fork's
+/// open-time fallback.
+pub fn library_status(args: &LibraryArgs) -> LibraryStatus {
+    let refused = |detail: String| LibraryStatus {
+        usable: false,
+        detail,
+    };
+    if !args.present {
+        return refused("rav1g.dll not packaged".into());
+    }
+    if !args.loaded {
+        return refused("rav1g.dll failed to load".into());
+    }
+    if let Some(missing) = &args.missing_export {
+        // Only a name from the list reaches the text.
+        let name = LIBRARY_EXPORTS
+            .iter()
+            .find(|&&export| export == missing.as_str())
+            .copied()
+            .unwrap_or("an export");
+        return refused(format!("rav1g.dll lacks {name}"));
+    }
+    match args.abi_version {
+        Some(LIBRARY_ABI_VERSION) => LibraryStatus {
+            usable: true,
+            detail: format!("rav1g.dll usable (interface {LIBRARY_ABI_VERSION})"),
+        },
+        Some(other) => refused(format!(
+            "rav1g.dll interface {other}, expected {LIBRARY_ABI_VERSION}"
+        )),
+        None => refused("rav1g.dll interface unknown".into()),
+    }
+}
+
 #[derive(Deserialize)]
 pub struct RouteArgs {
-    /// The attempt's captured switch: "dav1d" or "rav1g".
+    /// The attempt's AV1 decoder: "rav1g" in release builds, the captured debug switch ("dav1d" or
+    /// "rav1g", default rav1g) in debug ones.
     pub selected: String,
+    /// rav1g.dll is usable ([`library_status`]); without it the mount stays on dav1d.
+    pub library_usable: bool,
     pub software_video: bool,
     pub video_codec: Option<String>,
     pub video_width: Option<i64>,
@@ -96,6 +180,7 @@ pub struct RouteDecision {
 
 pub fn route(args: &RouteArgs) -> RouteDecision {
     let rav1g = args.selected == "rav1g"
+        && args.library_usable
         && !args.withdrawn
         && args.software_video
         && normalize_codec(args.video_codec.as_deref()).as_deref() == Some("av1");
@@ -276,8 +361,9 @@ pub struct VerdictArgs {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Verdict {
-    /// "direct" (rav1g's own texture), "stage" (the fork's stage read rav1g's texture), "dav1d" (no
-    /// mark: the open fell back to dav1d; accepted, this is a debug switch) or "reject".
+    /// "direct" (rav1g's own texture), "stage" (the fork's stage or rav1g's display pass processed
+    /// the frame), "dav1d" (no mark: the open fell back to dav1d; accepted, the chain's next step) or
+    /// "reject".
     pub kind: String,
     /// A fixed reason for "reject", else `None`.
     pub reason: Option<String>,
@@ -447,8 +533,8 @@ pub struct DescribeArgs {
     pub selected: String,
     /// The mount was configured for rav1g (`bale_av1_decoder=1`).
     pub rav1g_route: bool,
-    /// rav1g.dll is in the app package.
-    pub library_present: bool,
+    /// Why rav1g.dll is not usable ([`LibraryStatus::detail`]); `None` when it is.
+    pub library: Option<String>,
     /// The decoder engine FFmpegInteropX reports for the video stream: rav1g's provider reports the
     /// D3D11 engine, the dav1d fallback the software one.
     pub gpu_engine: Option<bool>,
@@ -463,14 +549,16 @@ pub struct DescribeArgs {
 
 /// The stats/`where` row: which decoder the open actually used, and why.
 pub fn describe(args: &DescribeArgs) -> String {
-    let library = if args.library_present {
-        ""
-    } else {
-        " · rav1g.dll not packaged"
-    };
+    let library = args
+        .library
+        .as_deref()
+        .map(|why| format!(" · {why}"))
+        .unwrap_or_default();
     if !args.rav1g_route {
         let reason = if args.remounted {
             " (remounted after a rav1g failure)"
+        } else if args.selected == "rav1g" && args.library.is_some() {
+            " (rav1g unavailable)"
         } else if args.selected == "rav1g" {
             " (not a software AV1 route)"
         } else {
@@ -533,6 +621,7 @@ mod tests {
     fn route_args(selected: &str) -> RouteArgs {
         RouteArgs {
             selected: selected.into(),
+            library_usable: true,
             software_video: true,
             video_codec: Some("av1".into()),
             video_width: Some(3840),
@@ -550,6 +639,10 @@ mod tests {
     fn only_switched_software_av1_takes_rav1g() {
         assert!(route(&route_args("rav1g")).rav1g);
         assert!(!route(&route_args("dav1d")).rav1g);
+        // No usable rav1g.dll: dav1d with its own tuning, as before rav1g.
+        let mut args = route_args("rav1g");
+        args.library_usable = false;
+        assert_eq!(route(&args), route(&route_args("dav1d")));
         let mut args = route_args("rav1g");
         args.withdrawn = true;
         assert!(!route(&args).rav1g);
@@ -884,7 +977,7 @@ mod tests {
         DescribeArgs {
             selected: "rav1g".into(),
             rav1g_route: true,
-            library_present: true,
+            library: None,
             gpu_engine: Some(true),
             verdict: None,
             fallback: None,
@@ -907,7 +1000,7 @@ mod tests {
         let mut args = describe_args();
         args.gpu_engine = Some(false);
         args.fallback = Some("fallback to dav1d (library missing, status=0x8007007E)".into());
-        args.library_present = false;
+        args.library = Some("rav1g.dll not packaged".into());
         assert_eq!(
             describe(&args),
             "dav1d (rav1g fallback to dav1d (library missing, status=0x8007007E)) · rav1g.dll not packaged"
@@ -937,6 +1030,69 @@ mod tests {
         assert_eq!(
             describe(&args),
             "dav1d (not a software AV1 route) · switch rav1g"
+        );
+        // No usable library: the route never asked for rav1g.
+        args.library = Some("rav1g.dll interface 2, expected 3".into());
+        assert_eq!(
+            describe(&args),
+            "dav1d (rav1g unavailable) · switch rav1g · rav1g.dll interface 2, expected 3"
+        );
+    }
+
+    fn library(
+        present: bool,
+        loaded: bool,
+        missing: Option<&str>,
+        abi: Option<u32>,
+    ) -> LibraryStatus {
+        library_status(&LibraryArgs {
+            present,
+            loaded,
+            missing_export: missing.map(str::to_owned),
+            abi_version: abi,
+        })
+    }
+
+    #[test]
+    fn a_library_is_usable_only_as_the_fork_loads_it() {
+        let usable = library(true, true, None, Some(LIBRARY_ABI_VERSION));
+        assert!(usable.usable);
+        assert_eq!(usable.detail, "rav1g.dll usable (interface 3)");
+        let refused = [
+            (library(false, false, None, None), "rav1g.dll not packaged"),
+            (library(true, false, None, None), "rav1g.dll failed to load"),
+            (
+                library(true, true, Some("rav1g_decoder_drain"), Some(3)),
+                "rav1g.dll lacks rav1g_decoder_drain",
+            ),
+            // Only the list's names reach the text.
+            (
+                library(true, true, Some("evil\nname"), Some(3)),
+                "rav1g.dll lacks an export",
+            ),
+            (
+                library(true, true, None, Some(2)),
+                "rav1g.dll interface 2, expected 3",
+            ),
+            (
+                library(true, true, None, None),
+                "rav1g.dll interface unknown",
+            ),
+        ];
+        for (status, detail) in refused {
+            assert!(!status.usable);
+            assert_eq!(status.detail, detail);
+        }
+    }
+
+    #[test]
+    fn the_library_list_is_the_forks() {
+        assert_eq!(LIBRARY_EXPORTS.len(), 12);
+        assert_eq!(LIBRARY_EXPORTS[0], "rav1g_abi_version");
+        assert!(
+            LIBRARY_EXPORTS
+                .iter()
+                .all(|name| name.starts_with("rav1g_"))
         );
     }
 }

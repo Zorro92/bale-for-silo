@@ -140,11 +140,11 @@ public sealed class Dav1dGpuFilmGrainTests
         Assert.DoesNotContain("AppSettings.Dav1dGpuFilmGrain", player.Replace(capture, "", StringComparison.Ordinal));
         var media = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)", media);
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)", media);
+        Assert.Contains("FfmpegSource.Configuration(media.Route, media.Rav1g, attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)", media);
         Assert.DoesNotContain("AppSettings.Dav1dGpuFilmGrain", media);
         Assert.DoesNotContain("AppSettings", Read("FfmpegSource.cs.txt"));
         var production = DebugFfmpegDecoderTests.ProductionSource();
-        Assert.Contains("Configuration(PlaybackRouteDecision route, bool dav1dGpuFilmGrain = false,\n        int sdrWhiteNits = SdrBrightness.DefaultNits)", production);
+        Assert.Contains("Configuration(PlaybackRouteDecision route, Rav1gRouteDecision? rav1g = null,\n        bool dav1dGpuFilmGrain = false, int sdrWhiteNits = SdrBrightness.DefaultNits)", production);
         Assert.Contains("ApplySoftwareVideo(config, dav1dGpuFilmGrain);", production);
     }
 

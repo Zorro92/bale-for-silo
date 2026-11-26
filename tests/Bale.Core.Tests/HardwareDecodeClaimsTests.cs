@@ -66,15 +66,18 @@ public class HardwareDecodeClaimsTests
     }
 
     [Fact]
-    public void TheDebugAv1BoundKeepsTheProbedHardwareClaims()
+    public void Rav1gsAv1EntryKeepsTheProbedHardwareClaims()
     {
-        var claims = ConsoleEvidence.BuildVideoDecode(Series, 3840, 2160);
+        var claims = ConsoleEvidence.BuildVideoDecode(Series, rav1g: true);
         Assert.Equal(new[] { "h264", "hevc", "vp9", "av1", "av1" },
             claims.Where(decode => decode.Hardware || decode.Codec == "av1").Select(decode => decode.Codec));
         Assert.Equal(ConsoleEvidence.BuildVideoDecode(Series).Where(decode => decode.Hardware).Select(Shape),
             claims.Where(decode => decode.Hardware).Select(Shape));
-        Assert.Equal(new[] { (1920, 1080, 60.0), (3840, 2160, 30.0) }, claims.Where(decode => decode.Codec == "av1")
-            .Select(decode => (decode.MaxWidth ?? 0, decode.MaxHeight ?? 0, decode.MaxFrameRate ?? 0)));
+        Assert.Equal(new[] { (1920, 1080, 60.0, (int?)null), (3840, 2160, 60.0, 40_000) }, claims.Where(decode => decode.Codec == "av1")
+            .Select(decode => (decode.MaxWidth ?? 0, decode.MaxHeight ?? 0, decode.MaxFrameRate ?? 0, decode.MaxBitrateKbps)));
+        // The production claims: the same with ForHardware.
+        Assert.Equal(claims.Select(Shape), ConsoleEvidence.ForHardware(Series, rav1g: true).VideoDecode.Select(Shape));
+        Assert.Equal(ConsoleEvidence.ForHardware(Series).VideoCodecs, ConsoleEvidence.ForHardware(Series, rav1g: true).VideoCodecs);
     }
 
     [Fact]
@@ -386,8 +389,8 @@ public class HardwareDecodeClaimsTests
 
         var claims = Read("PlaybackClaims.cs.txt");
         Assert.Contains("var hardware = await HardwareDecodeProbe.Limits;", claims);
-        Assert.Contains("DisplayHdrOutput.DetectCapabilities(ConsoleEvidence.ForHardware(hardware))", claims);
-        Assert.Contains("var claims = ConsoleEvidence.ForHardware(hardware);", claims);
+        Assert.Contains("DisplayHdrOutput.DetectCapabilities(ConsoleEvidence.ForHardware(hardware, rav1g))", claims);
+        Assert.Contains("var claims = ConsoleEvidence.ForHardware(hardware, rav1g && softwareVideo);", claims);
         Assert.DoesNotContain("ConsoleEvidence.Default", claims);
         // The debug command prints the same walk instead of its own copy.
         Assert.Contains("var report = HardwareDecodeProbe.Enumerate(", Read("DebugServer.Capabilities.cs.txt"));

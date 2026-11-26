@@ -2,9 +2,10 @@
 namespace Bale.Xbox.Services;
 
 /// <summary>
-/// Memory-only AV1 claim bound, captured per playback attempt. Debug builds start at 2160 (owner, 2026-11-19: 4K AV1
-/// on rav1g for testing, ignored with dav1d which stays at 1080); `av1-claim 1080` lowers it until restart. `2160-dav1d`
-/// also lifts dav1d's 1080p cap, for memory/stress tests only (dav1d is not expected to play 4K smoothly). Release builds claim 1080p60.
+/// Memory-only AV1 claim bound, captured per playback attempt. It starts at 2160, the release claim (owner, 2026-11-26:
+/// rav1g's entry up to 2160p60 at the 40 Mbps soft ceiling with a usable rav1g.dll, ignored with dav1d, which stays at
+/// 1080p60); `av1-claim 1080` forces 1080p60 until restart. `2160-dav1d` adds rav1g's entry with dav1d too, for
+/// memory/stress tests only (dav1d is not expected to play 4K smoothly).
 /// </summary>
 internal static class DebugAv1ClaimSwitch
 {

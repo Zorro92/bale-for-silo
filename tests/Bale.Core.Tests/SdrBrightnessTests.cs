@@ -221,7 +221,7 @@ public sealed class SdrBrightnessTests
         Assert.DoesNotContain("AppSettings.SdrWhiteNits", player.Replace(capture, "", StringComparison.Ordinal));
         var media = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits);", media);
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)", media);
+        Assert.Contains("FfmpegSource.Configuration(media.Route, media.Rav1g, attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)", media);
         Assert.DoesNotContain("AppSettings.SdrWhiteNits", media);
         Assert.DoesNotContain("bale_tonemap_white_nits", media);
         // Release builds set the key too; only the override is debug-only.

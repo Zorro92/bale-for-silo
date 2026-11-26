@@ -46,7 +46,7 @@ public class Mpeg4PlaybackTests
                 Assert.Contains("mpeg4", start.ClientPlaybackContext.Deliveries[delivery].VideoCodecs);
             }
         }
-        var raisedAv1 = ConsoleEvidence.BuildVideoDecode(3840, 2160).Single(entry => entry.Codec == "mpeg4");
+        var raisedAv1 = ConsoleEvidence.BuildVideoDecode(rav1g: true).Single(entry => entry.Codec == "mpeg4");
         Assert.Null(raisedAv1.MaxWidth);
     }
 

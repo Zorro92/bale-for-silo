@@ -77,7 +77,7 @@ public sealed partial class PlayerPage
             stats = stats with
             {
                 VideoCodec = PlaybackStats.CompactValue(video.CodecName, 80),
-                VideoDecoderName = FfmpegSource.DecoderName(video.DecoderEngine),
+                VideoDecoderName = FfmpegSource.DecoderName(video.DecoderEngine, media.Rav1gRoute),
                 Resolution = video.PixelWidth > 0 && video.PixelHeight > 0
                     ? string.Create(CultureInfo.InvariantCulture, $"{video.PixelWidth}x{video.PixelHeight}") : null,
                 FrameRate = video.FramesPerSecond > 0 && double.IsFinite(video.FramesPerSecond)

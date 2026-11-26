@@ -104,15 +104,16 @@ namespace Bale.Xbox.Services;
 ///   POST /gpu-timing?mode=on  stage GPU time (event queries, total upper bound) for the next playback; on|off
 ///   GET  /dav1d-path      memory-only dav1d output/grain path; default d3d11 (CPU buffers and grain)
 ///   POST /dav1d-path?mode=zerocopy  d3d11|zerocopy (old D3D12/GPU grain path); next playback attempt
-///   GET  /av1-decoder     memory-only software AV1 decoder; debug default rav1g; rav1g.dll packaged?
+///   GET  /av1-decoder     memory-only software AV1 decoder; default rav1g, as in release; rav1g.dll packaged and usable?
 ///   GET  /rav1g-tune      memory-only rav1g provider knobs (fork bale.52): inflight, perf, parse; rav1g route only
 ///   POST /rav1g-tune?inflight=3&perf=on&parse=2&display=off  1-8 | on/frames/off | 1-2 | on/off, each also "default"; next rav1g playback attempt
-///   POST /av1-decoder?mode=rav1g  dav1d|rav1g (fork GpuDecoderSampleProvider, bale_av1_decoder=1); next playback attempt;
-///                                 rav1g also starts bale_rav1g_prewarm (device + pipeline compiles) off the UI thread
+///   POST /av1-decoder?mode=rav1g  dav1d|rav1g (fork GpuDecoderSampleProvider, bale_av1_decoder=1, only with a usable
+///                                 rav1g.dll); next playback attempt; rav1g also starts bale_rav1g_prewarm (device +
+///                                 pipeline compiles) off the UI thread
 ///   GET  /stream-adapter  memory-only media stream switch; default rust
 ///   POST /stream-adapter?mode=rust  rust (Rust range/forward-only streams + Rust WinRT streams)|pooled|builtin (C#); next playback attempt
-///   GET  /av1-claim       memory-only AV1 claim; debug default 2160 with rav1g only, dav1d capped at 1080p60
-///   POST /av1-claim?height=2160  1080|2160|2160-dav1d; next playback attempt; 2160 adds a 4K30 entry only with rav1g, 2160-dav1d with dav1d too (memory tests)
+///   GET  /av1-claim       memory-only AV1 claim; default 2160 (the release claim: rav1g's 2160p60 40 Mbps entry with a usable rav1g.dll), dav1d capped at 1080p60
+///   POST /av1-claim?height=2160  1080|2160|2160-dav1d; next playback attempt; 2160 adds rav1g's 2160p60 entry only with rav1g, 2160-dav1d with dav1d too (memory tests); 1080 forces 1080p60
 ///   GET  /display-match   memory-only content frame-rate matching; default off
 ///   POST /display-match?mode=on  on|off; applies to the next playback attempt
 ///   GET  /hdr             memory-only HDR comparison mode; default off
@@ -1046,13 +1047,16 @@ internal sealed partial class DebugServer
         return $"typed {text.Length} characters";
     }
 
-    /// <summary>The switch, whether the package carries rav1g.dll, and the library's load line once a rav1g open tried it.</summary>
+    /// <summary>
+    /// The switch, Bale's check of rav1g.dll (Rav1gLibrary: without a usable library AV1 stays on dav1d at 1080p60, as in
+    /// release), and the library's load line once a rav1g open tried it.
+    /// </summary>
     private static string Av1DecoderStatus()
     {
         var loaded = DebugRav1gLog.Snapshot().Loaded;
         return $"av1-decoder={DebugAv1DecoderSwitch.Mode}\n"
-            + (Rav1gLibrary.Present ? "rav1g.dll=packaged\n"
-                : "rav1g.dll=missing (no release pinned in scripts/rav1g.json): rav1g unavailable, the fork falls back to dav1d\n")
+            + $"rav1g.dll={(Rav1gLibrary.Present ? "packaged" : "missing (no release pinned in scripts/rav1g.json)")}\n"
+            + $"rav1g check={Rav1gLibrary.Detail}{(Rav1gLibrary.Usable ? "" : ": AV1 stays on dav1d at 1080p60")}\n"
             + $"rav1g={loaded ?? "not loaded yet"}\n";
     }
 

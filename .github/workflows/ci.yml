@@ -290,7 +290,8 @@ jobs:
         shell: pwsh
         run: ./scripts/restore-ffmpeg-native.ps1
 
-      # rav1g.dll for the debug av1-decoder switch (scripts/rav1g.json); an empty pin restores nothing.
+      # rav1g.dll, the default AV1 decoder in every build, production included (scripts/rav1g.json); an empty pin
+      # restores nothing. check-rav1g-package.ps1 below requires it in each package built here.
       - name: Download and verify pinned rav1g.dll
         shell: pwsh
         run: ./scripts/restore-rav1g.ps1

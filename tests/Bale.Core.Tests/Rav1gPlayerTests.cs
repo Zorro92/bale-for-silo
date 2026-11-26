@@ -189,6 +189,8 @@ public sealed class Rav1gPlayerTests
         Assert.Contains("keepsClaims, failedMount.Route.VideoHeight))", page);
         // The remount withdraws rav1g for the rest of the attempt, so its mount is dav1d's and a failure replans.
         var media = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "PlayerPage.Media.cs.txt"));
-        Assert.Contains("DisplayHdrOutput.CurrentRawSize(), sdrDisplay, attempt.Rav1gRemounted);", media);
+        Assert.Contains("DisplayHdrOutput.CurrentRawSize(), sdrDisplay, attempt.Rav1gRemounted,\n                    Rav1gLibrary.Usable);", media);
+        // In every build since 2026-11-26 (Rav1gReleaseTests checks the release source).
+        Assert.Contains("Rav1gPolicy.RemountOnDav1d(failedMount.Rav1gRoute, failedMount.Rav1gActive,", Rav1gReleaseTests.Release("PlayerPage.cs.txt"));
     }
 }

@@ -312,9 +312,19 @@ For Bale, a normal app with hevcPlayback on the Series X:
   for build/release steps. The fork's CI forbids IDL/project changes and checks the built winmd's public
   type names against the retained upstream package. Bale no longer carries the wrapper patch series
   or builds wrapper packages; native FFmpeg builds remain here.
-- **AV1 chain (owner, 2026-11-19):** rav1g (D3D12, debug default since da3e045) → dav1d
-  on D3D11 with CPU NV12/P010 buffers and dav1d CPU film grain, **max 1080p** → server transcode.
-  Keep dav1d for older consoles; the measured Series/AVX2 software-device claim gate remains.
+- **AV1 chain (owner, 2026-11-26: rav1g is the default AV1 decoder in release builds too, since the commit that
+  wrote this; debug default since da3e045):** rav1g (D3D12 compute, the fork's GPU provider, `bale_av1_decoder=1`) →
+  the fork's in-open dav1d fallback (at most 1080 lines) → one same-plan dav1d remount after a rav1g failure at a known
+  source height of at most 1080 (`Rav1gPolicy.RemountOnDav1d`) → the ordinary replan or server transcode. rav1g takes a
+  software AV1 mount only where Bale's once-per-process check finds rav1g.dll usable (`Rav1gLibrary`, Rust
+  `av1_decoder::library_status`: packaged, loads, has the 12 exports the fork resolves and interface 3, as the fork's
+  loader judges it); otherwise AV1 stays on dav1d at 1080p60 exactly as before. **Claim:** with a usable library every
+  build claims AV1 Main 8/10-bit up to **2160p60** at a **40 Mbps soft ceiling** (`max_bitrate_kbps` 40 000, which
+  silo-server's `videoDecodeTakesSourceV3` holds the source's bitrate to; owner: tested to 4K60, reliable to about
+  40–60 Mbps, real content stays under 40) beside dav1d's measured 1080p60 entry (no bitrate bound), plus the HDR AV1
+  tone-map promise of rav1g's display pass (`Av1DynamicRangeMappingSupported`); Auto's display matching counts the
+  same entries. dav1d (D3D11, CPU NV12/P010 buffers, dav1d CPU film grain, **max 1080p**) stays for older consoles and
+  as the fallback; the measured Series/AVX2 software-device claim gate covers both entries.
   dav1d must not require D3D12: neither claims nor its default configuration register zero-copy.
   `bale_film_grain_mode=0` means dav1d applies grain; the experimental device setting opts into mode 3
   (private D3D11 staged upload + GPU grain, CPU grain on probe failure); 2 is GPU grain on debug zero-copy streams.
@@ -326,26 +336,29 @@ For Bale, a normal app with hevcPlayback on the Series X:
   open declines fails with MF_E_UNSUPPORTED_FORMAT and takes the normal failure replan. A failed active
   rav1g mount remounts once on dav1d only with a known source height of at most 1080 (never the scaled
   output height); taller/unknown sources replan directly, withdrawing software claims including 2160.
-  Debug `av1-claim 2160` adds 4K30 only with `av1-decoder rav1g`; dav1d stays at 1080p60 and logs an
-  ignored 2160 override once per attempt. rav1g keeps its 250 ms buffer and frame-rate-based texture cap;
-  debug builds package the `scripts/rav1g.json` DLL. See docs/player-plan.md, "rav1g (debug)".
-- All builds tune software AV1 with `bale_decode_ahead_frames=16` and a 1000 ms
-  MSS BufferTime. Above 1080p `SoftwareDecodeTuning` trims decode-ahead to 8 and BufferTime to 500 ms
+  rav1g keeps its 250 ms buffer, 8 decode-ahead frames, frame-rate-based texture cap and display pass
+  (`bale_rav1g_display=1`). Every build packages the `scripts/rav1g.json` DLL (an empty pin packages none). Debug-only:
+  `av1-decoder dav1d|rav1g` and `av1-claim 1080|2160|2160-dav1d` (defaults rav1g and 2160, the release behaviour;
+  1080 forces 1080p60), `rav1g-tune`, the rav1g perf logs and the prewarm. See docs/player-plan.md, "rav1g".
+- All builds tune dav1d's software AV1 with `bale_decode_ahead_frames=16` and a 1000 ms
+  MSS BufferTime (the rav1g route sets its own 8 frames and 250 ms, `Rav1gPolicy.Route`). Above 1080p
+  `SoftwareDecodeTuning` trims decode-ahead to 8 and BufferTime to 500 ms
   (~460 MiB less at 4K, console-measured) and sets `bale_dav1d_max_frame_delay=6` (width > 1920 or
   height > 1080), using route dimensions from the source for original delivery or the effective
   recipe with source fallback otherwise. Unknown size leaves delay unset; hardware/system video
   gets none of these keys. This tuning does not expand the measured software-video capability bounds.
 - **Software video (owner, 2026-11-17, as AetherEngine; narrowed 2026-11-24):** Bale declares the software-only
   codecs its FFmpeg build decodes (`SoftwareDecodePolicy.VideoCodecs`): a software `video_decode` entry each,
-  bounded only at 60 fps (owner: app-mode output is at most 60 Hz), except AV1, which keeps its measured bound
-  below until rav1g. The route (`route::hardware_admits`) plays a file on the console's hardware decoder when a probed
+  bounded only at 60 fps (owner: app-mode output is at most 60 Hz), except AV1, which keeps its own bounds
+  (dav1d's measured 1080p60, and rav1g's 2160p60 at 40 Mbps where its library is usable). The route (`route::hardware_admits`) plays a file on the console's hardware decoder when a probed
   hardware entry takes its bit depth and size and the profile is 4:2:0 H.264 up to High / HEVC Main(10) / VP9 profile
   0/2; otherwise the route is software. Packages (progressive, HLS) still carry only the codecs verified there
   (`PackagedVideoCodecs`). Auto's display matching counts a version only where the console plays it (hardware entries for profiles the hardware decodes,
   bounded software entries, the fallback via `fallback_admits`), so it never prefers a software 4K decode.
   `SoftwareDecodePolicy.VideoCodecs` now means the software-only codecs (no hardware decoder). Video
   outside the FFmpeg list goes to server transcode. Measured AV1 evidence: 8/10-bit, **1080p60** (0.1.230 at 24 fps,
-  0.1.439 at 59.94 fps). Production claims no 4K; the debug 2160 bound adds a separate 4K **30** fps entry only with rav1g.
+  0.1.439 at 59.94 fps), dav1d's entry; since 2026-11-26 every build adds rav1g's **2160p60** entry at 40 Mbps where
+  rav1g.dll is usable (owner: tested to 4K60 on the console).
   MPEG-4 Part 2 and every other non-AV1 software codec use FFmpegInteropX's ordinary software output,
   never AV1-specific grain options or D3D11VA. MPEG-4 measurements (owner's Series X, 30 s each, 0 late frames):
   512×384 (0.06 cores), 720×480 (0.08), 1920×1080 (0.30); its claim is unbounded since 2026-11-17. Software video remains limited to the measured Series/AVX2
@@ -373,8 +386,9 @@ For Bale, a normal app with hevcPlayback on the Series X:
   (`DeviceCapabilities.SoftwareDynamicRangeMappingSupported`, `tone_map::can_manage`). VC-1/MPEG-2 have no fallback. A
   failed software route withdraws every software entry on the single replan, and for a hardware codec the codec itself
   (a remux of the same stream would fail the same way), so the server transcodes; a failed tone-map route withdraws only
-  the promise. AV1 and the software-only codecs never take the stage (release AV1 sends no stage key; on the debug rav1g
-  route the fork's in-open dav1d fallback now runs the stage when rav1g's stage keys are set). Debug `ffmpeg-tune
+  the promise. AV1 and the software-only codecs never take this stage: AV1's tone map and downscale are the rav1g route's
+  own (rav1g's display pass, or the fork's stage on rav1g's frames; the fork's in-open dav1d fallback runs the stage when
+  rav1g's stage keys are set), and dav1d's AV1 route sends no stage key. Debug `ffmpeg-tune
   swfallback=on` decodes past the envelope for measurements, through the route's stage.
 - Hardware video claims (H.264, HEVC, VP9, VC-1, MPEG-2) follow the console's own decoder report, not hand-set
   bounds. `HardwareDecodeProbe` asks the D3D11 video device once per process, off the UI thread,
@@ -462,7 +476,7 @@ For Bale, a normal app with hevcPlayback on the Series X:
   `FfmpegStreams` snapshot (`FfmpegStreamSnapshot`, Core `BackgroundSnapshot`: read at open, refreshed on the
   pool, one read in flight, never awaited by the UI tick); `DisposeMount` closes the native sources on the pool
   in the old order, and the next mount and the page's idle trim await that close (bounded, never blocking).
-  `FfmpegUiThreadTests` pins this; docs/player-plan.md, "rav1g (debug)".
+  `FfmpegUiThreadTests` pins this; docs/player-plan.md, "rav1g".
 - **Start budget (silo-apple `b9446d5d`, owner 2026-11-18):** every mount, first plan and each replacement, on every
   route (engine and MediaPlayer, FFmpeg and Windows' reader, HLS through the Rust reader, progressive), shows its first
   frame within 45 s (`PlaybackStartBudget`, Rust `start_budget.rs`), held while the device is offline and deferred while

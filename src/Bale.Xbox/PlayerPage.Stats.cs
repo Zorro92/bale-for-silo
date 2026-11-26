@@ -140,15 +140,16 @@ public sealed partial class PlayerPage
     }
 
     /// <summary>
-    /// The debug AV1 decoder switch: which decoder this mount's open actually used, from the engine FFmpegInteropX reports
-    /// (rav1g's provider reports D3D11), the guard's mark verdict and the fork's "Bale rav1g:" lines.
+    /// The AV1 decoder (and the debug switch): which decoder this mount's open actually used, from the engine FFmpegInteropX
+    /// reports (rav1g's provider reports D3D11), the guard's mark verdict, the fork's "Bale rav1g:" lines and, when rav1g.dll
+    /// is not usable, why (Rav1gLibrary).
     /// </summary>
     private static string Av1DecoderRow(Attempt? attempt, Mount? media)
     {
         if (attempt is null || media?.FfmpegSource is null) return "unavailable";
         if (!media.SoftwareVideo || media.Route.VideoCodec != "av1") return $"not software AV1 · switch {attempt.Av1Decoder}";
         var (_, _, fallback, failed, output) = media.Rav1gRoute ? DebugRav1gLog.Snapshot() : default;
-        return Rav1gPolicy.Describe(attempt.Av1Decoder, media.Rav1gRoute, Rav1gLibrary.Present,
+        return Rav1gPolicy.Describe(attempt.Av1Decoder, media.Rav1gRoute, Rav1gLibrary.Usable ? null : Rav1gLibrary.Detail,
             media.Rav1gCheck?.GpuEngine ?? (media.Rav1gRoute ? media.Rav1gActive : null), media.Rav1gCheck?.Verdict,
             fallback, failed, output, attempt.Rav1gRemounted);
     }

@@ -175,7 +175,6 @@ public class RustPortDifferentialTests
         // The claims changed rules on 2026-11-17 (FFmpeg software entries); HardwareDecodeClaimsTests cover them.
         Assert.Equal(Reference.ConsoleEvidence.EmbeddedBitmapSubtitleCodecs, ConsoleEvidence.EmbeddedBitmapSubtitleCodecs);
         Assert.Same(ConsoleEvidence.Default, ConsoleEvidence.ForHardware(new HardwareDecodeLimits()));
-        Assert.Throws<ArgumentOutOfRangeException>(() => ConsoleEvidence.BuildVideoDecode(0, 1080));
     }
 
     private static string Claims(IEnumerable<VideoDecodeCapability> claims) => string.Join(" ; ", claims.Select(claim =>

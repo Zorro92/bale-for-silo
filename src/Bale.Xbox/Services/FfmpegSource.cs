@@ -11,15 +11,16 @@ internal static class FfmpegSource
     internal static MediaSourceConfig Configuration(PlaybackRouteDecision route)
         => Configuration(route, new DebugFfmpegInputTuning());
 
-    /// <param name="rav1g">The debug AV1 decoder switch's decision for this mount (Rav1gPolicy.Route); null is dav1d.</param>
+    /// <param name="rav1g">This mount's AV1 decoder decision (Rav1gPolicy.Route); null or not rav1g is dav1d.</param>
     /// <param name="sdrWhiteNits">The attempt's captured SDR Brightness, the device setting; ffmpeg-tune white= wins.</param>
     internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, DebugFfmpegInputTuning tuning,
         Rav1gRouteDecision? rav1g = null, string dav1dPath = "d3d11", bool dav1dGpuFilmGrain = false,
         int sdrWhiteNits = SdrBrightness.DefaultNits)
 #else
+    /// <param name="rav1g">This mount's AV1 decoder decision (Rav1gPolicy.Route); null or not rav1g is dav1d.</param>
     /// <param name="sdrWhiteNits">The attempt's captured SDR Brightness, the device setting.</param>
-    internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, bool dav1dGpuFilmGrain = false,
-        int sdrWhiteNits = SdrBrightness.DefaultNits)
+    internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, Rav1gRouteDecision? rav1g = null,
+        bool dav1dGpuFilmGrain = false, int sdrWhiteNits = SdrBrightness.DefaultNits)
 #endif
     {
         // Debug captures only our safe Bale diagnostics; production keeps the native logger off.
@@ -52,14 +53,11 @@ internal static class FfmpegSource
         // Keep the existing fast-seek policy for software video: its earlier zero-copy route uploaded
         // every frame from the keyframe, and a 4K seek ran out of GPU memory (0x8007000E) on 0.1.558.
         config.General.FastSeek = route.SoftwareVideo;
-        var rav1gStage = false;
-#if DEBUG_SERVER
-        // A probed URL can expose HDR AV1 that the Silo planner normally transcodes. rav1g already owns
-        // its tone-map/downscale stage; keep that same configuration and its marked-output guard.
-        rav1gStage = rav1g is { Rav1g: true } && route.SoftwareVideo && route.VideoCodec == "av1";
-#endif
+        // The rav1g route owns AV1's tone map and downscale (rav1g's display pass, or the fork's stage on rav1g's frames):
+        // an HDR AV1 original promised the console tone map (PlaybackClaims) plays only there, under its marked-output guard.
+        var rav1gStage = rav1g is { Rav1g: true } && route.SoftwareVideo && route.VideoCodec == "av1";
         // H.264 joined the SDR downscale route on 2026-11-24 (route.rs); the fork's stage is codec-neutral. Software frames
-        // take it from wrapper bale.80 (phase B; AV1 only on the debug rav1g route, which has its own stage).
+        // take it from wrapper bale.80 (phase B; AV1 only on the rav1g route, which has its own stage).
         if (route.ConsoleStage && (route.VideoCodec is not ("hevc" or "vp9" or "h264") && !rav1gStage || !ConsoleToneMapRuntime.IsAvailable
                 || route.SoftwareVideo && !rav1gStage && !ConsoleToneMapPolicy.SoftwareStageWrapperSupported(FfmpegWrapperVersion.Value)))
             throw new InvalidDataException("Console tone mapping is unavailable for this source.");
@@ -94,15 +92,20 @@ internal static class FfmpegSource
         config.Subtitles.AutoSelectForcedSubtitles = false;
         config.FFmpegOptions["rw_timeout"] = "10000000";
         ApplyDecodeTuning(config, SoftwareDecodeTuning.ForVideo(softwareVideo, route.VideoWidth, route.VideoHeight));
-        // AV1 uses dav1d on D3D11, with CPU grain unless the attempt opted into GPU grain (owner, 2026-11-19).
+        // Software AV1 decodes on rav1g, the fork's GPU provider, on the rav1g route (owner, 2026-11-26: every build);
+        // otherwise on dav1d on D3D11, with CPU grain unless the attempt opted into GPU grain (owner, 2026-11-19).
         // Other software codecs use the ordinary provider without AV1-specific grain options.
-#if DEBUG_SERVER
-        // Debug only (owner, 2026-11-18): rav1g decodes software AV1 on the fork's GPU provider instead.
         if (rav1g is { Rav1g: true } && softwareVideo && route.VideoCodec == "av1")
-            ApplyRav1g(config, rav1g, dav1dPath, dav1dGpuFilmGrain);
-        else
+        {
+            ApplyRav1g(config, rav1g, dav1dGpuFilmGrain);
+#if DEBUG_SERVER
+            ApplyDav1dPath(config, dav1dPath);
+            // Console-test knobs for the provider's feeder thread, rav1g's perf timings and parse depth (bale.52+), and
+            // rav1g-tune display=off (the stage instead of rav1g's display pass): debug only, the route's keys above win otherwise.
+            foreach (var (key, value) in DebugRav1gTuning.Options()) config.FFmpegOptions[key] = value;
 #endif
-        if (softwareVideo && route.VideoCodec == "av1")
+        }
+        else if (softwareVideo && route.VideoCodec == "av1")
         {
             ApplySoftwareVideo(config, dav1dGpuFilmGrain);
 #if DEBUG_SERVER
@@ -164,6 +167,38 @@ internal static class FfmpegSource
                 _ => "cpu",
             };
         Log.Info($"player: dav1d grain request={mode} (setting={(dav1dGpuFilmGrain ? "on" : "off")})");
+    }
+
+    /// <summary>
+    /// The rav1g route (the fork's bale/design-rav1g-provider.md; owner, 2026-11-26: every build). Always configure dav1d's
+    /// D3D11 output with the captured grain setting for the fork's in-open fallback (missing library, interface mismatch,
+    /// unsupported stream), capped at 1080 lines by wrapper bale.59: a taller stream whose GPU open declines fails to the
+    /// normal replan, never CPU dav1d at 4K. The stage keys downscale SDR or tone-map PQ/HLG on an SDR display; a dav1d
+    /// fallback ignores those keys. No zero-copy registration or upload keys (debug dav1d-path zerocopy aside).
+    /// </summary>
+    internal static void ApplyRav1g(MediaSourceConfig config, Rav1gRouteDecision rav1g, bool dav1dGpuFilmGrain = false)
+    {
+        ApplySoftwareVideo(config, dav1dGpuFilmGrain);
+        config.FFmpegOptions["bale_av1_fallback_max_height"] = "1080";
+        config.FFmpegOptions["bale_av1_decoder"] = "1";
+        // Decode-ahead from Rav1gPolicy.Route (8, as dav1d above 1080p: since fork bale.46 the buffer no longer competes
+        // with rav1g's pool). Debug ApplyInputTuning runs after this, so ffmpeg-tune ahead= still wins.
+        if (rav1g.DecodeAheadFrames is { } ahead)
+            config.FFmpegOptions["bale_decode_ahead_frames"] = ahead.ToString(CultureInfo.InvariantCulture);
+        // Player-side texture cap (fork bale.56), from the frame rate (Rav1gPolicy.Route); debug rav1g-tune outtex= overrides it.
+        if (rav1g.OutputTextures is { } textures)
+            config.FFmpegOptions["bale_gpu_output_textures"] = textures.ToString(CultureInfo.InvariantCulture);
+        if (rav1g.ToneMap) config.FFmpegOptions["bale_tonemap"] = "1";
+        if (rav1g.OutputWidth is { } width && rav1g.OutputHeight is { } height)
+        {
+            config.FFmpegOptions["bale_tonemap_output_width"] = width.ToString(CultureInfo.InvariantCulture);
+            config.FFmpegOptions["bale_tonemap_output_height"] = height.ToString(CultureInfo.InvariantCulture);
+        }
+        // rav1g's display output (fork bale.74, rav1g interface 2): rav1g writes the display-size, tone-mapped image where
+        // the stage would run; the fork's default (unset) is the stage, so the rav1g route asks for it (owner, 2026-11-24:
+        // the default, after 0% missed at 4K60 60M SDR and HDR10 vs the stage's 3-5% / 12-13%). Debug rav1g-tune
+        // display=off restores the stage for A/B.
+        config.FFmpegOptions["bale_rav1g_display"] = "1";
     }
 
     /// <summary>
@@ -247,43 +282,6 @@ internal static class FfmpegSource
         config.FFmpegOptions["bale_film_grain_mode"] = "2";
     }
 
-    /// <summary>
-    /// The debug rav1g route (the fork's bale/design-rav1g-provider.md). Always configure dav1d's
-    /// D3D11 output with the captured grain setting for an in-open fallback, capped at 1080 lines by wrapper bale.59.
-    /// A taller stream whose GPU open declines fails to the normal server replan. The stage keys
-    /// downscale SDR or tone-map PQ/HLG on an SDR display; a dav1d fallback ignores those keys.
-    /// Only the captured debug dav1d-path zerocopy switch restores the old fallback path.
-    /// </summary>
-    internal static void ApplyRav1g(MediaSourceConfig config, Rav1gRouteDecision rav1g, string dav1dPath = "d3d11",
-        bool dav1dGpuFilmGrain = false)
-    {
-        ApplySoftwareVideo(config, dav1dGpuFilmGrain);
-        ApplyDav1dPath(config, dav1dPath);
-        config.FFmpegOptions["bale_av1_fallback_max_height"] = "1080";
-        config.FFmpegOptions["bale_av1_decoder"] = "1";
-        // Decode-ahead from Rav1gPolicy.Route (8, as dav1d above 1080p: since fork bale.46 the buffer no longer competes
-        // with rav1g's pool). ApplyInputTuning runs after this, so ffmpeg-tune ahead= still wins.
-        if (rav1g.DecodeAheadFrames is { } ahead)
-            config.FFmpegOptions["bale_decode_ahead_frames"] = ahead.ToString(CultureInfo.InvariantCulture);
-        // Player-side texture cap (fork bale.56), from the frame rate (Rav1gPolicy.Route); rav1g-tune outtex= overrides it below.
-        if (rav1g.OutputTextures is { } textures)
-            config.FFmpegOptions["bale_gpu_output_textures"] = textures.ToString(CultureInfo.InvariantCulture);
-        if (rav1g.ToneMap) config.FFmpegOptions["bale_tonemap"] = "1";
-        if (rav1g.OutputWidth is { } width && rav1g.OutputHeight is { } height)
-        {
-            config.FFmpegOptions["bale_tonemap_output_width"] = width.ToString(CultureInfo.InvariantCulture);
-            config.FFmpegOptions["bale_tonemap_output_height"] = height.ToString(CultureInfo.InvariantCulture);
-        }
-        // rav1g's display output (fork bale.74, rav1g interface 2): rav1g writes the display-size, tone-mapped image where
-        // the stage would run; the fork's default (unset) is the stage, so the rav1g route asks for it (owner, 2026-11-24:
-        // the default, after 0% missed at 4K60 60M SDR and HDR10 vs the stage's 3-5% / 12-13%). rav1g-tune
-        // display=off restores the stage for A/B (the loop below overrides this).
-        config.FFmpegOptions["bale_rav1g_display"] = "1";
-        // Console-test knobs for the provider's feeder thread, rav1g's perf timings and parse depth (bale.52+); this
-        // whole method is debug-only (DEBUG_SERVER region).
-        foreach (var (key, value) in DebugRav1gTuning.Options()) config.FFmpegOptions[key] = value;
-    }
-
     internal static VideoDecoderMode DecoderMode(VideoDecoderMode production, DebugFfmpegInputTuning tuning) => tuning.Decoder switch
     {
         DebugFfmpegDecoder.Auto => VideoDecoderMode.Automatic,
@@ -334,19 +332,9 @@ internal static class FfmpegSource
     internal static void ValidateVideoDecoders(FFmpegMediaSource source, PlaybackRouteDecision route, DebugFfmpegInputTuning tuning,
         bool rav1g = false)
     {
-        if (rav1g)
+        if (rav1g || tuning.Decoder is null || tuning.RequiresToneMapGuard(route) || route.DolbyVision7BaseLayer)
         {
-            // rav1g's provider reports the D3D11 engine (the wrapper's engine enum is frozen); its open-time fallback is
-            // dav1d's software engine. Either is this route's one AV1 stream; anything else fails the open as before.
-            var av1 = source.VideoStreams;
-            if (av1.Count == 0 || av1.Any(video => SoftwareDecodePolicy.NormalizeCodec(video.CodecName) != "av1"
-                    || video.DecoderEngine is not (DecoderEngine.FFmpegD3D11HardwareDecoder or DecoderEngine.FFmpegSoftwareDecoder)))
-                throw new InvalidDataException("The rav1g route requires its AV1 stream on rav1g or dav1d.");
-            return;
-        }
-        if (tuning.Decoder is null || tuning.RequiresToneMapGuard(route) || route.DolbyVision7BaseLayer)
-        {
-            ValidateVideoDecoders(source, route);
+            ValidateVideoDecoders(source, route, rav1g);
             return;
         }
         // Automatic's engine is provisional here (upstream VideoDecoderMode IDL). Permit D3D11
@@ -363,8 +351,19 @@ internal static class FfmpegSource
     }
 #endif
 
-    internal static void ValidateVideoDecoders(FFmpegMediaSource source, PlaybackRouteDecision route)
+    /// <param name="rav1g">The mount took the rav1g route: its one AV1 stream on rav1g or the fork's dav1d fallback.</param>
+    internal static void ValidateVideoDecoders(FFmpegMediaSource source, PlaybackRouteDecision route, bool rav1g = false)
     {
+        if (rav1g)
+        {
+            // rav1g's provider reports the D3D11 engine (the wrapper's engine enum is frozen); its open-time fallback is
+            // dav1d's software engine. Either is this route's one AV1 stream; anything else fails the open as before.
+            var av1 = source.VideoStreams;
+            if (av1.Count == 0 || av1.Any(video => SoftwareDecodePolicy.NormalizeCodec(video.CodecName) != "av1"
+                    || video.DecoderEngine is not (DecoderEngine.FFmpegD3D11HardwareDecoder or DecoderEngine.FFmpegSoftwareDecoder)))
+                throw new InvalidDataException("The rav1g route requires its AV1 stream on rav1g or dav1d.");
+            return;
+        }
         if (route.DolbyVision7BaseLayer)
         {
             var index = DolbyVision7Policy.BaseLayerTrackIndex(source.VideoStreams.Select(video => video.StreamIndex).ToArray(),
@@ -396,11 +395,13 @@ internal static class FfmpegSource
             throw new InvalidDataException("The video decoder violates the local fallback policy.");
     }
 
-    internal static string DecoderName(DecoderEngine engine) => engine switch
+    /// <param name="rav1g">The mount took the rav1g route: its provider reports the D3D11 engine (the wrapper's engine enum is
+    /// frozen), so that engine is rav1g there; the open-time dav1d fallback reports FFmpeg software.</param>
+    internal static string DecoderName(DecoderEngine engine, bool rav1g = false) => engine switch
     {
         DecoderEngine.SystemDecoder => "system",
         DecoderEngine.FFmpegSoftwareDecoder => "FFmpeg software",
-        DecoderEngine.FFmpegD3D11HardwareDecoder => "FFmpeg D3D11",
+        DecoderEngine.FFmpegD3D11HardwareDecoder => rav1g ? "rav1g" : "FFmpeg D3D11",
         _ => "unknown",
     };
 }

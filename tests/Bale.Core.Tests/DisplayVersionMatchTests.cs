@@ -261,14 +261,18 @@ public class DisplayVersionMatchTests
         // Without software video (Xbox One), AV1 loses to a version the system decoders take.
         var hardware = SoftwareDecodePolicy.WithoutSoftwareVideo(ConsoleEvidence.Default).VideoDecode;
         Assert.Same(av1[1], PlaybackFormatting.SelectVersion(av1, new DisplayVersionMatch(1080, hardware)));
-        // The debug 4K AV1 bound is a separate 30 fps entry.
-        var debug = ConsoleEvidence.BuildVideoDecode(3840, 2160);
+        // rav1g's AV1 entry (owner, 2026-11-26): up to 2160p60 at the 40 Mbps soft ceiling, so a 4K display counts 4K AV1
+        // versions at or under 40 Mbps; a faster one is passed over like any version the claims don't admit.
+        var rav1g = ConsoleEvidence.BuildVideoDecode(rav1g: true);
         var av14K = new[]
         {
-            Version("4k60", "av1", 3840, 2160, bitDepth: 10, bitrate: 2, frameRate: "60", profile: "Main"),
-            Version("4k24", "av1", 3840, 2160, bitDepth: 10, bitrate: 1, frameRate: "24000/1001", profile: "Main"),
+            Version("4k60-50m", "av1", 3840, 2160, bitDepth: 10, bitrate: 50_000, frameRate: "60", profile: "Main"),
+            Version("4k60", "av1", 3840, 2160, bitDepth: 10, bitrate: 30_000, frameRate: "60", profile: "Main"),
+            Version("4k24", "av1", 3840, 2160, bitDepth: 10, bitrate: 20_000, frameRate: "24000/1001", profile: "Main"),
         };
-        Assert.Same(av14K[1], PlaybackFormatting.SelectVersion(av14K, new DisplayVersionMatch(2160, debug)));
+        Assert.Same(av14K[1], PlaybackFormatting.SelectVersion(av14K, new DisplayVersionMatch(2160, rav1g)));
+        // dav1d alone (no usable rav1g.dll) admits none of them on a 4K display: Auto keeps the server's first.
+        Assert.Same(av14K[0], PlaybackFormatting.SelectVersion(av14K, new DisplayVersionMatch(2160, ConsoleEvidence.BuildVideoDecode())));
     }
 
     [Fact]

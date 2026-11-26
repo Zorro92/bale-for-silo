@@ -42,7 +42,7 @@ public class DebugAv1ClaimSwitchTests
     [Fact]
     public void FfmpegOffStillWithdrawsTheRaisedSoftwareClaim()
     {
-        var raised = ConsoleEvidence.Default with { VideoDecode = ConsoleEvidence.BuildVideoDecode(3840, 2160) };
+        var raised = ConsoleEvidence.Default with { VideoDecode = ConsoleEvidence.BuildVideoDecode(rav1g: true) };
         Assert.Same(raised, DebugFfmpegPlayback.Capabilities("policy", raised));
         var disabled = DebugFfmpegPlayback.Capabilities("off", raised);
         Assert.DoesNotContain("av1", disabled.VideoCodecs);
@@ -51,25 +51,35 @@ public class DebugAv1ClaimSwitchTests
     }
 
     [Fact]
-    public void PlayerCapturesTheClaimPerAttemptAndRaisesItOnlyInDebugBuilds()
+    public void PlayerCapturesTheClaimPerAttemptAndItsDefaultIsTheReleaseClaim()
     {
         var player = Read("PlayerPage.cs.txt");
         const string captureText = "public int Av1ClaimMaxHeight { get; } = DebugAv1ClaimSwitch.MaxHeight;";
         var capture = player.IndexOf(captureText, StringComparison.Ordinal);
         AssertDebugGuard(player, capture);
         Assert.DoesNotContain("DebugAv1ClaimSwitch", player[(capture + captureText.Length)..]);
-        var raised = player.IndexOf("if (attempt.Av1ClaimMaxHeight == 2160 && (attempt.Av1Decoder == \"rav1g\" || attempt.Av1ClaimDav1d) && softwareVideo)", StringComparison.Ordinal);
-        var off = player.IndexOf("capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);", StringComparison.Ordinal);
-        AssertDebugGuard(player, raised);
-        Assert.True(raised < off);
-        // The raised AV1 bound keeps the probed hardware claims.
-        Assert.Contains("capabilities = capabilities with { VideoDecode = ConsoleEvidence.BuildVideoDecode(await HardwareDecodeProbe.Limits, 3840, 2160) };", player[raised..off]);
-        var log = player.IndexOf("Log.Info(attempt.Av1Decoder == \"rav1g\" ? \"player: av1 claim=2160p (debug rav1g)\"", StringComparison.Ordinal);
-        AssertDebugGuard(player, log);
-        Assert.Contains("if (attempt.Av1ClaimMaxHeight == 2160 && softwareVideo && attempt.FfmpegEnabled)", player[off..log]);
-        Assert.Contains("player: av1 claim=1080p (dav1d cap; debug av1-claim 2160 ignored)", player);
-        Assert.Equal(1, player.Split("debug av1-claim 2160 ignored").Length - 1);
+        var at = player.IndexOf("private static async Task<DeviceCapabilities> DetectClaimsAsync(Attempt attempt)", StringComparison.Ordinal);
+        Assert.True(at > 0);
+        var claims = player[at..player.IndexOf("private async Task RemountSamePlanAsync(", at, StringComparison.Ordinal)];
+        var debug = claims[..claims.IndexOf("#else", StringComparison.Ordinal)];
+        var release = claims[claims.IndexOf("#else", StringComparison.Ordinal)..];
+        AssertDebugGuard(player, at + claims.IndexOf("PlaybackClaims.DetectAsync(", StringComparison.Ordinal));
+        // 2160 (default) with rav1g is the release claim; 1080 or av1-decoder dav1d keep dav1d's 1080p60.
+        Assert.Contains("PlaybackClaims.DetectAsync(\n            rav1g: attempt.Av1ClaimMaxHeight == 2160 && attempt.Av1Decoder == \"rav1g\");", debug);
+        // 2160-dav1d adds rav1g's entry with dav1d too, keeping the probed hardware claims, before ffmpeg off withdraws it.
+        Assert.Contains("var forced = attempt.Av1ClaimDav1d && softwareVideo && !rav1g;", debug);
+        var forced = debug.IndexOf("ConsoleEvidence.BuildVideoDecode(await HardwareDecodeProbe.Limits, rav1g: true)", StringComparison.Ordinal);
+        var off = debug.IndexOf("capabilities = DebugFfmpegPlayback.Capabilities(attempt.FfmpegMode, capabilities);", StringComparison.Ordinal);
+        Assert.True(forced > 0 && forced < off);
+        Assert.Contains("player: av1 claim=1080p60 (dav1d; debug av1-claim 1080)", debug);
+        Assert.Contains("player: av1 claim=1080p60 (dav1d; debug av1-decoder dav1d)", debug);
+        Assert.Equal(1, player.Split("debug av1-claim 2160-dav1d").Length - 1);
+        // Release: the production claims as they are, logged once per attempt.
+        Assert.Contains("var (capabilities, softwareVideo, rav1g) = await PlaybackClaims.DetectAsync();", release);
+        Assert.Contains("player: av1 claim=2160p60 40 Mbps (rav1g)", release);
         Assert.DoesNotContain("DebugAv1ClaimSwitch", Read("DebugServer.Ffmpeg.cs.txt"));
+        // The debug URL player takes the same claims.
+        Assert.Contains("var capabilities = await DetectClaimsAsync(attempt);", Read("PlayerPage.DebugUrl.cs.txt"));
     }
 
     [Fact]

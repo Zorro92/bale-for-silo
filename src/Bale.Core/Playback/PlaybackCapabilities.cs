@@ -36,8 +36,9 @@ public sealed record DeviceCapabilities(
     /// <summary>The pinned wrapper and bale_gpu tone-map ABI are available; eligibility is still per selected version.</summary>
     public bool OriginalDynamicRangeMappingSupported { get; init; }
     /// <summary>
-    /// AV1 HDR originals can be tone-mapped on the console too: rav1g's display output (debug rav1g route, wrapper
-    /// bale.74+) maps PQ/HLG to SDR itself. Never set by release builds (dav1d, 1080p, server-side mapping).
+    /// AV1 HDR originals can be tone-mapped on the console too: rav1g's display pass (wrapper bale.74+) maps PQ/HLG to SDR
+    /// itself. Set with rav1g's AV1 entry, where rav1g.dll is usable (PlaybackClaims, owner 2026-11-26); without it AV1 is
+    /// dav1d's, 1080p and server tone-mapped.
     /// </summary>
     public bool Av1DynamicRangeMappingSupported { get; init; }
     /// <summary>
@@ -77,34 +78,34 @@ public static class ConsoleEvidence
     /// The production claims for what the console's hardware decoders report. Null or empty limits
     /// (the probe failed or found nothing) give <see cref="Default"/>, the fixed 1080p baseline.
     /// </summary>
-    public static DeviceCapabilities ForHardware(HardwareDecodeLimits? hardware)
+    /// <param name="rav1g">rav1g.dll is usable: AV1 is claimed up to 2160p60 at the 40 Mbps soft ceiling (owner,
+    /// 2026-11-26) beside dav1d's 1080p60; false keeps dav1d's alone.</param>
+    public static DeviceCapabilities ForHardware(HardwareDecodeLimits? hardware, bool rav1g = false)
     {
         var claims = BaleCoreNative.Call("evidence.for_hardware", writer =>
-            writer.Record("hardware", hardware, BaleCoreJson.Default.HardwareDecodeLimits), BaleCoreJson.Default.HardwareClaims);
-        return claims is null ? Default : Default with { VideoCodecs = claims.VideoCodecs, VideoDecode = claims.VideoDecode };
+        {
+            writer.Record("hardware", hardware, BaleCoreJson.Default.HardwareDecodeLimits);
+            writer.WriteBoolean("rav1g", rav1g);
+        }, BaleCoreJson.Default.HardwareClaims);
+        if (claims is not null) return Default with { VideoCodecs = claims.VideoCodecs, VideoDecode = claims.VideoDecode };
+        return rav1g ? Default with { VideoDecode = BuildVideoDecode(null, rav1g: true) } : Default;
     }
 
-    /// <summary>The fixed baseline claims; optional AV1 bounds let debug callers test unmeasured sizes.</summary>
-    public static IReadOnlyList<VideoDecodeCapability> BuildVideoDecode(int av1MaxWidth = 1920, int av1MaxHeight = 1080) =>
-        BuildVideoDecode(null, av1MaxWidth, av1MaxHeight);
+    /// <summary>The fixed baseline claims, with rav1g's AV1 entry when <paramref name="rav1g"/> is set.</summary>
+    public static IReadOnlyList<VideoDecodeCapability> BuildVideoDecode(bool rav1g = false) => BuildVideoDecode(null, rav1g);
 
     /// <summary>
     /// Hardware claims from the decoder probe (each codec at its reported size, 60 fps, by bit depth)
-    /// plus the measured AV1 (dav1d Main, 1080p60) and MPEG-4 Part 2 (1080p30) software claims. Null
-    /// or empty limits keep the fixed H.264/HEVC 1080p baseline with no VP9.
+    /// plus the measured AV1 (dav1d Main, 1080p60) and MPEG-4 Part 2 software claims. Null or empty
+    /// limits keep the fixed H.264/HEVC 1080p baseline with no VP9. With <paramref name="rav1g"/>, rav1g's
+    /// AV1 entry (Main 8/10-bit, 3840x2160, 60 fps, 40 000 kbps; evidence.rs RAV1G_*) joins dav1d's.
     /// </summary>
-    public static IReadOnlyList<VideoDecodeCapability> BuildVideoDecode(HardwareDecodeLimits? hardware,
-        int av1MaxWidth = 1920, int av1MaxHeight = 1080)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(av1MaxWidth);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(av1MaxHeight);
-        return Array.AsReadOnly(BaleCoreNative.Call("evidence.video_decode", writer =>
+    public static IReadOnlyList<VideoDecodeCapability> BuildVideoDecode(HardwareDecodeLimits? hardware, bool rav1g = false) =>
+        Array.AsReadOnly(BaleCoreNative.Call("evidence.video_decode", writer =>
         {
             writer.Record("hardware", hardware, BaleCoreJson.Default.HardwareDecodeLimits);
-            writer.WriteNumber("av1_max_width", av1MaxWidth);
-            writer.WriteNumber("av1_max_height", av1MaxHeight);
+            writer.WriteBoolean("rav1g", rav1g);
         }, BaleCoreJson.Default.VideoDecodeCapabilityArray));
-    }
 }
 
 // Wire shapes from shared/src/commonMain/kotlin/org/siloserver/silo/model/playback/PlaybackModels.kt.

@@ -126,7 +126,7 @@ pub fn baseline() -> Baseline {
         video_evidence: "platform_attested",
         audio_evidence: "platform_attested",
         hardware_video_codecs: [],
-        video_decode: video_decode(None, 1920, 1080),
+        video_decode: video_decode(None, false),
         passthrough_entries: [],
         display_hdr_evidence: "unknown",
         original_http_supported: true,
@@ -148,11 +148,12 @@ pub struct HardwareClaims {
     video_decode: Vec<VideoDecodeClaim>,
 }
 
-/// The production claims for what the console's hardware decoders report. `None` for missing or
-/// empty limits (the probe failed or found nothing): the caller keeps the fixed 1080p baseline.
-pub fn for_hardware(hardware: Option<&Limits>) -> Option<HardwareClaims> {
+/// The production claims for what the console's hardware decoders report, with rav1g's AV1 entry
+/// where its library is usable. `None` for missing or empty limits (the probe failed or found
+/// nothing): the caller keeps the fixed 1080p baseline.
+pub fn for_hardware(hardware: Option<&Limits>, rav1g: bool) -> Option<HardwareClaims> {
     let hardware = hardware.filter(|limits| !limits.is_empty())?;
-    let decode = video_decode(Some(hardware), 1920, 1080);
+    let decode = video_decode(Some(hardware), rav1g);
     // A codec is named only while it has a decode entry, so VP9 appears only when probed.
     let mut codecs = Vec::new();
     for claim in &decode {
@@ -181,14 +182,10 @@ fn baseline_entry(codec: &'static str, bit_depths: Vec<i32>) -> VideoDecodeClaim
     }
 }
 
-/// Hardware claims from the decoder probe plus measured AV1 and MPEG-4 software claims. Missing or
-/// empty limits keep the fixed H.264/HEVC 1080p baseline with no VP9. The AV1 bounds (positive;
-/// the C# wrapper checks) let debug callers test unmeasured sizes.
-pub fn video_decode(
-    hardware: Option<&Limits>,
-    av1_max_width: i32,
-    av1_max_height: i32,
-) -> Vec<VideoDecodeClaim> {
+/// Hardware claims from the decoder probe plus the AV1 and MPEG-4 software claims. Missing or empty
+/// limits keep the fixed H.264/HEVC 1080p baseline with no VP9. `rav1g`: rav1g.dll is usable
+/// (Rav1gLibrary), so its 2160p60 AV1 entry joins dav1d's 1080p60 one.
+pub fn video_decode(hardware: Option<&Limits>, rav1g: bool) -> Vec<VideoDecodeClaim> {
     // Mirror silo-apple's iosApp/iosApp/Shared/AppleDecodeCapabilities.swift bounded attestation.
     let mut claims = Vec::new();
     match hardware.filter(|limits| !limits.is_empty()) {
@@ -240,16 +237,25 @@ pub fn video_decode(
     // and 0.1.439 SmackDown 1080p59.94 10-bit (0 late frames, ~3 cores); 8-bit clips too.
     // Zero-copy takes only Main (4:2:0, 8/10-bit); High (4:4:4) and Professional (4:2:2, 12-bit)
     // transcode. The server lowercases ffprobe's "Main" and fails an empty or unknown profile, so
-    // such streams transcode too.
-    claims.push(av1(av1_max_width.min(1920), av1_max_height.min(1080), 60.0));
-    // A larger debug bound stays at 30 fps. Platform-attested rates are absolute (the server trades
-    // size for rate only on exact evidence), and it takes a source any entry admits.
-    if av1_max_width > 1920 || av1_max_height > 1080 {
-        claims.push(av1(av1_max_width, av1_max_height, 30.0));
+    // such streams transcode too. It stays beside rav1g's entry: at 1080p and below a stream rav1g
+    // declines or fails on decodes on dav1d (the fork's in-open fallback, Bale's one dav1d remount).
+    claims.push(av1("dav1d", 1920, 1080, 60.0, None));
+    // rav1g, AV1 in D3D12 compute shaders (owner, 2026-11-26: the default AV1 decoder in every build),
+    // where its library is usable: Main 8/10-bit up to 2160p60 at the 40 Mbps soft ceiling (constants
+    // below). Platform-attested rates are absolute (the server trades size for rate only on exact
+    // evidence), and it takes a source any entry admits.
+    if rav1g {
+        claims.push(av1(
+            "rav1g",
+            RAV1G_MAX_WIDTH,
+            RAV1G_MAX_HEIGHT,
+            RAV1G_MAX_FRAME_RATE,
+            Some(RAV1G_MAX_BITRATE_KBPS),
+        ));
     }
     // The software-only codecs FFmpeg decodes (owner, 2026-11-17, as AetherEngine declares its build):
     // one software entry per codec, capped at 60 fps (owner, 2026-11-24: the console's app-mode output
-    // is at most 60 Hz, so faster files transcode). AV1 keeps its measured bound above until rav1g.
+    // is at most 60 Hz, so faster files transcode). AV1 keeps its own entries above.
     // The hardware codecs (H.264, HEVC, VP9, VC-1, MPEG-2) get no such entry: outside the bounded
     // fallback below the player refuses their software route (FfmpegSource; docs/software-decode.md),
     // so the server transcodes what the hardware entries above don't admit instead of planning a direct
@@ -347,17 +353,111 @@ fn hardware_entry(codec: &'static str, bit_depths: Vec<i32>, size: DecodeSize) -
     }
 }
 
-fn av1(width: i32, height: i32, fps: f64) -> VideoDecodeClaim {
+// rav1g's AV1 claim (owner, 2026-11-26): tested on the console up to 4K60 and reliable to about
+// 40-60 Mbps; real content stays below 40 Mbps, so 40 Mbps is the soft ceiling. silo-server's
+// videoDecodeTakesSourceV3 (capabilities_v3.go) holds the source's bitrate to `max_bitrate_kbps`
+// (a file of unknown bitrate passes), so a faster 4K AV1 file transcodes or takes a lower version.
+pub const RAV1G_MAX_WIDTH: i32 = 3840;
+pub const RAV1G_MAX_HEIGHT: i32 = 2160;
+pub const RAV1G_MAX_FRAME_RATE: f64 = 60.0;
+pub const RAV1G_MAX_BITRATE_KBPS: i32 = 40_000;
+
+// Software-class entries (hardware: false, so the server needs software_video_decode_v1 and devices
+// without measured software video drop them): rav1g runs in compute shaders, not a fixed-function
+// decoder, and its route is FFmpeg's software AV1 route (route::hardware_admits never takes AV1).
+fn av1(
+    decoder: &'static str,
+    width: i32,
+    height: i32,
+    fps: f64,
+    bitrate: Option<i32>,
+) -> VideoDecodeClaim {
     VideoDecodeClaim {
         codec: "av1",
-        decoder_name: Some("dav1d"),
+        decoder_name: Some(decoder),
         profiles: vec!["main"],
         levels: vec![],
         bit_depths: vec![8, 10],
         max_width: Some(width),
         max_height: Some(height),
         max_frame_rate: Some(fps),
-        max_bitrate_kbps: None,
+        max_bitrate_kbps: bitrate,
         hardware: false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hardware::DecodeSize;
+
+    fn av1_entries(claims: &[VideoDecodeClaim]) -> Vec<&VideoDecodeClaim> {
+        claims.iter().filter(|claim| claim.codec == "av1").collect()
+    }
+
+    #[test]
+    fn dav1d_alone_claims_1080p60_without_a_bitrate_bound() {
+        for claims in [video_decode(None, false), baseline().video_decode] {
+            let av1 = av1_entries(&claims);
+            assert_eq!(av1.len(), 1);
+            let dav1d = av1[0];
+            assert_eq!(dav1d.decoder_name, Some("dav1d"));
+            assert_eq!(
+                (dav1d.max_width, dav1d.max_height),
+                (Some(1920), Some(1080))
+            );
+            assert_eq!(dav1d.max_frame_rate, Some(60.0));
+            assert_eq!(dav1d.max_bitrate_kbps, None);
+            assert!(!dav1d.hardware);
+        }
+    }
+
+    #[test]
+    fn a_usable_rav1g_adds_2160p60_at_the_40_mbps_soft_ceiling() {
+        let claims = video_decode(None, true);
+        let entries = av1_entries(&claims);
+        assert_eq!(entries.len(), 2);
+        // dav1d's measured entry stays for what rav1g declines at 1080p and below.
+        assert_eq!(entries[0], &av1("dav1d", 1920, 1080, 60.0, None));
+        let rav1g = entries[1];
+        assert_eq!(rav1g.decoder_name, Some("rav1g"));
+        assert_eq!(rav1g.profiles, vec!["main"]);
+        assert_eq!(rav1g.bit_depths, vec![8, 10]);
+        assert_eq!(
+            (rav1g.max_width, rav1g.max_height),
+            (Some(3840), Some(2160))
+        );
+        assert_eq!(rav1g.max_frame_rate, Some(60.0));
+        assert_eq!(rav1g.max_bitrate_kbps, Some(40_000));
+        assert!(!rav1g.hardware);
+        // Everything else is the same claim set.
+        let without: Vec<_> = claims
+            .iter()
+            .filter(|claim| claim.decoder_name != Some("rav1g"))
+            .collect();
+        assert_eq!(
+            without,
+            video_decode(None, false).iter().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn the_probed_hardware_claims_carry_rav1g_too() {
+        let hd = DecodeSize {
+            width: 1920,
+            height: 1080,
+        };
+        let limits = Limits {
+            h264: Some(hd),
+            hevc_main: Some(hd),
+            hevc_main10: Some(hd),
+            ..Limits::default()
+        };
+        let with = for_hardware(Some(&limits), true).unwrap();
+        let without = for_hardware(Some(&limits), false).unwrap();
+        assert_eq!(with.video_codecs, without.video_codecs);
+        assert_eq!(av1_entries(&with.video_decode).len(), 2);
+        assert_eq!(av1_entries(&without.video_decode).len(), 1);
+        assert!(for_hardware(None, true).is_none());
     }
 }

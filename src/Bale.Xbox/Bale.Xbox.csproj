@@ -71,10 +71,10 @@
     <Content Include="$(BaleLibassDir)\SOURCES.txt" Link="Licenses\libass\SOURCES.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- rav1g (GPU AV1 decoder) for the debug av1-decoder switch: scripts/restore-rav1g.ps1 verifies the pinned release
-       (scripts/rav1g.json) into .cache/rav1g. The fork loads it from the package root (LoadPackagedLibrary). Debug-server
-       builds only; an empty pin restores nothing and packages none (the fork then falls back to dav1d). -->
-  <ItemGroup Condition="'$(BaleDebugServer)' == 'true' And Exists('$(MSBuildThisFileDirectory)..\..\.cache\rav1g\rav1g.dll')">
+  <!-- rav1g (GPU AV1 decoder), the default AV1 decoder in every build (owner, 2026-11-26): scripts/restore-rav1g.ps1
+       verifies the pinned release (scripts/rav1g.json) into .cache/rav1g. The fork loads it from the package root
+       (LoadPackagedLibrary). An empty pin restores nothing and packages none: AV1 then stays on dav1d at 1080p60. -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\.cache\rav1g\rav1g.dll')">
     <Content Include="..\..\.cache\rav1g\rav1g.dll" Link="rav1g.dll" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\.cache\rav1g\licenses\**\*" Link="Licenses\rav1g\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
