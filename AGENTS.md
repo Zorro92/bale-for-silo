@@ -288,7 +288,7 @@ For Bale, a normal app with hevcPlayback on the Series X:
   package checker; CsWinRT's projection alone does not register the WinRT factories for Native AOT.
 - Native FFmpeg is **9.1.0-bale.dav1d.1.5.5** (stock FFmpeg n9.1, no source patches, dav1d 1.5.5; release tag
   `native-ffmpeg-9.1-dav1d-1.5.5`), built by Bale: upstream's NuGet packages stop at 8.1.2 / 9.0.2-pre01.
-  Keep wrapper `FFmpegInteropX.UWP.Lib` on the pinned **2.1.0-bale.N** fork (currently **2.1.0-bale.83**),
+  Keep wrapper `FFmpegInteropX.UWP.Lib` on the pinned **2.1.0-bale.N** fork (currently **2.1.0-bale.84**),
   consumed from [Zorro92/bale-ffmpeginteropx releases](https://github.com/Zorro92/bale-ffmpeginteropx/releases).
   `scripts/ffmpeg-native.json` and `scripts/ffmpeginteropx-wrapper.json` pin their release tags
   and SHA256s; run
