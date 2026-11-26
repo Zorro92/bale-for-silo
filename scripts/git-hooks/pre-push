@@ -68,8 +68,11 @@ else
   echo "pre-push: x86_64-pc-windows-msvc target not installed; Windows-target lint left to CI." >&2
 fi
 
+# The Rust core's debug JSON calls (media faults, HTTP probes) are absent from production but linted the same way, and
+# the .NET tests load the debug-probes library: they run debug-server code.
+(cd native/bale-core && cargo clippy --all-targets --locked -q --features debug-probes -- -D warnings)
 echo "pre-push: building Rust core..." >&2
-(cd native/bale-core && cargo build --release --locked -q)
+(cd native/bale-core && cargo build --release --locked -q --features debug-probes)
 
 echo "pre-push: running .NET tests..." >&2
 log=$(mktemp)

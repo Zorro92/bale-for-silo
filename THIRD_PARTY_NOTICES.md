@@ -138,7 +138,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ## windows-rs (Rust for Windows)
 
-Bale's native GPU/media layer (`native/bale-gpu`, shipped as `bale_gpu.dll`) is built with Microsoft's
+Bale's native GPU/media layer (`native/bale-gpu`, shipped as `bale_gpu.dll`) and its Rust core (`bale_core.dll`,
+below) are built with Microsoft's
 [windows-rs](https://github.com/microsoft/windows-rs) crates: `windows` 0.62.2 and its runtime
 dependencies `windows-core`, `windows-collections`, `windows-future`, `windows-link`,
 `windows-numerics`, `windows-result`, `windows-strings` and `windows-threading` (exact versions in
@@ -173,6 +174,22 @@ crates (exact versions in `native/bale-core/Cargo.lock`):
 - `memchr` (Copyright (c) 2015 Andrew Gallant): dual-licensed Unlicense or MIT, used here under MIT.
 - `unicode-general-category` (Copyright YesLogic Pty. Ltd.): Apache-2.0. The Apache License 2.0 text
   is packaged as `Licenses/FFmpegInteropX.txt`; the crate ships no NOTICE file.
+- The HTTPS client of the media transport (`http.rs`: range, progressive and HLS streams), in every build:
+  - `ureq` (Copyright (c) 2019 Martin Algesten) and `ureq-proto` (Copyright 2022 Martin Algesten), `http` (Copyright
+    (c) 2017 http-rs authors), `httparse` (Copyright (c) 2015-2025 Sean McArthur), `base64` (Copyright (c) 2025 Alice
+    Maz, Marshall Pierce), `log` (Copyright (c) 2014 The Rust Project Developers), `percent-encoding` (Copyright (c)
+    2013-2025 The rust-url developers), `utf8-zero`, `once_cell` (Aleksey Kladov), `cfg-if` (Copyright (c) 2014 Alex
+    Crichton), `getrandom` (Copyright (c) 2018-2024 The rust-random Project Developers, Copyright (c) 2014 The Rust
+    Project Developers), `rustls-pki-types` (Copyright (c) 2023 Dirkjan Ochtman) and `zeroize` (Copyright (c)
+    2018-2026 The RustCrypto Project Developers): dual-licensed MIT or Apache-2.0, used here under MIT.
+  - `bytes` (Copyright (c) 2018 Carl Lerche): MIT.
+  - `rustls` (Copyright (c) 2016 Joseph Birr-Pixton): Apache-2.0, ISC or MIT, used here under MIT.
+  - `rustls-webpki` (Copyright 2015 Brian Smith) and `untrusted` (Copyright 2015-2016 Brian Smith): ISC.
+  - `ring` (Copyright 2015-2025 Brian Smith): ISC for its own code; code it takes from BoringSSL is under ISC
+    or the Apache License 2.0 (packaged as `Licenses/FFmpegInteropX.txt`), as each file states.
+  - `subtle` (Copyright (c) 2016-2017 Isis Agora Lovecruft, Henry de Valence; Copyright (c) 2016-2024 Isis Agora
+    Lovecruft): BSD-3-Clause.
+  - `webpki-roots` (Mozilla's root certificate list as data): Community Data License Agreement - Permissive 2.0.
 
 Build-time-only proc-macro crates (`serde_derive`, `syn`, `quote`, `proc-macro2`, `unicode-ident`)
 generate code but are not shipped. The MIT terms, for the MIT-licensed crates above:
@@ -191,6 +208,63 @@ LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE A
 NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
 WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+The ISC terms, for `rustls-webpki`, `untrusted` and `ring` (each with its copyright line above):
+
+Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby
+granted, provided that the above copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHORS DISCLAIM ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
+The BSD-3-Clause terms, for `subtle`:
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the
+following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following
+   disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
+   disclaimer in the documentation and/or other materials provided with the distribution.
+3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote
+   products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+The Community Data License Agreement - Permissive, Version 2.0, for `webpki-roots`' data:
+
+This is the Community Data License Agreement - Permissive, Version 2.0 (the "agreement"). Data Provider(s) and Data
+Recipient(s) agree as follows:
+
+1. Provision of the Data. 1.1. A Data Recipient may use, modify, and share the Data made available by Data Provider(s)
+   under this agreement if that Data Recipient follows the terms of this agreement. 1.2. This agreement does not impose
+   any restriction on a Data Recipient's use, modification, or sharing of any portions of the Data that are in the
+   public domain or that may be used, modified, or shared under any other legal exception or limitation.
+2. Conditions for Sharing Data. 2.1. A Data Recipient may share Data, with or without modifications, so long as the
+   Data Recipient makes available the text of this agreement with the shared Data.
+3. No Restrictions on Results. 3.1. This agreement does not impose any restriction or obligations with respect to the
+   use, modification, or sharing of Results.
+4. No Warranty; Limitation of Liability. 4.1. All Data Recipients receive the Data subject to the following terms:
+   THE DATA IS PROVIDED ON AN "AS IS" BASIS, WITHOUT REPRESENTATIONS, WARRANTIES OR CONDITIONS OF ANY KIND, EITHER
+   EXPRESS OR IMPLIED INCLUDING, WITHOUT LIMITATION, ANY WARRANTIES OR CONDITIONS OF TITLE, NON-INFRINGEMENT,
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE. NO DATA PROVIDER SHALL HAVE ANY LIABILITY FOR ANY DIRECT,
+   INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING WITHOUT LIMITATION LOST PROFITS),
+   HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+   OR OTHERWISE) ARISING IN ANY WAY OUT OF THE DATA OR RESULTS, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+5. Definitions. 5.1. "Data" means the material received by a Data Recipient under this agreement. 5.2. "Data Provider"
+   means any person who is the source of Data provided under this agreement and in reliance on a Data Recipient's
+   agreement to its terms. 5.3. "Data Recipient" means any person who receives Data directly or indirectly from a Data
+   Provider and agrees to the terms of this agreement. 5.4. "Results" means any outcome obtained by computational
+   analysis of Data, including for example machine learning models and models' insights.
 
 ## androidx Media3 (CEA-608 closed captions)
 

@@ -55,7 +55,14 @@ public sealed class DebugMediaFaultTests
     {
         // Never arm a real outage or empty tail here: they are process-wide and would fail the loopback stream tests
         // running alongside.
-        var status = DebugMediaFault.Apply(null);
+        string status;
+        try { status = DebugMediaFault.Apply(null); }
+        catch (BaleCoreException error) when (error.Message == "unknown function media_fault.set")
+        {
+            // Production builds have no such call (Cargo feature debug-probes); this suite runs debug-server code.
+            Assert.Fail("libbale_core.so lacks the debug calls: run `cargo build --release --locked --features debug-probes` in native/bale-core");
+            throw;
+        }
         Assert.Contains("outage-remaining-ms: 0\n", status);
         foreach (var counter in new[] { "empty-tail-armed", "range-retries", "range-renewals", "range-given-up",
                      "hls-empty-segments", "hls-empty-served", "hls-no-media", "hls-retries", "hls-resumes", "hls-given-up" })

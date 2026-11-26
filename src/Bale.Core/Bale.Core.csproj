@@ -18,7 +18,7 @@
     <None Include="$(BaleCoreNativeLibrary)" Link="libbale_core.so" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
   <Target Name="CheckBaleCoreNative" BeforeTargets="BeforeBuild" Condition="'$(BaleCoreNativeLibrary)' != '' And !Exists('$(BaleCoreNativeLibrary)')">
-    <Error Text="libbale_core.so is missing: run `cargo build --release --locked` in native/bale-core first." />
+    <Error Text="libbale_core.so is missing: run `cargo build --release --locked --features debug-probes` in native/bale-core first." />
   </Target>
 
   <ItemGroup>

@@ -6,6 +6,12 @@ license = "AGPL-3.0-only"
 description = "Bale's platform-independent playback logic (C ABI for Bale.Core)"
 publish = false
 
+[features]
+# Debug-server builds only (ci.yml), and the Linux library the .NET tests load, since they run the debug server's
+# code: the media fault switch (bale-debug.sh media-fault, media_fault.rs: the outage hook and empty tail) and the HTTP
+# probe (http_probe.rs). Production bale_core.dll has neither JSON call; CI checks the packaged DLL.
+debug-probes = []
+
 [lib]
 name = "bale_core"
 crate-type = ["cdylib", "rlib"]
@@ -17,9 +23,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value", "float_roundtrip"] }
 # .NET's regex \d/\w and char.IsLetterOrDigit follow Unicode general categories (dotnet.rs).
 unicode-general-category = "1.1"
-# Go/no-go spike for moving the HTTP streams to Rust (docs/rust-port.md, "HTTP streams"): a debug-only
-# download probe. rustls with bundled webpki roots, so it needs nothing from the app container's
-# certificate store. Remove both if the spike says no.
+# The HTTP client of Rust's media transport in every build (http.rs: range, progressive and HLS streams, auth
+# refresh), and of the debug download probe. rustls with bundled webpki roots, so it needs nothing from the app
+# container's certificate store.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 # Rust's own IRandomAccessStream for the player (winrt_stream.rs), so playback reads never run managed code.

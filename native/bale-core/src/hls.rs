@@ -936,6 +936,7 @@ mod tests {
         assert_eq!((stats.completed, stats.faulted), (1, 0));
     }
 
+    #[cfg(feature = "debug-probes")]
     #[test]
     fn the_debug_outage_cuts_and_refuses_until_it_ends() {
         let _faults = media_fault::tests::exclusive();
@@ -970,6 +971,7 @@ mod tests {
         assert!(started.elapsed() >= Duration::from_millis(900));
     }
 
+    #[cfg(feature = "debug-probes")]
     #[test]
     fn the_debug_empty_tail_answers_the_last_segments_itself() {
         let _faults = media_fault::tests::exclusive();

@@ -96,15 +96,18 @@ jobs:
           cache: true
           cache-dependency-path: '**/packages.lock.json'
       # Rust port of Bale.Core's logic (docs/rust-port.md). Bale.Core copies libbale_core.so into the
-      # test and CLI outputs, so it is built before them. Small (serde only), so no cache.
+      # test and CLI outputs, so it is built before them. Small, so no cache. Both configurations are linted and
+      # tested: production, and debug-probes (debug-server DLLs; the .NET tests run debug-server code, so they load it).
       - name: Check, test and build Rust core logic
         working-directory: native/bale-core
         run: |
           rustup component add rustfmt clippy
           cargo fmt --check
           cargo clippy --all-targets --locked -- -D warnings
+          cargo clippy --all-targets --locked --features debug-probes -- -D warnings
           cargo test --release --locked
-          cargo build --release --locked
+          cargo test --release --locked --features debug-probes
+          cargo build --release --locked --features debug-probes
       - run: dotnet test tests/Bale.Core.Tests --configuration Release
       - run: dotnet build tools/Bale.Cli --configuration Release
 
@@ -383,14 +386,17 @@ jobs:
           if ($dependents -match '(?i)mmdevapi\.dll') { throw 'bale_gpu.dll must not import mmdevapi.dll' }
           if ($dependents -match '(?i)avrt\.dll') { throw 'bale_gpu.dll must not import avrt.dll' }
 
-      # Rust port of Bale.Core's logic (native/bale-core): serde only, so built every run without a cache.
+      # Rust port of Bale.Core's logic (native/bale-core): small, so built every run without a cache. Debug-server
+      # builds add the debug JSON calls (media faults, HTTP probes); production has none (checked below).
       - name: Build Rust core logic
         shell: pwsh
         run: |
           Push-Location native/bale-core
           rustup target add x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'rustup target add failed' }
-          cargo build --release --locked --target x86_64-pc-windows-msvc
+          $debugFeatures = @()
+          if ('${{ matrix.debug_server }}' -eq 'true') { $debugFeatures = @('--features', 'debug-probes') }
+          cargo build --release --locked --target x86_64-pc-windows-msvc @debugFeatures
           $cargoExit = $LASTEXITCODE
           Pop-Location
           if ($cargoExit -ne 0) { throw 'cargo build failed' }
@@ -620,6 +626,10 @@ jobs:
               }
             }
             Write-Output 'Packaged bale_core.dll: exports present'
+            # The debug JSON calls: present in debug-server builds, absent in production. A child process loads the DLL,
+            # so it is unloaded before the inspection folder goes.
+            pwsh -NoProfile -File ./scripts/check-bale-core-calls.ps1 -LibraryPath $packagedDll -DebugServer '${{ matrix.debug_server }}'
+            if ($LASTEXITCODE -ne 0) { throw 'bale_core.dll debug JSON call check failed' }
           } finally { Remove-Item $inspection -Recurse -Force }
 
       - name: Check packaged rav1g.dll

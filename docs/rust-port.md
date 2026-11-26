@@ -106,7 +106,8 @@ Pure decision logic in `src/Bale.Core`, in slices. Each slice:
    reports throughput and the thread's CPU time. Compare with `speed test` (C# `SocketsHttpHandler`),
    running `threads` alongside each. Port only if Rust connects from the app container and is at least
    as fast for no more CPU; otherwise remove the spike (ureq, `http_probe.rs`, `RustHttpProbe`, the
-   debug route) and keep the streams in C#.
+   debug route) and keep the streams in C#. (The port went ahead: ureq and rustls are the production media
+   transport since; `http_probe.rs` and the media faults are debug-server only, Cargo feature `debug-probes`.)
 
    Spike results (console, 0.1.532, 2026-11-15, remote server over wired Ethernet, app idle on Browse):
 

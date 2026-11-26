@@ -1063,6 +1063,7 @@ mod tests {
         assert!(media_fault::RANGE_RENEWALS.load(Ordering::Relaxed) > renewals);
     }
 
+    #[cfg(feature = "debug-probes")]
     #[test]
     fn a_debug_outage_fails_requests_and_reads_until_it_ends() {
         let _faults = media_fault::tests::exclusive();

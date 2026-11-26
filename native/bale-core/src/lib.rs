@@ -30,6 +30,7 @@ pub mod hardware;
 pub mod hls;
 pub mod home_events;
 pub mod http;
+#[cfg(feature = "debug-probes")]
 pub mod http_probe;
 pub mod iec61937;
 pub mod language;

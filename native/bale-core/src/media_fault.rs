@@ -7,13 +7,23 @@
 //!   as a server that went away mid-response would.
 //! - **empty tail**: the next HLS mount answers a complete playlist's last N segments itself with segments
 //!   that hold no media, as Silo answers segments past a finished transcode's real end (hls.rs).
+//!
+//! Arming exists only with the `debug-probes` feature (debug-server builds, and the Linux test library): without it
+//! there is no `media_fault.set` call, [`outage`] is a constant `false` and [`take_empty_tail`] a constant 0, so the
+//! hooks in the streams compile to nothing. The counters count in every build.
 
+#[cfg(feature = "debug-probes")]
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+#[cfg(feature = "debug-probes")]
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(feature = "debug-probes")]
 use std::time::Instant;
 
+#[cfg(feature = "debug-probes")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "debug-probes")]
 fn now_ms() -> u64 {
     static EPOCH: OnceLock<Instant> = OnceLock::new();
     let epoch = *EPOCH.get_or_init(Instant::now);
@@ -21,6 +31,7 @@ fn now_ms() -> u64 {
 }
 
 /// The end of the armed outage on [`now_ms`]'s clock, or 0 for none.
+#[cfg(feature = "debug-probes")]
 static OUTAGE_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
 
 /// Range stream (original_http): waits taken inside an outage window (retry_window.rs).
@@ -43,23 +54,39 @@ pub static HLS_RESUMES: AtomicU64 = AtomicU64::new(0);
 pub static HLS_GIVEN_UP: AtomicU64 = AtomicU64::new(0);
 
 /// The debug empty tail armed for the next HLS mount.
+#[cfg(feature = "debug-probes")]
 static EMPTY_TAIL: AtomicU32 = AtomicU32::new(0);
 
 /// The armed debug empty tail, for the HLS mount opening now (then disarmed).
+#[cfg(feature = "debug-probes")]
 pub fn take_empty_tail() -> usize {
     EMPTY_TAIL.swap(0, Ordering::Relaxed) as usize
 }
 
+/// Production builds: no debug server, so nothing is ever armed.
+#[cfg(not(feature = "debug-probes"))]
+pub const fn take_empty_tail() -> usize {
+    0
+}
+
 /// True while a debug outage is armed; always false in normal playback.
+#[cfg(feature = "debug-probes")]
 pub fn outage() -> bool {
     let until = OUTAGE_UNTIL_MS.load(Ordering::Relaxed);
     until != 0 && now_ms() < until
+}
+
+/// Production builds: no debug server, so the outage hook is always off.
+#[cfg(not(feature = "debug-probes"))]
+pub const fn outage() -> bool {
+    false
 }
 
 pub fn count(counter: &AtomicU64) {
     counter.fetch_add(1, Ordering::Relaxed);
 }
 
+#[cfg(feature = "debug-probes")]
 #[derive(Deserialize, Default)]
 #[serde(default)]
 pub struct SetArgs {
@@ -69,6 +96,7 @@ pub struct SetArgs {
     pub empty_tail: Option<u32>,
 }
 
+#[cfg(feature = "debug-probes")]
 #[derive(Serialize, Debug, PartialEq, Eq)]
 pub struct State {
     pub outage_remaining_ms: u64,
@@ -84,6 +112,7 @@ pub struct State {
     pub hls_given_up: u64,
 }
 
+#[cfg(feature = "debug-probes")]
 pub fn set(args: SetArgs) -> State {
     if let Some(seconds) = args.outage_seconds {
         let until = if seconds == 0 {
@@ -101,6 +130,7 @@ pub fn set(args: SetArgs) -> State {
     state()
 }
 
+#[cfg(feature = "debug-probes")]
 pub fn state() -> State {
     let until = OUTAGE_UNTIL_MS.load(Ordering::Relaxed);
     let get = |counter: &AtomicU64| counter.load(Ordering::Relaxed);
@@ -121,6 +151,7 @@ pub fn state() -> State {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    #[cfg(feature = "debug-probes")]
     use super::*;
     use std::sync::{Mutex, MutexGuard, PoisonError};
 
@@ -131,6 +162,7 @@ pub(crate) mod tests {
         LOCK.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    #[cfg(feature = "debug-probes")]
     #[test]
     fn an_outage_is_armed_for_its_seconds_and_can_be_ended() {
         let _faults = exclusive();

@@ -270,9 +270,12 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         "dotnet.parse_float" => with_json(name, input, |v: String| {
             crate::dotnet::parse_float(&v).map(f64::to_bits)
         }),
+        // Debug only (bale-debug.sh fetchbench, rusthttp): the Rust HTTP probes.
+        #[cfg(feature = "debug-probes")]
         "http_probe.fetch_pattern" => with_json(name, input, |a: crate::http_probe::FetchArgs| {
             crate::http_probe::fetch_pattern(&a)
         }),
+        #[cfg(feature = "debug-probes")]
         "http_probe.run" => with_json(name, input, |a: crate::http_probe::ProbeArgs| {
             crate::http_probe::probe(&a)
         }),
@@ -389,6 +392,7 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
             display::pick_mode(&a)
         }),
         // Debug only (bale-debug.sh media-fault): memory-only media faults and the recovery counters.
+        #[cfg(feature = "debug-probes")]
         "media_fault.set" => with_json(name, input, crate::media_fault::set),
         "hardware.profile_name" => with_json(name, input, |p: String| hardware::profile_name(&p)),
         "hardware.from_accepted_sizes" => with_json(name, input, |a: Sizes| {
