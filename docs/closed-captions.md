@@ -21,8 +21,9 @@ Broadcast recordings, US TV episodes and many WEB-DLs carry them without a separ
 - **Bale**: CC1 by default and CC2-CC4 selectable; rows and columns on the 608 grid as on Android TV; the
   subtitle appearance for font, size, colours and box; 608 colours, italics and underline kept as inline
   overrides (the brief, and what FFmpeg, mpv and VLC do), with a plain flag for Android TV's look
-  (`FLAG_PLAIN`, `SubtitleOverlay.AttachCaptions(..., plain: true)`). Whether the default stays styled is the
-  owner's call.
+  (`FLAG_PLAIN`, `SubtitleOverlay.AttachCaptions(..., plain: true)`). Deliberate deviation (owner, 2026-11-25):
+  the default stays styled. Captions keep their own colours, italics and underline, where Android TV and AetherEngine
+  draw plain text; the player never passes `FLAG_PLAIN`.
 
 ## How it runs
 
