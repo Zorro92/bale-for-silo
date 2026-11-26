@@ -22,10 +22,11 @@ pub struct ConvertOptions {
     /// Text colour; also written as the secondary colour.
     pub primary_colour: u32,
     pub outline_colour: u32,
-    /// Shadow colour (the box colour with `border_style` 3).
+    /// Shadow colour; with `border_style` 4 the box colour.
     pub back_colour: u32,
     pub bold: bool,
-    /// 1 = outline and shadow, 3 = opaque box.
+    /// 1 = outline and shadow, 3 = opaque box per line (in the outline colour), 4 = libass's one box
+    /// per event in `back_colour`, padded by `shadow`, with glyph outlines drawn over it.
     pub border_style: u32,
     pub outline: f32,
     pub shadow: f32,
@@ -62,7 +63,69 @@ impl Default for ConvertOptions {
     }
 }
 
+/// The cue style the app picks for converted text (`bale_sub_overlay_load_text_styled`; the C# side
+/// is `Bale.Core.Settings.SubtitleTextStyle`, built from the profile's subtitle appearance): the
+/// [`ConvertOptions`] fields an appearance sets, on the default 1920×1080 script. Field order is
+/// the C ABI.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextStyle {
+    /// Script pixels.
+    pub font_size: u32,
+    pub primary_colour: u32,
+    pub outline_colour: u32,
+    pub back_colour: u32,
+    /// 1, 3 or 4 (see [`ConvertOptions::border_style`]).
+    pub border_style: u32,
+    pub outline: f32,
+    /// The shadow depth, or the box padding with border style 4.
+    pub shadow: f32,
+    /// Numpad alignment, 1..=9.
+    pub alignment: u32,
+    pub margin_v: u32,
+}
+
+/// The widest outline or shadow (and box padding) a style may ask for, in script pixels.
+const MAX_STYLE_WIDTH: f32 = 100.0;
+
 impl ConvertOptions {
+    /// The default options with `style` and the family `font_name` applied. A value libass could
+    /// not use keeps the default's: a size below 1, a border style other than 1, 3 or 4, a
+    /// negative or non-finite width, an alignment outside 1..=9, or a font name with nothing
+    /// usable left. Widths are capped at 100 script pixels and the margin at half the script.
+    pub fn styled(style: &TextStyle, font_name: Option<&str>) -> Self {
+        let defaults = ConvertOptions::default();
+        let width = |value: f32, fallback: f32| {
+            if value.is_finite() && value >= 0.0 {
+                value.min(MAX_STYLE_WIDTH)
+            } else {
+                fallback
+            }
+        };
+        ConvertOptions {
+            font_name: font_name
+                .and_then(clean_font_name)
+                .unwrap_or_else(|| defaults.font_name.clone()),
+            font_size: font_size(style.font_size as f32).unwrap_or(defaults.font_size),
+            primary_colour: style.primary_colour,
+            outline_colour: style.outline_colour,
+            back_colour: style.back_colour,
+            border_style: match style.border_style {
+                1 | 3 | 4 => style.border_style,
+                _ => defaults.border_style,
+            },
+            outline: width(style.outline, defaults.outline),
+            shadow: width(style.shadow, defaults.shadow),
+            alignment: if (1..=9).contains(&style.alignment) {
+                style.alignment
+            } else {
+                defaults.alignment
+            },
+            margin_v: style.margin_v.min(defaults.play_res_y / 2),
+            ..defaults
+        }
+    }
+
     /// Script width and height, never 0.
     pub(crate) fn resolution(&self) -> (f32, f32) {
         (self.play_res_x.max(1) as f32, self.play_res_y.max(1) as f32)
@@ -156,7 +219,10 @@ pub(crate) fn write_script(opts: &ConvertOptions, mut cues: Vec<Cue>) -> String 
         opts.outline_colour,
         opts.back_colour,
         if opts.bold { -1 } else { 0 },
-        if opts.border_style == 3 { 3 } else { 1 },
+        match opts.border_style {
+            3 | 4 => opts.border_style,
+            _ => 1,
+        },
         finite(opts.outline),
         finite(opts.shadow),
         if (1..=9).contains(&opts.alignment) {
@@ -333,6 +399,94 @@ mod tests {
         let script = write_script(&opts, Vec::new());
         assert!(script.contains("Style: Default,My Font,60,"));
         assert!(script.contains(",-1,0,0,0,100,100,0,0,3,0,0.5,2,96,96,54,1\n"));
+    }
+
+    #[test]
+    fn a_styled_box_is_border_style_four_on_the_default_script() {
+        // Bale.Core SubtitleTextStyle for Medium serif yellow text at 50% on a 75% navy box at the lower third.
+        let style = TextStyle {
+            font_size: 51,
+            primary_colour: 0x8015_CCFA,
+            outline_colour: 0x0000_0000,
+            back_colour: 0x405F_3A1E,
+            border_style: 4,
+            outline: 0.0,
+            shadow: 6.375,
+            alignment: 2,
+            margin_v: 194,
+        };
+        let opts = ConvertOptions::styled(&style, Some("Times New Roman"));
+        assert_eq!(opts.play_res_y, 1080);
+        assert_eq!((opts.margin_l, opts.margin_r), (96, 96));
+        let script = write_script(&opts, Vec::new());
+        assert!(script.contains(
+            "Style: Default,Times New Roman,51,&H8015CCFA,&H8015CCFA,&H00000000,&H405F3A1E,\
+             0,0,0,0,100,100,0,0,4,0,6.375,2,96,96,194,1\n"
+        ));
+        let top = ConvertOptions::styled(
+            &TextStyle {
+                border_style: 1,
+                outline: 3.0,
+                shadow: 0.0,
+                alignment: 8,
+                margin_v: 54,
+                ..style
+            },
+            None,
+        );
+        assert!(
+            write_script(&top, Vec::new()).contains(",0,0,0,0,100,100,0,0,1,3,0,8,96,96,54,1\n")
+        );
+        assert_eq!(top.font_name, "Arial");
+    }
+
+    #[test]
+    fn a_style_libass_cannot_use_keeps_the_defaults() {
+        let defaults = ConvertOptions::default();
+        let opts = ConvertOptions::styled(
+            &TextStyle {
+                font_size: 0,
+                primary_colour: 0x00FF_FFFF,
+                outline_colour: 0,
+                back_colour: 0,
+                border_style: 7,
+                outline: f32::NAN,
+                shadow: -1.0,
+                alignment: 0,
+                margin_v: 9999,
+            },
+            Some(" {,} "),
+        );
+        assert_eq!(opts.font_name, defaults.font_name);
+        assert_eq!(opts.font_size, defaults.font_size);
+        assert_eq!(opts.border_style, defaults.border_style);
+        assert_eq!(opts.outline, defaults.outline);
+        assert_eq!(opts.shadow, defaults.shadow);
+        assert_eq!(opts.alignment, defaults.alignment);
+        assert_eq!(opts.margin_v, 540);
+        let wide = ConvertOptions::styled(
+            &TextStyle {
+                font_size: 5000,
+                outline: 1e9,
+                shadow: f32::INFINITY,
+                ..TextStyle {
+                    font_size: 60,
+                    primary_colour: 0,
+                    outline_colour: 0,
+                    back_colour: 0,
+                    border_style: 1,
+                    outline: 3.0,
+                    shadow: 0.0,
+                    alignment: 2,
+                    margin_v: 54,
+                }
+            },
+            None,
+        );
+        assert_eq!(
+            (wide.font_size, wide.outline, wide.shadow),
+            (2000, 100.0, 1.0)
+        );
     }
 
     #[test]

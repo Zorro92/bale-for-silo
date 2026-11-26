@@ -15,8 +15,9 @@ pub mod schedule;
 
 use std::time::Duration;
 
-/// Returned by `bale_sub_abi_version`; bumped whenever a `bale_sub_*` export changes.
-pub const SUB_ABI_VERSION: u32 = 3;
+/// Returned by `bale_sub_abi_version`; bumped whenever a `bale_sub_*` export changes. 4 added
+/// `bale_sub_overlay_load_text_styled` (text subtitles in the profile's subtitle appearance).
+pub const SUB_ABI_VERSION: u32 = 4;
 
 pub const S_OK: i32 = 0;
 pub const E_NOTIMPL: i32 = 0x8000_4001u32 as i32;

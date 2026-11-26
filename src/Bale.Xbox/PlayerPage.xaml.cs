@@ -77,6 +77,8 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public bool Dav1dGpuFilmGrain { get; } = AppSettings.Dav1dGpuFilmGrain;
         /// <summary>Keep the device's SDR Brightness (tone-map SDR white) through every open/remount of this attempt.</summary>
         public int SdrWhiteNits { get; } = AppSettings.SdrWhiteNits;
+        /// <summary>The subtitle appearance read this attempt started with; a text subtitle load waits for it (bounded).</summary>
+        public Task SubtitleAppearanceRead { get; set; } = Task.CompletedTask;
 #if DEBUG_SERVER
         public DebugPlayUrlRequest? DebugUrl => Request.DebugUrl;
         // Match the capability claim and backend even if the debug toggle changes during a request/replan.
@@ -239,6 +241,9 @@ public sealed partial class PlayerPage : Page, IBackHandler
             _bufferingController?.NewAttempt();
             // Its intro and credits decisions too (TvPlayerViewModel.kt resets the intro controller for new playback).
             ResetSkipMarkers();
+            // The subtitle appearance as the server resolves it now (Settings › Subtitles or another device may have
+            // changed it), read alongside the plan so a text track rarely waits for it.
+            attempt.SubtitleAppearanceRead = ReadSubtitleAppearanceAsync(client);
             try
             {
                 Log.Info("player: start");

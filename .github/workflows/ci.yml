@@ -530,6 +530,7 @@ jobs:
               'bale_gpu_engine_session_frame_log',
               'bale_ass_probe', 'bale_ass_probe_png',
               'bale_sub_pgs_decode', 'bale_sub_pgs_bind', 'bale_sub_pgs_destroy',
+              'bale_sub_abi_version', 'bale_sub_overlay_load_text_styled',
               'bale_frame_observer_create', 'bale_frame_observer_attach_engine', 'bale_frame_observer_mark', 'bale_frame_observer_drain',
               'bale_frame_observer_status', 'bale_frame_observer_video_descriptor', 'bale_frame_observer_destroy')
             $timingExports = @('bale_tonemap_debug_timing_enable', 'bale_tonemap_debug_timing_read')

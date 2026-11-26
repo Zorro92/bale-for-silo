@@ -16,7 +16,7 @@ mod vtt;
 
 use std::borrow::Cow;
 
-pub use ass_writer::ConvertOptions;
+pub use ass_writer::{ConvertOptions, TextStyle};
 pub use srt::srt_to_ass;
 pub use vtt::vtt_to_ass;
 

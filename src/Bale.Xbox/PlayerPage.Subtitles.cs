@@ -1,5 +1,7 @@
 using System.Globalization;
+using Bale.Core;
 using Bale.Core.Playback;
+using Bale.Core.Settings;
 using Bale.Xbox.Services;
 using Windows.Media.Playback;
 using Windows.UI.Xaml;
@@ -20,6 +22,8 @@ public sealed partial class PlayerPage
     private const int SubtitlesNotReady = unchecked((int)0x8007139F); // ERROR_INVALID_STATE
     private const int SubtitlesUnavailable = unchecked((int)0x80004005); // E_FAIL
     private const int SubtitleFetchSeconds = 30;
+    // How long a text track waits for the attempt's appearance read before it draws in the last one known.
+    private static readonly TimeSpan SubtitleAppearanceWait = TimeSpan.FromSeconds(3);
     private const uint MaxSubtitleSinkToken = 999999999;
 
     /// <summary>One fetched track, kept so a remount of the same plan subtitle does not download it again.</summary>
@@ -302,6 +306,7 @@ public sealed partial class PlayerPage
             }
 
             stage = "load";
+            await Task.WhenAny(attempt.SubtitleAppearanceRead, Task.Delay(SubtitleAppearanceWait, token));
             await _subtitleLoads.WaitAsync(token);
             holdsLoad = true;
             if (!Current()) return;
@@ -312,13 +317,14 @@ public sealed partial class PlayerPage
                 return;
             }
             var loading = payload;
+            var style = SubtitleStyle(attempt.Client);
             // Fonts first: add_font applies to the next load. Copying up to 32 MiB of fonts and parsing
             // the script block, so neither runs on the UI thread; SubtitleOverlay.Dispose waits for them.
             var hr = await Task.Run(() =>
             {
                 // A font that fails to register is not fatal: libass falls back to system fonts.
                 foreach (var font in loading.Fonts) overlay.AddFont(font.Name, font.Data);
-                return overlay.LoadText(source.Format, loading.Text);
+                return overlay.LoadText(source.Format, loading.Text, style);
             });
             if (!ReferenceEquals(_subtitles, overlay)) return; // Disposed meanwhile; nothing is on screen.
             if (!Current())
@@ -371,7 +377,7 @@ public sealed partial class PlayerPage
                     overlay.AddFont(name, data);
                 }
             }
-            var hr = overlay.LoadText(format, utf8);
+            var hr = overlay.LoadText(format, utf8, SubtitleStyle(attempt.Client));
             if (hr < 0) return hr;
             // A hand-loaded file's cue times are plain source time.
             _subtitleTimingOrigin = 0;
@@ -384,6 +390,24 @@ public sealed partial class PlayerPage
             LogFailure("subtitle load", ex);
             return ex.HResult < 0 ? ex.HResult : SubtitlesUnavailable;
         }
+    }
+
+    /// <summary>
+    /// What SubRip and WebVTT cues are drawn in: the subtitle appearance (Settings › Subtitles), with the console's
+    /// caption settings over it while Use Device Settings is on. ASS keeps its own styles and image subtitles their
+    /// pixels (Android TV's SubtitleManager.kt applyAppearance; docs/parity-backlog.md lists what is left).
+    /// </summary>
+    private static SubtitleTextStyle SubtitleStyle(SiloClient client)
+    {
+        var settings = client.SubtitleSettings;
+        return SubtitleTextStyle.For(settings.EffectiveAppearance(settings.MatchDevice ? SystemCaptions.Read() : null));
+    }
+
+    /// <summary>The appearance as the server resolves it when a playback starts; a failed read keeps the last one known.</summary>
+    private static async Task ReadSubtitleAppearanceAsync(SiloClient client)
+    {
+        try { await client.SubtitleSettings.RefreshAsync(); }
+        catch (Exception ex) { LogFailure("subtitle appearance read", ex); }
     }
 
     /// <summary>

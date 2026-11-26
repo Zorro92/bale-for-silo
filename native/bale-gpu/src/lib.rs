@@ -959,7 +959,8 @@ pub unsafe extern "C" fn bale_sub_overlay_load_ass(
 /// [`bale_sub_overlay_load_ass`]), 1 = SubRip, 2 = WebVTT. SubRip and WebVTT are converted to an
 /// ASS script first (`subs::convert`; bytes that are not UTF-8 are decoded lossily) and then
 /// loaded the same way, so this also waits for the render thread. `E_INVALIDARG` for any other
-/// format, for empty data, or if libass cannot parse the script.
+/// format, for empty data, or if libass cannot parse the script. Converted cues use the default
+/// style; [`bale_sub_overlay_load_text_styled`] takes one.
 ///
 /// # Safety
 /// `overlay` as in [`bale_sub_overlay_set_layout`]; `data` must point to `len` readable bytes.
@@ -971,6 +972,40 @@ pub unsafe extern "C" fn bale_sub_overlay_load_text(
     data: *const u8,
     len: usize,
 ) -> i32 {
+    // SAFETY: forwarded contract; a null style and font name are allowed.
+    unsafe {
+        bale_sub_overlay_load_text_styled(
+            overlay,
+            format,
+            data,
+            len,
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+        )
+    }
+}
+
+/// [`bale_sub_overlay_load_text`] with SubRip and WebVTT cues drawn in `style` and the font family
+/// `font_name` (UTF-8, `font_name_len` bytes, decoded lossily): the profile's subtitle appearance
+/// (`subs::convert::TextStyle`, `ConvertOptions::styled`, which keeps the default for any value
+/// libass could not use). A null `style` is the default style and ignores the name; a null or
+/// empty name keeps Arial. ASS/SSA keeps its own styles, as on the official clients.
+///
+/// # Safety
+/// `overlay` and `data` as in [`bale_sub_overlay_load_text`]; `style` must be null or readable;
+/// `font_name` must point to `font_name_len` readable bytes (or be null with 0).
+#[unsafe(no_mangle)]
+#[cfg(windows)]
+pub unsafe extern "C" fn bale_sub_overlay_load_text_styled(
+    overlay: *mut subs::overlay::Overlay,
+    format: u32,
+    data: *const u8,
+    len: usize,
+    style: *const subs::convert::TextStyle,
+    font_name: *const u8,
+    font_name_len: usize,
+) -> i32 {
     if data.is_null() || len == 0 {
         return if overlay.is_null() {
             subs::E_POINTER
@@ -980,10 +1015,24 @@ pub unsafe extern "C" fn bale_sub_overlay_load_text(
     }
     // SAFETY: the caller guarantees `len` readable bytes.
     let text = unsafe { std::slice::from_raw_parts(data, len) };
+    // SAFETY: the caller guarantees `style` is null or readable; it is copied.
+    let style = unsafe { style.as_ref() }.copied();
+    let font_name = if font_name.is_null() || font_name_len == 0 {
+        None
+    } else {
+        // SAFETY: the caller guarantees `font_name_len` readable bytes.
+        Some(unsafe { std::slice::from_raw_parts(font_name, font_name_len) })
+    };
     // SAFETY: forwarded contract.
     unsafe {
         with_overlay(overlay, |overlay| {
-            let options = subs::convert::ConvertOptions::default();
+            let options = match style {
+                Some(style) => {
+                    let family = font_name.map(String::from_utf8_lossy);
+                    subs::convert::ConvertOptions::styled(&style, family.as_deref())
+                }
+                None => subs::convert::ConvertOptions::default(),
+            };
             match subs::convert::to_ass_script(format, text, &options) {
                 Some(script) => overlay.load(&script),
                 None => subs::E_INVALIDARG,

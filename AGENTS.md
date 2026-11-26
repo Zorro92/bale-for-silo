@@ -402,7 +402,9 @@ For Bale, a normal app with hevcPlayback on the Series X:
   replans without progressive. Claims: `mp4`, no VP9/VC-1/MPEG-2, MP4-muxable audio only,
   `progressive_range_refusal_v1`. See docs/player-plan.md, "Progressive remux".
 - Subtitles are drawn by Bale's own overlay (`bale_gpu.dll`), never by FFmpegInteropX cues. Text
-  tracks are fetched sidecars (`PlaybackSubtitleResolver.Resolve`). PGS on HLS/progressive uses
+  tracks are fetched sidecars (`PlaybackSubtitleResolver.Resolve`). SubRip/WebVTT are drawn in the profile's
+  `playback.subtitle_appearance` (Settings › Subtitles; Core `SubtitleTextStyle` → `bale_sub_overlay_load_text_styled`,
+  subtitle ABI 4); ASS keeps its authored styles and image subtitles their pixels, as on Android TV. PGS on HLS/progressive uses
   lossless `.sup` windows (`windowed=1`, source PTS), decoded in Rust into the same bitmap overlay.
   Claim `embedded_bitmap` only on these packaged deliveries; the server gates it to embedded PGS.
   Do not claim `sidecar_bitmap`: external bitmaps, DVD/DVB sidecars have no server representation.

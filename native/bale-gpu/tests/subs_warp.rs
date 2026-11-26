@@ -4,7 +4,7 @@
 use std::time::{Duration, Instant};
 
 use bale_gpu::subs::bitmap::{BaleSubBitmapEvent, BaleSubBitmapRect, E_NOT_FOUND};
-use bale_gpu::subs::convert::{ConvertOptions, FORMAT_SRT, FORMAT_VTT, to_ass_script};
+use bale_gpu::subs::convert::{ConvertOptions, FORMAT_SRT, FORMAT_VTT, TextStyle, to_ass_script};
 use bale_gpu::subs::overlay::{Capture, Overlay};
 use bale_gpu::subs::{Layout, S_OK};
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_WARP;
@@ -119,6 +119,63 @@ fn converted_srt_and_vtt_load_through_libass() {
 fn pixel(capture: &Capture, x: u32, y: u32) -> [u8; 4] {
     let at = (y as usize * capture.width as usize + x as usize) * 4;
     capture.bgra[at..at + 4].try_into().expect("four bytes")
+}
+
+/// How many pixels of `capture` are exactly `bgra`.
+fn count_pixels(capture: &Capture, bgra: [u8; 4]) -> usize {
+    capture
+        .bgra
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|pixel| **pixel == bgra)
+        .count()
+}
+
+#[test]
+fn a_styled_box_draws_behind_converted_cues_and_the_default_style_has_none() {
+    // SAFETY: a null panel renders offscreen.
+    let overlay = unsafe {
+        Overlay::create_with_driver(std::ptr::null_mut(), WIDTH, HEIGHT, D3D_DRIVER_TYPE_WARP)
+    }
+    .expect("create overlay on WARP");
+    assert_eq!(overlay.set_layout(Layout::full(WIDTH, HEIGHT)), S_OK);
+    assert_eq!(overlay.set_clock(1500, 1.0, false), S_OK);
+    // Bale.Core SubtitleTextStyle's Box: libass border style 4, one opaque box (ASS blue) per event.
+    let style = TextStyle {
+        font_size: 60,
+        primary_colour: 0x00FF_FFFF,
+        outline_colour: 0x0000_0000,
+        back_colour: 0x00FF_0000,
+        border_style: 4,
+        outline: 0.0,
+        shadow: 7.5,
+        alignment: 2,
+        margin_v: 54,
+    };
+    let cue = b"1\n00:00:01,000 --> 00:00:03,000\nBoxed line\n";
+    let boxed = to_ass_script(FORMAT_SRT, cue, &ConvertOptions::styled(&style, None))
+        .expect("known format");
+    assert_eq!(overlay.load(&boxed), S_OK);
+    let shown = overlay.capture().expect("capture the boxed cue");
+    const BLUE: [u8; 4] = [255, 0, 0, 255];
+    assert!(count_pixels(&shown, BLUE) > 200, "no box behind the cue");
+    assert!(
+        covered_rows(&shown, HEIGHT / 2..HEIGHT) > 0,
+        "the box sits low"
+    );
+    assert_eq!(covered_rows(&shown, 0..HEIGHT / 2), 0, "nothing at the top");
+
+    let plain = to_ass_script(FORMAT_SRT, cue, &ConvertOptions::default()).expect("known format");
+    assert_eq!(overlay.load(&plain), S_OK);
+    let unboxed = overlay.capture().expect("capture the default cue");
+    assert_eq!(
+        count_pixels(&unboxed, BLUE),
+        0,
+        "the default style draws no box"
+    );
+    assert!(covered_rows(&unboxed, HEIGHT / 2..HEIGHT) > 0, "no line");
+    assert_eq!(overlay.clear(), S_OK);
 }
 
 /// Pushes one event with a single `w`×`h` rectangle at (`x`, `y`) through the C ABI.

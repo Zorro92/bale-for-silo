@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 using Bale.Core.Playback;
+using Bale.Core.Settings;
 using Windows.UI.Xaml.Controls;
 
 namespace Bale.Xbox.Services;
@@ -11,6 +12,31 @@ internal struct BaleSubStats
 {
     public ulong Presents, Renders;
     public uint LastRenderUs, MaxRenderUs, Images, Events, Width, Height;
+}
+
+/// <summary>
+/// The style converted SubRip/WebVTT cues are drawn in (bale_gpu.dll's subs::convert::TextStyle; field order is the C
+/// ABI), from Bale.Core's <see cref="SubtitleTextStyle"/>.
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct BaleSubTextStyle
+{
+    public uint FontSize, PrimaryColour, OutlineColour, BackColour, BorderStyle;
+    public float Outline, Shadow;
+    public uint Alignment, MarginV;
+
+    public static BaleSubTextStyle From(SubtitleTextStyle style) => new()
+    {
+        FontSize = style.FontSize,
+        PrimaryColour = style.PrimaryColour,
+        OutlineColour = style.OutlineColour,
+        BackColour = style.BackColour,
+        BorderStyle = style.BorderStyle,
+        Outline = style.Outline,
+        Shadow = style.Shadow,
+        Alignment = style.Alignment,
+        MarginV = style.MarginV,
+    };
 }
 
 /// <summary>
@@ -25,14 +51,14 @@ internal struct BaleSubStats
 /// </summary>
 internal sealed unsafe partial class SubtitleOverlay : IDisposable
 {
-    private const uint ExpectedAbi = 3;
+    private const uint ExpectedAbi = 4;
     private const int InvalidArgument = unchecked((int)0x80070057);
     private const int Disposed = unchecked((int)0x80000013); // RO_E_CLOSED
 
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern uint bale_sub_abi_version();
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_create(nint panel, uint width, uint height, nint* overlay);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_set_layout(nint overlay, uint width, uint height, float scaleX, float scaleY, float videoX, float videoY, float videoW, float videoH);
-    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_load_text(nint overlay, uint format, byte* data, nuint length);
+    [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_load_text_styled(nint overlay, uint format, byte* data, nuint length, BaleSubTextStyle* style, byte* fontName, nuint fontNameLength);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_add_font(nint overlay, byte* name, nuint nameLength, byte* data, nuint length);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_clear(nint overlay);
     [DllImport("bale_gpu.dll", ExactSpelling = true)] private static extern int bale_sub_overlay_bind_bitmaps(nint overlay, ulong token);
@@ -104,15 +130,26 @@ internal sealed unsafe partial class SubtitleOverlay : IDisposable
 
     /// <summary>
     /// Replaces the track with UTF-8 subtitle text in a PlaybackSubtitleSource format (0 ASS/SSA, 1 SubRip,
-    /// 2 WebVTT); returns the HRESULT (E_INVALIDARG = unknown format or unparseable). Blocks for the
-    /// parse; any thread.
+    /// 2 WebVTT); returns the HRESULT (E_INVALIDARG = unknown format or unparseable). SubRip and WebVTT cues
+    /// are drawn in <paramref name="style"/> (the subtitle appearance), or the converter's default without one;
+    /// ASS/SSA keeps its own styles. Blocks for the parse; any thread.
     /// </summary>
-    internal int LoadText(uint format, byte[] utf8)
+    internal int LoadText(uint format, byte[] utf8, SubtitleTextStyle? style = null)
     {
         if (utf8 is not { Length: > 0 }) return InvalidArgument;
+        byte[] font;
+        try { font = Encoding.UTF8.GetBytes(style?.FontName ?? string.Empty); }
+        catch (Exception ex) { return Failed("load", ex); }
+        var native = style is null ? default : BaleSubTextStyle.From(style);
+        var styled = style is not null;
         return Call("load", overlay =>
         {
-            fixed (byte* data = utf8) return bale_sub_overlay_load_text(overlay, format, data, (nuint)utf8.Length);
+            // A local of the lambda, so its address can be taken (a captured one cannot).
+            var copy = native;
+            // An empty array pins to null, which the ABI allows with a zero length.
+            fixed (byte* data = utf8)
+            fixed (byte* fontName = font)
+                return bale_sub_overlay_load_text_styled(overlay, format, data, (nuint)utf8.Length, styled ? &copy : null, fontName, (nuint)font.Length);
         });
     }
 

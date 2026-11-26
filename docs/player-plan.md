@@ -1855,7 +1855,9 @@ Things learned on the way:
 
 ### Later
 - Shuffle, trickplay thumbnails. (Intro/credits skip: docs/player-controls.md step 6, 2026-11-25.)
-- Subtitle search / styling.
+- Subtitle search. (Styling: Settings › Subtitles' appearance draws text sidecars since 2026-11-25, `SubtitleTextStyle` →
+  `bale_sub_overlay_load_text_styled`; ASS keeps its own styles; image subtitles' size and position are not applied yet,
+  docs/parity-backlog.md.)
 - Watch Party.
 - Audiobooks.
 - **Software decode fallback for H.264 / HEVC / VP9** (owner, 2026-11-24). **Phase A is in release** (2026-11-24,
