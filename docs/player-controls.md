@@ -167,9 +167,18 @@ rather than leaving them transparent so they cost nothing while hidden.
      player never reads it, so this follows tvOS `CreditsAutoSkipPolicy`: entering a credits occurrence while playing
      skips it once, and a Skip Credits press marks its occurrence too.
    - Seeks go through the skip queue (`QueueSeekTo`, the triggers' and scrubber's path), clamped to the file, with no skip
-     chip; a seek still in flight counts at its target. A target at the file's end ends the stream, which raises Up Next or
-     leaves as any end does. Credits never move Up Next (it opens at `next_up_prompt_seconds`, Android `e580e1811`); the
-     series-page return now reads the closing credits' start (`finalCreditsStart`), past a mid-credits scene.
+     chip; a seek still in flight counts at its target. Credits never move Up Next (it opens at `next_up_prompt_seconds`,
+     Android `e580e1811`); the series-page return now reads the closing credits' start (`finalCreditsStart`), past a
+     mid-credits scene.
+   - A skip whose target is at or within 1 s of the file's end (`PlaybackSkipMarkers.EndsPlayback`; closing credits that
+     run to the end) is no seek: it ends playback there and then, as the stream's own end does (`EndAtSkip`, the
+     `OnMediaEnded` path): Up Next shows at once with its 10 s countdown, or the player leaves. Android TV seeks to the end
+     and ExoPlayer ends the stream on it at once (`TvPlayerViewModel.kt` seekImmediate, then STATE_ENDED's
+     `onApproachingEnd(videoEnded = true)`); on the console the fast seek landed on the keyframe 9 s before the end
+     (0.1.790: `skip SkipCredits target=2652`), the last seconds played and Up Next came about 20 s after the press. The
+     player pauses where it is, a queued seek is dropped (one already running lands paused), and every position read from
+     then on is the end (the progress flushed at once, Up Next and the final report), until the viewer seeks again. Log:
+     `player: skip reached the end of the file; ending playback`.
    - Look: bottom-right, 32 from the edge and 56 above the bottom, raised to 200 (220 ms) while the controls show; black
      65% capsule with a 2 px ring, white 25% resting and white focused; label 18sp Medium, white 55% resting and white
      focused; fill white 14% / 40%; caption 14sp at 70%; 200 ms fade in, gone at once.

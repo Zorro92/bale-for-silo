@@ -33,6 +33,7 @@ namespace Bale.Xbox
             public bool Attached { get; } = true;
             public bool Replanned { get; } = false;
             public double Position { get; set; }
+            public double? EndedAt { get; set; }
             public CancellationTokenSource Cancellation { get; } = new();
             public required SeekServices Services { get; init; }
             public Mount? Media { get; set; }
@@ -95,6 +96,13 @@ namespace Bale.Xbox
         }
         internal void Unmount() => DisposeMount(_attempt);
         internal void UseDebugFileSession() => _attempt.DebugUrl = new(new("https://example.invalid/clip.mp4"), null);
+        // PlayerPage.SkipMarkers.cs EndAtSkip: the end a skip that reached the end of the file records, and the queued seek
+        // it drops. (It also pauses the player; left out here, the skip queue's own pause shows.)
+        internal void EndAt(double source)
+        {
+            _attempt.EndedAt = source;
+            _pendingSkipTarget = null;
+        }
         internal async Task<string> SeekSourceAsync(double target)
         {
             var result = await SeekAsync(new(target));

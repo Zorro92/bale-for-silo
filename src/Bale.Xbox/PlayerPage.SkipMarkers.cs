@@ -116,7 +116,7 @@ public sealed partial class PlayerPage
                 return;
             }
 #endif
-            if (_skipMarkers.Update(SkipFacts(attempt)) is { } skip) SkipTo(skip);
+            if (_skipMarkers.Update(SkipFacts(attempt)) is { } skip) SkipTo(attempt, skip);
             ShowSkipPill();
         }
         catch (Exception ex) { LogFailure("skip markers", ex); }
@@ -151,15 +151,41 @@ public sealed partial class PlayerPage
 
     /// <summary>
     /// A real seek through the skip queue (QueueSeekTo): it coalesces with a seek in flight and shows no skip chip, as
-    /// TvPlayerViewModel.kt's seekWithoutViewerAction / seekImmediate don't. A target at the end of the file ends the
-    /// stream there, which brings Up Next or leaves, as any end does.
+    /// TvPlayerViewModel.kt's seekWithoutViewerAction / seekImmediate don't. A target at the end of the file
+    /// (<see cref="PlaybackSkipMarkers.EndsPlayback"/>) ends playback there instead (<see cref="EndAtSkip"/>).
     /// </summary>
-    private void SkipTo(SkipMarkerSeek skip)
+    private void SkipTo(Attempt attempt, SkipMarkerSeek skip)
     {
         var target = _duration is > 0 and { } end && double.IsFinite(end) ? Math.Min(skip.Target, end) : skip.Target;
         Log.Info(string.Create(CultureInfo.InvariantCulture,
             $"player: skip {skip.Kind}{(skip.Automatic ? " auto" : string.Empty)} target={target:0.###}"));
+        if (PlaybackSkipMarkers.EndsPlayback(target, _duration))
+        {
+            EndAtSkip(attempt, target);
+            return;
+        }
         QueueSeekTo(target);
+    }
+
+    /// <summary>
+    /// A skip that reaches the end of the file ends playback there and then, as the stream's own end does
+    /// (OnMediaEnded): Up Next at once, or the player leaves. Android TV's credits skip seeks to the end and ExoPlayer
+    /// ends the stream on it (STATE_ENDED: onApproachingEnd(videoEnded = true)); the console's fast seek would land on the
+    /// keyframe before the target and play the last seconds first (Up Next came about 20 s after the press on 0.1.790).
+    /// The player pauses where it is, a queued seek is dropped (one in flight lands paused, ProcessSkipsAsync), and from
+    /// here every position read is the target (SourcePosition), which goes to the server at once, as a landed seek's does.
+    /// </summary>
+    private void EndAtSkip(Attempt attempt, double target)
+    {
+        if (!_active || _leaving || _suspended || !ReferenceEquals(_attempt, attempt)
+            || attempt.Media is not { Opened: true, Started: true, FailureQueued: false }) return;
+        Log.Info("player: skip reached the end of the file; ending playback");
+        attempt.EndedAt = target;
+        _pendingSkipTarget = null;
+        Pause(attempt);
+        _ = ReportPositionAsync(attempt, SourcePosition(attempt), paused: true);
+        BufferingMediaEnded();
+        if (!HandleEndedWithUpNext()) _ = StopAndGoBackAsync();
     }
 
     private void ShowSkipPill()
@@ -250,7 +276,7 @@ public sealed partial class PlayerPage
         {
             if (!SkipPillVisible || !_active || _leaving || _attempt is not { } attempt
                 || _skipMarkers.Select(SkipFacts(attempt)) is not { } skip) return false;
-            SkipTo(skip);
+            SkipTo(attempt, skip);
             // The pill hides with the press; focus it had goes to the bar (controls up) or the page.
             HideSkipPill();
             return true;

@@ -29,9 +29,12 @@ public sealed partial class PlayerPage
     {
         try
         {
+            // A skip that reached the end of the file ended playback there (PlayerPage.SkipMarkers.cs EndAtSkip): that is
+            // where the title is, for Up Next, the server's progress and the final report, as at the stream's own end.
+            if (attempt.EndedAt is { } ended) attempt.Position = ended;
             // After a failed range read the player runs on to a false end of file (PlaybackTransportStall): keep the
             // position where the stream gave up, for the recovery, Retry and the server's progress.
-            if (attempt.Media is { Opened: true, Player: { } player } media && !StreamGaveUp(media)
+            else if (attempt.Media is { Opened: true, Player: { } player } media && !StreamGaveUp(media)
                 && media.Transport.Timeline.SourceForPlayer(player.PlaybackSession.Position.TotalSeconds) is { } source)
                 attempt.Position = source;
         }
@@ -81,6 +84,8 @@ public sealed partial class PlayerPage
         {
             _pendingSkipTarget = _skipTarget = null;
             _skipProcessing = false;
+            // A skip ended playback while this seek ran (EndAtSkip): the stream it landed on, a remount's too, stays paused.
+            if (_attempt is { EndedAt: not null } ended) Pause(ended);
         }
     }
 
@@ -105,6 +110,9 @@ public sealed partial class PlayerPage
                 || !IsCurrent(attempt, media)) return new(SeekOutcome.Unavailable);
             if (!double.IsFinite(request.Seconds) || request.Seconds < 0 || request.Seconds >= TimeSpan.MaxValue.TotalSeconds
                 || _duration is > 0 && request.Seconds > _duration) return new(SeekOutcome.InvalidPosition);
+            // A seek made after a skip ended playback at the end of the file (EndAtSkip) goes back into the file: positions
+            // follow the player again. (A seek already running then keeps the end; it started before it.)
+            attempt.EndedAt = null;
 
             var paused = request.Pause || player.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;
             var session = player.PlaybackSession;

@@ -64,7 +64,7 @@ public readonly record struct SkipMarkerFacts
 /// Skip Credits marks its occurrence too, so neither skips it again.</item>
 /// </list>
 /// Credits never move Up Next (Android <c>e580e1811</c>: "credits drive only Skip Credits"); a skip whose target is the
-/// end of the file ends the stream, which raises Up Next as any end does.
+/// end of the file ends playback (<see cref="EndsPlayback"/>), which raises Up Next as any end does.
 /// </summary>
 public sealed class PlaybackSkipMarkers(long promptMs = IntroSkipPrompt.PromptMs, long pauseGraceMs = IntroSkipPrompt.PauseGraceMs)
 {
@@ -73,6 +73,21 @@ public sealed class PlaybackSkipMarkers(long promptMs = IntroSkipPrompt.PromptMs
     public const string IntroSkippedCaption = "Intro skipped";
     public const string SkipCreditsLabel = "Skip Credits";
     public const string SkipRecapLabel = "Skip Recap";
+
+    /// <summary>How close to the end of the file a skip may land and still be the end of it.</summary>
+    public const double EndSlackSeconds = 1;
+
+    /// <summary>
+    /// A skip to <paramref name="target"/> ends playback instead of seeking: it lands at, past, or within
+    /// <see cref="EndSlackSeconds"/> of the end of a file of known <paramref name="duration"/>. Android TV's credits skip
+    /// seeks to the occurrence's end, clamped to the duration (TvPlayerScreen.kt handleManualMarkerSelect,
+    /// TvPlayerViewModel.kt seekImmediate), and ExoPlayer ends the stream on a seek to its end, so Up Next opens at once
+    /// (STATE_ENDED: onApproachingEnd(videoEnded = true)). The console's fast seek lands on the keyframe before the target
+    /// instead (9 s before the end on a 0.1.790 check), so the last seconds played and Up Next came about 20 s after the
+    /// press; the player takes its end-of-media path at once instead.
+    /// </summary>
+    public static bool EndsPlayback(double target, double? duration) =>
+        duration is > 0 and var end && double.IsFinite(end) && !double.IsNaN(target) && target >= end - EndSlackSeconds;
 
     private readonly IntroSkipPrompt _intro = new(promptMs, pauseGraceMs);
     private readonly HashSet<string> _creditsSkipped = new(StringComparer.Ordinal);

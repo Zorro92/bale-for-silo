@@ -128,6 +128,37 @@ public class SkipMarkersWiringTests
     }
 
     [Fact]
+    public void ASkipToTheEndOfTheFileTakesTheEndOfMediaPathInsteadOfSeeking()
+    {
+        var code = Read("PlayerPage.SkipMarkers.cs.txt");
+        // Android's credits skip ends the stream at once (ExoPlayer, STATE_ENDED); the console's fast seek would land a
+        // keyframe early and play the last seconds first, so a target at the end never becomes a seek.
+        InOrder(Section(code, "private void SkipTo(", "private void EndAtSkip("),
+            "Math.Min(skip.Target, end)", "if (PlaybackSkipMarkers.EndsPlayback(target, _duration))",
+            "EndAtSkip(attempt, target);", "return;", "QueueSeekTo(target);");
+        // The end path: the end recorded, the queued seek dropped, the player paused, the end reported at once, then
+        // what the stream's own end does (OnMediaEnded): Up Next, or leave.
+        InOrder(Section(code, "private void EndAtSkip(", "private void ShowSkipPill("),
+            "attempt.Media is not { Opened: true, Started: true, FailureQueued: false }) return;",
+            "attempt.EndedAt = target;", "_pendingSkipTarget = null;", "Pause(attempt);",
+            "_ = ReportPositionAsync(attempt, SourcePosition(attempt), paused: true);", "BufferingMediaEnded();",
+            "if (!HandleEndedWithUpNext()) _ = StopAndGoBackAsync();");
+        Assert.Equal(2, code.Split("SkipTo(attempt, skip);").Length - 1);
+        InOrder(Section(Read("PlayerPage.Media.cs.txt"), "private void OnMediaEnded(", "private void EndAtEmptyTail("),
+            "BufferingMediaEnded();", "if (!HandleEndedWithUpNext()) _ = StopAndGoBackAsync();");
+        // Every position read from there is the end (the final report and Up Next too), until a later seek; a seek that
+        // was already running lands paused.
+        Assert.Contains("public double? EndedAt { get; set; }", Read("PlayerPage.cs.txt"));
+        var seek = Read("PlayerPage.Seek.cs.txt");
+        InOrder(Section(seek, "private double SourcePosition(", "private void QueueSkip("),
+            "if (attempt.EndedAt is { } ended) attempt.Position = ended;", "else if (attempt.Media is");
+        InOrder(Section(seek, "private async Task ProcessSkipsAsync()", "private async Task<SeekResult> SeekAsync("),
+            "finally", "if (_attempt is { EndedAt: not null } ended) Pause(ended);");
+        InOrder(Section(seek, "private async Task<SeekResult> SeekAsync(", "BeginReplanSeeks()"),
+            "return new(SeekOutcome.InvalidPosition);", "attempt.EndedAt = null;");
+    }
+
+    [Fact]
     public void TheControllerReachesThePillAsTheOfficialRootHandlerDoes()
     {
         var controls = Read("PlayerPage.Controls.cs.txt");

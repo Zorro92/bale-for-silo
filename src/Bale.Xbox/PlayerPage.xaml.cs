@@ -65,6 +65,11 @@ public sealed partial class PlayerPage : Page, IBackHandler
         /// <summary>The SDR downscale stage failed once: later mounts of this attempt use the system decoder.</summary>
         public bool SdrDownscaleDeclined { get; set; }
         public double Position { get; set; }
+        /// <summary>
+        /// A skip reached the end of the file and ended playback there (PlayerPage.SkipMarkers.cs EndAtSkip): the source
+        /// time it ended at, which every position read reports from then on, wherever the paused player sits.
+        /// </summary>
+        public double? EndedAt { get; set; }
         public Mount? Media { get; set; }
         public bool StreamAdapterLogged { get; set; }
         public int ProgressiveReconnects { get; set; }

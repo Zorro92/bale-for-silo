@@ -186,4 +186,47 @@ public class PlaybackSkipMarkersTests
         skips.Update(Facts(3000));
         Assert.Null(skips.Select(Facts(3170)));
     }
+
+    [Theory]
+    // The console's case: closing credits that run to the end of a 2652 s file skip to its duration.
+    [InlineData(2652, true)]
+    [InlineData(2651.4, true)]
+    // At or within a second of the end, or past it.
+    [InlineData(2651, true)]
+    [InlineData(2700, true)]
+    // Anything earlier still plays: a scene after the credits, or credits before the last minutes.
+    [InlineData(2650.9, false)]
+    [InlineData(2600, false)]
+    [InlineData(0, false)]
+    public void ASkipToTheEndOfTheFileEndsPlaybackInsteadOfSeeking(double target, bool ends) =>
+        Assert.Equal(ends, PlaybackSkipMarkers.EndsPlayback(target, 2652));
+
+    [Fact]
+    public void WithoutAKnownDurationASkipAlwaysSeeks()
+    {
+        foreach (var duration in new double?[] { null, 0, -5, double.NaN, double.PositiveInfinity })
+            Assert.False(PlaybackSkipMarkers.EndsPlayback(2652, duration), $"{duration}");
+        Assert.False(PlaybackSkipMarkers.EndsPlayback(double.NaN, 2652));
+        Assert.True(PlaybackSkipMarkers.EndsPlayback(double.PositiveInfinity, 2652));
+    }
+
+    [Fact]
+    public void ClosingCreditsThatRunToTheEndSkipToIt()
+    {
+        // Manual and automatic Skip Credits both target the occurrence's end, here the file's.
+        var markers = MarkerTimeline.Resolve([(MarkerKind.Credits, 2560, 2652)]);
+        SkipMarkerFacts At(double position, bool autoCredits = false) => new()
+        {
+            Position = position, Markers = markers, FileKey = "file-1", Mode = IntroSkipMode.Ask, AutoSkipCredits = autoCredits,
+            Activity = PromptActivity.Playing, Presented = true,
+        };
+        var manual = new PlaybackSkipMarkers();
+        manual.Update(At(2600));
+        Assert.Equal(SkipPillKind.SkipCredits, manual.Pill?.Kind);
+        var press = Assert.IsType<SkipMarkerSeek>(manual.Select(At(2600)));
+        Assert.True(PlaybackSkipMarkers.EndsPlayback(press.Target, 2652));
+        var automatic = Assert.IsType<SkipMarkerSeek>(new PlaybackSkipMarkers().Update(At(2561, autoCredits: true)));
+        Assert.True(automatic.Automatic);
+        Assert.True(PlaybackSkipMarkers.EndsPlayback(automatic.Target, 2652));
+    }
 }
