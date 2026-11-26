@@ -34,7 +34,8 @@ public sealed partial class MainPage : Page, IBackHandler, IRestoresFocus
     private bool _sessionAdopted;
     private InputPane? _inputPane;
     private bool _keyboardVisible;
-    private ConnectionPreview? _preview;
+    // Only the debug server sets it; initialised so a release build does not flag it as never assigned (CS0649).
+    private ConnectionPreview? _preview = null;
     private Button? _httpPromptOpener;
     private SavedServerRegistry Servers => _preview?.Servers ?? AppSettings.Servers;
     internal bool IsAuthPreview => _preview is not null;

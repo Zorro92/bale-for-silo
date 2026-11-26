@@ -39,7 +39,8 @@ public sealed partial class PlayerPage
     private MarkerTimeline _markers = MarkerTimeline.Empty;
     private Attempt? _markersAttempt;
     private string? _markersFile;
-    private string _markersSource = "none";
+    // A property, not a field: only the debug readout reads it, and a release build would flag an unread field (CS0414).
+    private string MarkersSource { get; set; } = "none";
     private (SkipPillKind Kind, int Run)? _skipPillShown;
     private float _skipPillLift = float.NaN;
 
@@ -63,7 +64,7 @@ public sealed partial class PlayerPage
         _markers = MarkerTimeline.Empty;
         _markersAttempt = null;
         _markersFile = null;
-        _markersSource = "none";
+        MarkersSource = "none";
         HideSkipPill();
     }
 
@@ -77,7 +78,7 @@ public sealed partial class PlayerPage
         _markersAttempt = attempt;
         _markersFile = fileId;
         _markers = MarkerTimeline.From(attempt.Request.Detail.Versions.FirstOrDefault(version => version.FileId == fileId));
-        _markersSource = "detail";
+        MarkersSource = "detail";
         if (fileId is { Length: > 0 } file) _ = ReadMarkersAsync(attempt, file);
         return _markers;
     }
@@ -89,7 +90,7 @@ public sealed partial class PlayerPage
             var markers = await attempt.Client.Playback.FileMarkersAsync(fileId, attempt.Cancellation.Token);
             if (!ReferenceEquals(_markersAttempt, attempt) || _markersFile != fileId) return;
             _markers = markers;
-            _markersSource = "file";
+            MarkersSource = "file";
             // Counts only, never times or titles.
             Log.Info(string.Create(CultureInfo.InvariantCulture,
                 $"player: markers intro={markers.Count(MarkerKind.Intro)} recap={markers.Count(MarkerKind.Recap)} credits={markers.Count(MarkerKind.Credits)}"));
@@ -313,7 +314,7 @@ public sealed partial class PlayerPage
         {
             var settings = _attempt?.Client.Settings;
             return string.Create(CultureInfo.InvariantCulture,
-                $"source={_markersSource} intro={_markers.Count(MarkerKind.Intro)} recap={_markers.Count(MarkerKind.Recap)} credits={_markers.Count(MarkerKind.Credits)}"
+                $"source={MarkersSource} intro={_markers.Count(MarkerKind.Intro)} recap={_markers.Count(MarkerKind.Recap)} credits={_markers.Count(MarkerKind.Credits)}"
                 + $" mode={IntroSkipModes.Wire(settings?.IntroSkip.Value ?? IntroSkipModes.Default)} auto_credits={(settings?.AutoSkipCredits.Value == true ? "on" : "off")}"
                 + $" pill={(_skipMarkers.Pill is { } pill ? pill.Kind.ToString() + (SkipPillVisible ? string.Empty : " (covered)") : "none")}"
                 + $" focused={(SkipPillHasFocus() ? "yes" : "no")}");
