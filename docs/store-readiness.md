@@ -53,9 +53,9 @@ gh run download <run-id> -n wack-report -D /tmp/bale-wack
 - WACK on a desktop runner cannot install an Xbox-only package, so expect the static tests only; Microsoft's docs note
   that apps not targeting desktop may see "Not all tests were run during validation". Partner Center runs its own
   certification on submission.
-- Versions: production is `0.1.<run>.0` (the Store reserves the fourth part). Each submission must be higher than the
+- Versions: production is `0.2.<run>.0` (the Store reserves the fourth part). Each submission must be higher than the
   last, so a Store upload comes from a new run, never "Re-run jobs" (same run number). Debug-server builds stay
-  `0.1.<run>.<attempt - 1>` for sideload updates.
+  `0.2.<run>.<attempt - 1>` for sideload updates.
 - Identity: the Store needs the identity Partner Center reserves. Set the repository variables
   `BALE_STORE_IDENTITY_NAME`, `BALE_STORE_PUBLISHER` (the `CN=...` value) and `BALE_STORE_PUBLISHER_DISPLAY_NAME` from
   Partner Center › Product management › Product identity. Production builds then stamp them, and CI's throwaway
@@ -154,7 +154,7 @@ silo-android's TV app (AGENTS.md); where that differs from Microsoft's guidance,
    passed and read the WACK summary.
 4. Reviewer-style run on a retail-like console: install the production package with
    `XBOX_HOST=... scripts/deploy-xbox.sh /tmp/bale-production` (with the Store identity it installs beside the debug
-   build; with the development identity, uninstall the debug build first, since both can be version 0.1.<run>.0), then
+   build; with the development identity, uninstall the debug build first, since both can be version 0.2.<run>.0), then
    with the controller only: add the demo server, sign in, pick a profile, browse, play something (one HEVC/4K title
    and one AV1 title if the demo has them), seek, open Options, press Back to Home, suspend by launching a game,
    resume, play again. Check the title-safe edges on screenshots.

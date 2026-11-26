@@ -9,7 +9,7 @@
        "CN=Bale Development" certificate; Version is stamped per build (ci.yml "Stamp version": production
        0.1.<run>.0, as the Store needs revision 0; debug-server 0.1.<run>.<attempt - 1>). Production builds take
        Partner Center's reserved identity from the BALE_STORE_* repository variables when set (docs/store-readiness.md). -->
-  <Identity Name="Bale.ClientForSilo" Publisher="CN=Bale Development" Version="0.1.0.0" />
+  <Identity Name="Bale.ClientForSilo" Publisher="CN=Bale Development" Version="0.2.0.0" />
 
   <Properties>
     <DisplayName>Bale</DisplayName>

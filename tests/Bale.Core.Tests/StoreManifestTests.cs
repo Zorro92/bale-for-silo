@@ -89,7 +89,7 @@ public sealed class StoreManifestTests
         var stamp = ci[ci.IndexOf("- name: Stamp version", StringComparison.Ordinal)..];
         stamp = stamp[..stamp.IndexOf("- name:", 10, StringComparison.Ordinal)];
         Assert.Contains("$revision = if ('${{ matrix.debug_server }}' -eq 'true') { [int]'${{ github.run_attempt }}' - 1 } else { 0 }", stamp);
-        Assert.Contains("$manifest.Package.Identity.Version = \"0.1.${{ github.run_number }}.$revision\"", stamp);
+        Assert.Contains("$manifest.Package.Identity.Version = \"0.2.${{ github.run_number }}.$revision\"", stamp);
     }
 
     [Fact]
