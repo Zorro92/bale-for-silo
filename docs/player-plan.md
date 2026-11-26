@@ -2687,15 +2687,29 @@ matching counts the same entries, so a 4K display now prefers a 4K AV1 version w
   `bale_rav1g_parse` (frames in parse; 2 only when the decode call is still the limit). The throughput finding that
   led to the feeder: bale.50 measured rate ~21.7/s against 23.976 with an empty queue, ~93 ms request-to-delivery,
   where rav1g alone takes ~15 ms a frame when kept fed.
-- **Prewarm (wrapper bale.48):** `bale-debug.sh av1-decoder rav1g` also calls the fork's plain C export
-  `int bale_rav1g_prewarm(void)` from FFmpegInteropX.dll (`Rav1gPrewarm`, DllImport with ExactSpelling, on the thread
-  pool; skipped when the pinned wrapper is older than bale.48 (`Rav1gPolicy.PrewarmSupported`) or rav1g.dll is not
-  packaged; a missing export is caught). It creates rav1g's process device and starts its ~99 pipeline compiles (about
-  6.5 s on a Series X, 6 compile threads) so the first open does not; the log reads `player: rav1g prewarm started
-  (return 0)`, `already started (return 1)` or `failed (could not start its thread) (return -1)`, then the fork's
-  `ffmpeg: Bale rav1g: prewarm ready ms=N`. Never in production or at app start. **Open (owner-approved plan):** rav1g
-  reached production on 2026-11-26 without it; the call is to move to Detail opening an AV1 version, not app start, so
-  a release build's first rav1g open still does the ~6.5 s of compiles itself (inside the 45 s start budget).
+- **Prewarm (every build since 2026-11-26, owner; wrapper bale.48):** the fork's plain C export
+  `int bale_rav1g_prewarm(void)` from FFmpegInteropX.dll (`Rav1gPrewarm`, DllImport with ExactSpelling) creates rav1g's
+  process device and starts its ~99 pipeline compiles (about 6.5 s and 77 MiB on a Series X, 6 compile threads), so the
+  first rav1g open does not do them itself (with 2 threads, inside the 45 s start budget). **Trigger: the Detail page**,
+  when it shows a playable item whose selected or Auto version (the readout's `PlaybackFormatting.SelectDisplayVersion`)
+  will play on rav1g. `Rav1gPolicy.PrewarmCandidate` (Rust `av1_decoder::prewarm_candidate`) decides it as a playback's
+  claims and route would: the decoder is rav1g, software AV1 is claimed (a measured console), rav1g.dll is usable (the
+  library check, awaited on the pool) and the AV1 claims admit the version (`formatting::decodes` over dav1d's 1080p60
+  and rav1g's 2160p60 40 Mbps entries), so the server sends the original and its software AV1 route takes rav1g. A
+  version they refuse (4K above 40 Mbps, 8K, a profile other than Main) is transcoded and gets none. Once per process (a
+  process-wide flag besides the fork's own idempotence, so a later Detail page costs one read), on the thread pool (the
+  UI thread reads the flag and queues the rest), never while a player holds playback resources
+  (`PlaybackResources.Lifetime.Active`: a rav1g playback's own open makes the device, and beside any other playback the
+  6 compile threads would only compete with it), never at app start or on Home (`Rav1gReleaseTests` scans every Xbox
+  source for callers), never with an unusable library. Debug builds pass the captured `av1-decoder` switch and
+  `av1-claim` (2160 carries rav1g's entry) and keep the switch's own trigger: `bale-debug.sh av1-decoder rav1g` asks at
+  once. Skipped when the pinned wrapper is older than bale.48 (`Rav1gPolicy.PrewarmSupported`) or rav1g.dll is not
+  packaged; a missing export is caught. The log reads `player: rav1g prewarm started (return 0)`, `already started
+  (return 1)` or `failed (could not start its thread) (return -1)`, then (debug FFmpeg log provider) the fork's
+  `ffmpeg: Bale rav1g: prewarm ready ms=N`. **Memory:** the device and pipelines stay resident for the process (the
+  fork's idle reading: app 228 MiB before, 275 MiB after), the allocation the first rav1g open makes anyway; a Detail
+  page whose AV1 version is then not played keeps that much of the 3328 MiB app pool (2857 MiB DXGI budget). Console
+  check pending (test list below).
 - **UI thread (all routes, after the 2026-11-18 deadlock):** with `av1-decoder rav1g` the fork's `get_image` waited
   (fixed in bale.48) while the sample thread held the wrapper's source lock, and the UI thread blocked in
   `CurrentVideoStream` for the stats panel, which stopped the start budget (driven from the UI tick) and the debug
@@ -2712,6 +2726,7 @@ matching counts the same entries, so a 4K display now prefers a 4K AV1 version w
   | `CreateMediaPlaybackItem`, `GetMediaStreamSource` (BufferTime, guard, `MediaDevice`, frame delivery, media type, engine and present-engine sources) | `PlayerPage.Media.cs`, `PlayerPage.Present.cs`, services' constructors | Open time, before `player.Source` or the engine open |
   | `Close` via `FfmpegSource.Dispose` and via the item `MediaSource.Dispose` (MSS Closed → `Close(true)`) | `DisposeMount` | Was the UI thread at stop/seek/replan, while a sample request may wait; now a thread-pool continuation in the old order (item source, source, FFmpeg, streams, renderer device, cancellation), serialized across mounts; `MountPlanAsync` and the page's shutdown (before the idle trim) await it for up to 5 s without blocking, then log and continue |
   | `CurrentVideoStream`, `CurrentAudioStream`, `CreateMediaPlaybackItem`, `PlaybackSession =`, `AddExternalSubtitleAsync`, `Dispose` in the `playtest-ffmpeg`, subtitle and engine probes | `DebugServer.Ffmpeg.cs`, `DebugServer.Subtitles.cs`, `DebugServer.Engine.cs` | Debug-server request threads (UI work hops through `OnFfmpegUiAsync`): they can delay that probe's reply, never the UI |
+  | `bale_rav1g_prewarm` (a plain C export, no `FFmpegMediaSource` member, so no source lock) | `Rav1gPrewarm` (the Detail page; debug `av1-decoder rav1g`) | Thread pool, never while a playback runs; it returns at once (the device and compiles run on the fork's own threads) |
   | `MetadataTags`, `PlaybackItem`, `StartBuffering`, `ExtractThumbnail`, filter setters | none | Not called |
 
   Not on the lock: `VideoStreams`, `AudioStreams`, `SubtitleStreams` (read in MediaOpened) return the open-time lists.
@@ -2765,6 +2780,10 @@ matching counts the same entries, so a 4K display now prefers a 4K AV1 version w
      an open/runtime decoder failure must replan to server transcode.
   6. Release build (`BaleDebugServer=false`, only with the owner's go-ahead for a production package): the log's library
      line and AV1 claim, a 4K60 AV1 title at or under 40 Mbps on rav1g, the HUD's `rav1g` decoder row.
+  7. Detail prewarm, each from a fresh launch without the `av1-decoder` call (it prewarms by itself): `open <id>` of a
+     title whose Auto version is AV1 logs `player: rav1g prewarm started (return 0)` once and the fork's `prewarm ready
+     ms=N`, and a later `play` opens without the compiles; a second AV1 Detail page logs nothing more; an HEVC-only
+     title's Detail page and Home log none; `mem` before and after the prewarm.
 
 ## Debug: IMFMediaEngine rendering mode (windowless swap chain)
 

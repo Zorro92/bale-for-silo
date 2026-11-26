@@ -8,15 +8,20 @@ public class PlaybackResourceLifetimeTests
     public void PlaybackProtectsResourcesUntilEveryPlayerHasStopped()
     {
         var lifetime = new PlaybackResourceLifetime();
+        Assert.False(lifetime.Active);
         var oldPlayer = lifetime.EnterPlayer();
         var nextPlayer = lifetime.EnterPlayer();
         var releases = 0;
+        Assert.True(lifetime.Active);
         Assert.False(lifetime.ReleaseIfIdle(() => releases++));
         oldPlayer.Dispose();
         oldPlayer.Dispose();
+        // A lease disposed twice counts once: the other player keeps playback active (Rav1gPrewarm reads it).
+        Assert.True(lifetime.Active);
         Assert.False(lifetime.ReleaseIfIdle(() => releases++));
         Assert.Equal(0, releases);
         nextPlayer.Dispose();
+        Assert.False(lifetime.Active);
         Assert.True(lifetime.ReleaseIfIdle(() => releases++));
         Assert.Equal(1, releases);
     }

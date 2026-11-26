@@ -12,6 +12,12 @@ public sealed class PlaybackResourceLifetime
         return new Lease(this);
     }
 
+    /// <summary>A player holds playback resources: from its start until its teardown has closed its media.</summary>
+    public bool Active
+    {
+        get { lock (_gate) return _players != 0; }
+    }
+
     /// <summary>The release is synchronous, so a start cannot race its native device operations.</summary>
     public bool ReleaseIfIdle(Action release)
     {

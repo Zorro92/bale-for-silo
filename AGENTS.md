@@ -345,9 +345,12 @@ For Bale, a normal app with hevcPlayback on the Series X:
   rav1g keeps its 250 ms buffer, 8 decode-ahead frames, frame-rate-based texture cap and display pass
   (`bale_rav1g_display=1`). Every build packages the `scripts/rav1g.json` DLL (an empty pin packages none), and CI's
   `scripts/check-rav1g-package.ps1` requires it, hash-checked with its licences, in debug-server and production
-  packages alike (`scripts/test-rav1g-checks.ps1` covers both). Debug-only:
-  `av1-decoder dav1d|rav1g` and `av1-claim 1080|2160|2160-dav1d` (defaults rav1g and 2160, the release behaviour;
-  1080 forces 1080p60), `rav1g-tune`, the rav1g perf logs and the prewarm. See docs/player-plan.md, "rav1g".
+  packages alike (`scripts/test-rav1g-checks.ps1` covers both). **Prewarm (every build, owner 2026-11-26):** the Detail
+  page starts rav1g's device and pipeline compiles (`bale_rav1g_prewarm`, ~6.5 s on a Series X) when its selected or
+  Auto version will play on rav1g (`Rav1gPolicy.PrewarmCandidate`, Rust `av1_decoder::prewarm_candidate`): once per
+  process, on the thread pool, never at app start or on Home, never while a playback runs (`Rav1gPrewarm`). Debug-only:
+  `av1-decoder dav1d|rav1g` (rav1g also prewarms at once) and `av1-claim 1080|2160|2160-dav1d` (defaults rav1g and
+  2160, the release behaviour; 1080 forces 1080p60), `rav1g-tune` and the rav1g perf logs. See docs/player-plan.md, "rav1g".
 - All builds tune dav1d's software AV1 with `bale_decode_ahead_frames=16` and a 1000 ms
   MSS BufferTime (the rav1g route sets its own 8 frames and 250 ms, `Rav1gPolicy.Route`). Above 1080p
   `SoftwareDecodeTuning` trims decode-ahead to 8 and BufferTime to 500 ms

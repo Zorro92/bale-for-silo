@@ -146,6 +146,27 @@ public static class Rav1gPolicy
     public static string PrewarmResult(int code) =>
         BaleCoreNative.Call("av1_decoder.prewarm_result", code, BaleCoreJson.Default.Int32, BaleCoreJson.Default.String);
 
+    /// <summary>
+    /// Whether the Detail page's selected or Auto version will play on rav1g, so the page starts rav1g's prewarm (owner,
+    /// 2026-11-26), decided as a playback's claims and route would be: the decoder is rav1g, software AV1 is claimed (a
+    /// measured console), rav1g.dll is usable, and the AV1 claims admit the version, so the server sends the original and
+    /// its software AV1 route takes rav1g. A version they refuse (4K above the 40 Mbps soft ceiling, 8K, a profile other
+    /// than Main) is transcoded and gets no prewarm.
+    /// </summary>
+    /// <param name="selected">The AV1 decoder: rav1g in release builds, the debug switch otherwise.</param>
+    /// <param name="rav1gClaim">The claims may carry rav1g's 2160p60 entry: true in release builds; debug av1-claim 1080 passes false.</param>
+    /// <param name="libraryUsable">rav1g.dll is usable (<see cref="Library"/>).</param>
+    /// <param name="softwareVideo">Software video is measured on this console (DeviceIdentity).</param>
+    public static bool PrewarmCandidate(string selected, bool rav1gClaim, bool libraryUsable, bool softwareVideo, FileVersion? version) =>
+        BaleCoreNative.Call("av1_decoder.prewarm_candidate", writer =>
+        {
+            writer.WriteString("selected", selected);
+            writer.WriteBoolean("rav1g_claim", rav1gClaim);
+            writer.WriteBoolean("library_usable", libraryUsable);
+            writer.WriteBoolean("software_video", softwareVideo);
+            writer.Server("version", version);
+        }, BaleCoreJson.Default.Boolean);
+
     /// <summary>The stats/where row: which decoder the open actually used, from the engine, the guard's mark and the logs.</summary>
     /// <param name="library">Why rav1g.dll is not usable (<see cref="Rav1gLibraryStatus.Detail"/>); null when it is.</param>
     public static string Describe(string selected, bool rav1gRoute, string? library, bool? gpuEngine, string? verdict,

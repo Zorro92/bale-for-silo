@@ -84,8 +84,6 @@ The debug server's `rescap:inputInjectionBrokered` is not in production packages
 - **10.4.2, starts promptly and stays responsive.** Every playback mount has a 45 s start budget (`PlaybackStartBudget`)
   and the seek watchdog; launch navigates straight to the first page and loads from the network asynchronously. Check
   it in the reviewer run below.
-  One known slow path: the first rav1g (AV1) open after launch compiles rav1g's pipelines (~6.5 s on a Series X)
-  because the prewarm is debug-only (docs/player-plan.md, "rav1g").
 - **10.5.1, privacy policy.** Bale sends the server's credentials, viewing progress and device identity (device name,
   model, a random device id, client name, version and channel) to the Silo server the user chooses, and nothing to any
   other party. A privacy policy URL is still needed in Partner Center. To do: a privacy row in Settings that shows or

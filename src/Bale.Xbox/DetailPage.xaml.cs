@@ -473,6 +473,9 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         var playbackDetail = PlaybackDetail;
         var selection = _playbackSelections.For(playbackDetail);
         var version = playbackDetail is null ? null : PlaybackFormatting.SelectDisplayVersion(playbackDetail, selection);
+        // A first rav1g open compiles its pipelines (~6.5 s on a Series X): a version that will play on rav1g starts them
+        // while the viewer reads this page, once per process and off the UI thread (owner, 2026-11-26; Rav1gPrewarm).
+        if (_active) Rav1gPrewarm.ForDetail(version);
         // TvItemDetailScreen.kt / TvPlaybackSelectorRow.kt share this ordinal and known-state between
         // the Audio value and subtitle Auto context. A series/season resolves only its Play episode.
         var automaticAudio = PlaybackAudioSelection.AutomaticAudioOrdinal(version, _preferredAudioLanguage,

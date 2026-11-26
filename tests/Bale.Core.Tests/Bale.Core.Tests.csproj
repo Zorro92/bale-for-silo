@@ -171,6 +171,8 @@
     <None Include="../../src/Bale.Xbox/Services/DebugServer.Capabilities.cs" Link="DebugServer.Capabilities.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/DebugServer.cs" Link="DebugServer.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/Rav1gPrewarm.cs" Link="Rav1gPrewarm.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Every Xbox source, for Rav1gReleaseTests: only the Detail page and the debug switch ask for rav1g's prewarm. -->
+    <None Include="../../src/Bale.Xbox/**/*.cs" Exclude="../../src/Bale.Xbox/obj/**;../../src/Bale.Xbox/bin/**" LinkBase="xbox-src" CopyToOutputDirectory="PreserveNewest" Visible="false" />
     <!-- rav1g in release builds (Rav1gReleaseTests): the library check, the guard and the switches as text, the pin and its scripts. -->
     <None Include="../../src/Bale.Xbox/Services/Rav1gLibrary.cs" Link="Rav1gLibrary.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/Services/FfmpegVideoOutputGuard.cs" Link="FfmpegVideoOutputGuard.cs.txt" CopyToOutputDirectory="PreserveNewest" />

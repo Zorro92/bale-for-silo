@@ -217,6 +217,44 @@ public sealed class Rav1gPolicyTests
     public void PrewarmReturnReadsAsTheForkDocumentsIt(int code, string expected) =>
         Assert.Equal(expected, Rav1gPolicy.PrewarmResult(code));
 
+    private static FileVersion DetailVersion(string codec, long height, long? kbps, string? profile) => new()
+    {
+        FileId = "file", CodecVideo = codec, Container = "mkv",
+        VideoTracks = [new() { Codec = codec, Profile = profile, BitDepth = 10, Width = height * 16 / 9, Height = height,
+            FrameRate = "24000/1001", Bitrate = kbps }],
+    };
+
+    [Theory]
+    // 4K inside rav1g's 2160p60 40 Mbps entry, an unknown bitrate (passes, as at the server), and 1080p at any bitrate:
+    // dav1d's entry admits it, and the route still decodes it on rav1g.
+    [InlineData("av1", 2160, 30_000L, "Main", true)]
+    [InlineData("av1", 2160, null, "Main", true)]
+    [InlineData("av1", 1080, 80_000L, "Main", true)]
+    // The server transcodes these, so they never reach rav1g: above the soft ceiling, 8K, High profile, other codecs.
+    [InlineData("av1", 2160, 45_000L, "Main", false)]
+    [InlineData("av1", 4320, 20_000L, "Main", false)]
+    [InlineData("av1", 1080, 8_000L, "High", false)]
+    [InlineData("hevc", 2160, 30_000L, "Main 10", false)]
+    public void TheDetailPrewarmsOnlyAVersionThatWillPlayOnRav1g(string codec, long height, long? kbps, string profile, bool prewarm)
+    {
+        var version = DetailVersion(codec, height, kbps, profile);
+        Assert.Equal(prewarm, Rav1gPolicy.PrewarmCandidate("rav1g", rav1gClaim: true, libraryUsable: true, softwareVideo: true, version));
+        // Never with an unusable rav1g.dll, on a console without software video (no AV1 claim), with the dav1d switch, or
+        // before the page has a version.
+        Assert.False(Rav1gPolicy.PrewarmCandidate("rav1g", true, libraryUsable: false, softwareVideo: true, version));
+        Assert.False(Rav1gPolicy.PrewarmCandidate("rav1g", true, true, softwareVideo: false, version));
+        Assert.False(Rav1gPolicy.PrewarmCandidate("dav1d", true, true, true, version));
+        Assert.False(Rav1gPolicy.PrewarmCandidate("rav1g", true, true, true, null));
+    }
+
+    [Fact]
+    public void WithoutRav1gsClaimOnly1080pAv1StillPlaysOnRav1g()
+    {
+        // Debug av1-claim 1080: 4K AV1 is transcoded; 1080p is admitted by dav1d's entry and decodes on rav1g.
+        Assert.False(Rav1gPolicy.PrewarmCandidate("rav1g", rav1gClaim: false, true, true, DetailVersion("av1", 2160, 30_000, "Main")));
+        Assert.True(Rav1gPolicy.PrewarmCandidate("rav1g", rav1gClaim: false, true, true, DetailVersion("av1", 1080, 8_000, "Main")));
+    }
+
     [Fact]
     public void OutputMarkIsTheForksGuid() =>
         Assert.Equal(new Guid(0x6d553633, 0x9287, 0x4856, 0xbc, 0x9f, 0x0c, 0x23, 0xaf, 0x00, 0xe1, 0x84), Rav1gPolicy.OutputMark);

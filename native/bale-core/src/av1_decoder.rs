@@ -6,7 +6,8 @@
 //! one dav1d remount, then the ordinary replan or server transcode.
 //!
 //! The decisions here: whether the packaged library is usable ([`library_status`]), which mounts take
-//! rav1g and what they set ([`route`]), which output the live guard accepts ([`output_verdict`]),
+//! rav1g and what they set ([`route`]), whether the Detail page's version will play on rav1g so the
+//! page prewarms it ([`prewarm_candidate`]), which output the live guard accepts ([`output_verdict`]),
 //! whether a failed rav1g mount remounts once on dav1d ([`remount_on_dav1d`]), and how the fork's
 //! fixed log lines read ([`parse_log`], [`describe`]).
 
@@ -258,6 +259,41 @@ pub fn prewarm_result(code: i32) -> String {
         -1 => "failed (could not start its thread)".into(),
         other => format!("unexpected return {other}"),
     }
+}
+
+#[derive(Deserialize)]
+pub struct PrewarmArgs {
+    /// The AV1 decoder, as [`RouteArgs::selected`]: "rav1g" in release builds, the debug switch
+    /// (default rav1g) in debug ones.
+    pub selected: String,
+    /// The claims may carry rav1g's AV1 entry, as PlaybackClaims.DetectAsync's `rav1g`: always in
+    /// release builds; debug `av1-claim 1080` passes false.
+    pub rav1g_claim: bool,
+    /// rav1g.dll is usable ([`library_status`]).
+    pub library_usable: bool,
+    /// Software video is measured on this console (Series, AVX2); elsewhere no software AV1 is
+    /// claimed at all, rav1g's entry included.
+    pub software_video: bool,
+    /// The Detail page's selected or Auto version (PlaybackFormatting.SelectDisplayVersion).
+    pub version: Option<FileVersion>,
+}
+
+/// Whether the Detail page's selected or Auto version will play on rav1g, so the page starts rav1g's
+/// prewarm (owner, 2026-11-26), decided as the claims and the route of a playback of it would be: the
+/// start request claims software AV1 only on a measured console and rav1g's entry only with a usable
+/// library; a version those AV1 entries admit ([`crate::formatting::decodes`], the server's
+/// videoDecodeTakesSourceV3 bounds) is sent as the original, and its software AV1 route takes rav1g
+/// ([`route`]: dav1d's 1080p entry admits a file, rav1g still decodes it). One they refuse (4K above
+/// the 40 Mbps soft ceiling, 8K, a profile other than Main) is transcoded and never reaches rav1g.
+pub fn prewarm_candidate(args: &PrewarmArgs) -> bool {
+    let rav1g = args.selected == "rav1g" && args.library_usable && args.software_video;
+    rav1g
+        && args.version.as_ref().is_some_and(|version| {
+            crate::formatting::decodes(
+                version,
+                &crate::evidence::software_av1_claims(args.rav1g_claim),
+            )
+        })
 }
 
 /// The delivered file's facts: the plan's source, joined to its catalog version (the file actually
@@ -737,6 +773,98 @@ mod tests {
         assert_eq!(prewarm_result(1), "already started");
         assert_eq!(prewarm_result(-1), "failed (could not start its thread)");
         assert_eq!(prewarm_result(7), "unexpected return 7");
+    }
+
+    fn detail_version(
+        codec: &str,
+        height: i64,
+        kbps: Option<i64>,
+        profile: Option<&str>,
+    ) -> FileVersion {
+        FileVersion {
+            file_id: Some("f".into()),
+            codec_video: Some(codec.into()),
+            video_tracks: Some(vec![VideoTrack {
+                codec: Some(codec.into()),
+                profile: profile.map(str::to_owned),
+                bit_depth: Some(10),
+                width: Some(height * 16 / 9),
+                height: Some(height),
+                frame_rate: Some("24000/1001".into()),
+                bitrate: kbps,
+                ..VideoTrack::default()
+            }]),
+            ..FileVersion::default()
+        }
+    }
+
+    fn prewarm_args(version: FileVersion) -> PrewarmArgs {
+        PrewarmArgs {
+            selected: "rav1g".into(),
+            rav1g_claim: true,
+            library_usable: true,
+            software_video: true,
+            version: Some(version),
+        }
+    }
+
+    #[test]
+    fn prewarm_only_a_version_that_will_play_on_rav1g() {
+        // (codec, height, video kbps, profile, prewarm)
+        let cases = [
+            // 4K within rav1g's entry, an unknown bitrate passing as at the server, and 1080p at any
+            // bitrate (dav1d's entry admits it, and the route still takes rav1g).
+            ("av1", 2160, Some(30_000), Some("Main"), true),
+            ("av1", 2160, Some(40_000), Some("Main"), true),
+            ("av1", 2160, None, Some("Main"), true),
+            ("AV1", 1080, Some(80_000), Some("main"), true),
+            // The server transcodes these, so they never reach rav1g: above the 40 Mbps soft ceiling
+            // at 4K, 8K, High and unknown profiles; and any other codec.
+            ("av1", 2160, Some(40_001), Some("Main"), false),
+            ("av1", 4320, Some(20_000), Some("Main"), false),
+            ("av1", 1080, Some(8_000), Some("High"), false),
+            ("av1", 1080, Some(8_000), None, false),
+            ("hevc", 2160, Some(30_000), Some("Main 10"), false),
+            ("vp9", 1080, Some(8_000), Some("Profile 0"), false),
+        ];
+        for (codec, height, kbps, profile, expected) in cases {
+            let version = detail_version(codec, height, kbps, profile);
+            assert_eq!(
+                prewarm_candidate(&prewarm_args(version)),
+                expected,
+                "{codec} {height}p {kbps:?} {profile:?}"
+            );
+        }
+        // Without a track there is no profile for Main to match: the server would transcode it.
+        let mut no_tracks = detail_version("av1", 1080, Some(8_000), Some("Main"));
+        no_tracks.video_tracks = None;
+        assert!(!prewarm_candidate(&prewarm_args(no_tracks)));
+    }
+
+    #[test]
+    fn prewarm_follows_the_claim_the_library_and_the_decoder() {
+        let uhd = || detail_version("av1", 2160, Some(30_000), Some("Main"));
+        let hd = || detail_version("av1", 1080, Some(8_000), Some("Main"));
+        let changes: [fn(&mut PrewarmArgs); 4] = [
+            |a| a.library_usable = false,
+            |a| a.software_video = false,
+            |a| a.selected = "dav1d".into(),
+            |a| a.version = None,
+        ];
+        for change in changes {
+            for version in [uhd(), hd()] {
+                let mut args = prewarm_args(version);
+                change(&mut args);
+                assert!(!prewarm_candidate(&args));
+            }
+        }
+        // Debug av1-claim 1080: 4K AV1 transcodes, 1080p still plays on rav1g.
+        let mut args = prewarm_args(uhd());
+        args.rav1g_claim = false;
+        assert!(!prewarm_candidate(&args));
+        let mut args = prewarm_args(hd());
+        args.rav1g_claim = false;
+        assert!(prewarm_candidate(&args));
     }
 
     #[test]

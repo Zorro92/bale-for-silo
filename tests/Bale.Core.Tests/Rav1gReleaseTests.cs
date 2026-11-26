@@ -200,7 +200,7 @@ public sealed class Rav1gReleaseTests
     [Fact]
     public void TheDebugSwitchesStayDebugOnlyWithTheReleaseDefaults()
     {
-        foreach (var file in new[] { "DebugAv1DecoderSwitch.cs.txt", "DebugAv1ClaimSwitch.cs.txt", "Rav1gPrewarm.cs.txt" })
+        foreach (var file in new[] { "DebugAv1DecoderSwitch.cs.txt", "DebugAv1ClaimSwitch.cs.txt" })
         {
             var text = Read(file);
             Assert.StartsWith("#if DEBUG_SERVER", text);
@@ -210,14 +210,64 @@ public sealed class Rav1gReleaseTests
         Assert.Contains("private static int _maxHeight = 2160;", Read("DebugAv1ClaimSwitch.cs.txt"));
         Assert.Equal("rav1g", DebugAv1DecoderSwitch.Mode);
         Assert.Equal(2160, DebugAv1ClaimSwitch.MaxHeight);
-        // Neither the switches nor the prewarm reach the release player.
-        foreach (var file in new[] { "PlayerPage.cs.txt", "PlayerPage.Media.cs.txt", "PlaybackClaims.cs.txt" })
+        // Neither the switches nor the prewarm reach the release player: the Detail page asks for the prewarm.
+        foreach (var file in new[] { "PlayerPage.cs.txt", "PlayerPage.Media.cs.txt", "PlaybackClaims.cs.txt", "Rav1gPrewarm.cs.txt" })
         {
             var release = Release(file);
             Assert.DoesNotContain("DebugAv1DecoderSwitch", release);
             Assert.DoesNotContain("DebugAv1ClaimSwitch", release);
-            Assert.DoesNotContain("Rav1gPrewarm", release);
+            if (file != "Rav1gPrewarm.cs.txt") Assert.DoesNotContain("Rav1gPrewarm", release);
         }
+    }
+
+    [Fact]
+    public void TheDetailPagePrewarmsRav1gOnceOffTheUiThreadInEveryBuild()
+    {
+        // The readout's selected or Auto version goes to the prewarm, outside DEBUG_SERVER.
+        var detail = Release("DetailPage.cs.txt");
+        var summary = detail[detail.IndexOf("private void ShowPlaybackSummary()", StringComparison.Ordinal)..];
+        summary = summary[..summary.IndexOf("\n    }\n", StringComparison.Ordinal)];
+        Assert.Contains("var version = playbackDetail is null ? null : PlaybackFormatting.SelectDisplayVersion(playbackDetail, selection);", summary);
+        Assert.Contains("if (_active) Rav1gPrewarm.ForDetail(version);", summary);
+        // Release code with the release decoder and claim; the debug trigger and switches are gated.
+        var prewarm = Release("Rav1gPrewarm.cs.txt");
+        Assert.Contains("private const string Decoder = \"rav1g\";", prewarm);
+        Assert.Contains("private const bool Rav1gClaim = true;", prewarm);
+        Assert.DoesNotContain("internal static void Start()", prewarm);
+        Assert.Contains("[DllImport(\"FFmpegInteropX.dll\", ExactSpelling = true)]\n    private static extern int bale_rav1g_prewarm();", prewarm);
+        var forDetail = prewarm[prewarm.IndexOf("internal static void ForDetail(FileVersion? version)", StringComparison.Ordinal)..];
+        forDetail = forDetail[..forDetail.IndexOf("\n    }\n", StringComparison.Ordinal)];
+        // The UI thread reads one flag; the rest runs on the pool, in this order: the library check, the decision (Core,
+        // Rust av1_decoder::prewarm_candidate), no playback running, the process's first ask, then the fork.
+        Assert.Contains("if (version is null || Volatile.Read(ref _requested) != 0) return;\n        _ = Task.Run(async () =>", forDetail);
+        var steps = new[]
+        {
+            "var library = await Rav1gLibrary.Status.ConfigureAwait(false);",
+            "if (!Rav1gPolicy.PrewarmCandidate(Decoder, Rav1gClaim, library.Usable, DeviceIdentity.SoftwareVideoSupported, version)) return;",
+            "if (PlaybackResources.Lifetime.Active) return;",
+            "if (Interlocked.Exchange(ref _requested, 1) != 0) return;",
+            "Request();",
+        };
+        var at = steps.Select(step => forDetail.IndexOf(step, StringComparison.Ordinal)).ToArray();
+        Assert.All(at, index => Assert.True(index > 0));
+        Assert.Equal(at.Order(), at);
+        Assert.Contains("catch (Exception ex) { Log.Info($\"player: rav1g prewarm failed ({ex.GetType().Name})\"); }", forDetail);
+        // One fixed line per answer, as the debug trigger has logged it since wrapper bale.48.
+        Assert.Contains("Log.Info($\"player: rav1g prewarm {Rav1gPolicy.PrewarmResult(code)} (return {code})\");", prewarm);
+    }
+
+    [Fact]
+    public void OnlyTheDetailPageAndTheDebugSwitchAskForThePrewarm()
+    {
+        // Never at app start or on Home: a scan of every Xbox source for calls into Rav1gPrewarm.
+        var root = Path.Combine(AppContext.BaseDirectory, "xbox-src");
+        var files = Directory.GetFiles(root, "*.cs", SearchOption.AllDirectories);
+        Assert.True(files.Length >= 200, $"only {files.Length} Xbox sources found");
+        var calls = files.SelectMany(file => System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(file), @"\bRav1gPrewarm\.(\w+)\(")
+            .Select(call => $"{Path.GetRelativePath(root, file).Replace('\\', '/')}: {call.Groups[1].Value}")).Order().ToArray();
+        Assert.Equal(new[] { "DetailPage.xaml.cs: ForDetail", "Services/DebugServer.cs: Start" }, calls);
+        // The debug server compiles only with DEBUG_SERVER (DebugSourceGuardTests), so release builds have the Detail call alone.
+        Assert.StartsWith("#if DEBUG_SERVER", Read("DebugServer.cs.txt"));
     }
 
     [Fact]

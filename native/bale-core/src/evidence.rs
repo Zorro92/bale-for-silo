@@ -4,7 +4,7 @@
 use serde::Serialize;
 
 use crate::hardware::{DecodeSize, Limits};
-use crate::models::HdrCapabilities;
+use crate::models::{DecodeClaim, HdrCapabilities};
 use crate::software_decode::{
     AUDIO_CODECS, FALLBACK_ENVELOPES, FFMPEG_VIDEO_CODECS, SYSTEM_AUDIO_CODECS, VIDEO_CODECS,
 };
@@ -304,6 +304,26 @@ pub fn video_decode(hardware: Option<&Limits>, rav1g: bool) -> Vec<VideoDecodeCl
     claims
 }
 
+/// The software AV1 entries of [`video_decode`] (dav1d's 1080p60, and rav1g's 2160p60 at the 40 Mbps
+/// soft ceiling with `rav1g`), as Bale's own version matching reads them ([`crate::formatting::decodes`]).
+/// They don't depend on the hardware probe.
+pub fn software_av1_claims(rav1g: bool) -> Vec<DecodeClaim> {
+    video_decode(None, rav1g)
+        .into_iter()
+        .filter(|claim| claim.codec == "av1")
+        .map(|claim| DecodeClaim {
+            codec: claim.codec.to_owned(),
+            profiles: claim.profiles.iter().map(|&p| p.to_owned()).collect(),
+            bit_depths: claim.bit_depths,
+            max_width: claim.max_width,
+            max_height: claim.max_height,
+            max_frame_rate: claim.max_frame_rate,
+            max_bitrate_kbps: claim.max_bitrate_kbps,
+            hardware: claim.hardware,
+        })
+        .collect()
+}
+
 /// One entry per codec at the probed size. If the 8-bit and 10-bit profiles report different
 /// sizes, each depth gets its own entry so neither is overclaimed; the server takes a source any
 /// entry admits.
@@ -459,5 +479,29 @@ mod tests {
         assert_eq!(av1_entries(&with.video_decode).len(), 2);
         assert_eq!(av1_entries(&without.video_decode).len(), 1);
         assert!(for_hardware(None, true).is_none());
+    }
+
+    #[test]
+    fn the_software_av1_claims_are_the_claimed_av1_entries() {
+        for rav1g in [false, true] {
+            let claimed = video_decode(None, rav1g);
+            let entries = av1_entries(&claimed);
+            let claims = software_av1_claims(rav1g);
+            assert_eq!(claims.len(), entries.len());
+            for (claim, entry) in claims.iter().zip(entries) {
+                assert_eq!(claim.codec, entry.codec);
+                assert_eq!(claim.profiles, entry.profiles);
+                assert_eq!(claim.bit_depths, entry.bit_depths);
+                assert_eq!(
+                    (claim.max_width, claim.max_height, claim.max_frame_rate),
+                    (entry.max_width, entry.max_height, entry.max_frame_rate)
+                );
+                assert_eq!(claim.max_bitrate_kbps, entry.max_bitrate_kbps);
+                assert_eq!(claim.hardware, entry.hardware);
+            }
+        }
+        let rav1g = software_av1_claims(true);
+        assert_eq!(rav1g[1].max_height, Some(RAV1G_MAX_HEIGHT));
+        assert_eq!(rav1g[1].max_bitrate_kbps, Some(RAV1G_MAX_BITRATE_KBPS));
     }
 }
