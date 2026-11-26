@@ -51,10 +51,11 @@ public sealed partial class PlayerPage
                     if (_transportDedup.AcceptKey(Environment.TickCount64)) _ = RunPlaybackControlAsync(PlaybackControlRequest.Toggle, "key");
                     break;
                 case PlaybackKeyAction.Select:
-                    // A skip pill on screen takes A / Enter while the controls are hidden, wherever focus is
-                    // (TvPlayerScreen.kt's root handler: Select on the intro pill, else the recap/credits pill), so the
-                    // viewer needs no first press to reveal it. Not while a held trigger scans.
-                    if (!_holdScan.Held && SelectSkipPill()) break;
+                    // The timed intro pill takes A / Enter while the controls are hidden, wherever focus is
+                    // (TvPlayerScreen.kt's root handler), so the viewer needs no first press to reveal it. Deviation: the
+                    // untimed recap/credits pill does not. It can stay up for minutes, and A stays pause/resume (owner's
+                    // controller map); it is reached with Up from the controls. Not while a held trigger scans.
+                    if (!_holdScan.Held && _skipMarkers.Pill is { TakesFocus: true } && SelectSkipPill()) break;
                     // A on clean playback (owner's map): pause and show the controls, or resume a pause
                     // whose controls have hidden, without bringing them back.
                     var paused = _attempt?.Media?.Player?.PlaybackSession.PlaybackState == MediaPlaybackState.Paused;

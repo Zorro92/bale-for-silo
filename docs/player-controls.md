@@ -174,8 +174,9 @@ rather than leaving them transparent so they cost nothing while hidden.
      65% capsule with a 2 px ring, white 25% resting and white focused; label 18sp Medium, white 55% resting and white
      focused; fill white 14% / 40%; caption 14sp at 70%; 200 ms fade in, gone at once.
    - Focus and keys: the intro pill takes focus as it appears, also with the controls up, but not during a scrub preview
-     or a held trigger; the recap/credits pill never does. Controls hidden: A / Enter press the visible pill wherever focus
-     is, instead of the owner's pause (Android routes D-pad Center to the pill the same way); Back dismisses the intro
+     or a held trigger; the recap/credits pill never does. Controls hidden: A / Enter press the visible intro pill wherever focus
+     is, instead of the owner's pause (Android routes D-pad Center to the pill the same way). Deviation: the untimed
+     recap/credits pill keeps A as pause/resume and is reached with Up from the controls (it can stay up for minutes); Back dismisses the intro
      pill; the D-pad brings up the controls with Play/Pause focused, as always. Controls up: Up from the bar reaches the
      pill, Down goes back to the bar, Up/Left/Right stay on it (the triggers still skip); A presses what has focus. A pill
      that hides with focus hands it to the bar (controls up) or the page; a focused pill keeps focus when the controls

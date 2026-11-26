@@ -133,7 +133,7 @@ public class SkipMarkersWiringTests
         var controls = Read("PlayerPage.Controls.cs.txt");
         // With the controls hidden, A / Enter press a visible pill before the owner's pause.
         InOrder(Section(controls, "case PlaybackKeyAction.Select:", "case PlaybackKeyAction.RevealControls:"),
-            "if (!_holdScan.Held && SelectSkipPill()) break;", "var paused =");
+            "if (!_holdScan.Held && _skipMarkers.Pill is { TakesFocus: true } && SelectSkipPill()) break;", "var paused =");
         // Back: a scrub preview first, then the intro pill, then the buffering pill, then the controls.
         InOrder(Section(controls, "private bool BackClosesControls()", "private float _subtitleLift"),
             "if (_controls.Visible && _scrub.Active)", "if (BackDismissesSkipPill()) return true;",
