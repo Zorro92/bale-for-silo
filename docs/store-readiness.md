@@ -53,6 +53,24 @@ gh run download <run-id> -n wack-report -D /tmp/bale-wack
 - WACK on a desktop runner cannot install an Xbox-only package, so expect the static tests only; Microsoft's docs note
   that apps not targeting desktop may see "Not all tests were run during validation". Partner Center runs its own
   certification on submission.
+- Expected WACK failures (first production run, 2026-11-26; owner reviewed 2026-11-27, no code change):
+  - **Restricted namespace**: the `hevcPlayback` restricted capability. Justify it in the submission.
+  - **Supported APIs**: 21 imports outside the old UWP allowlist, all from toolchains rather than Bale's own code.
+    - Bale.exe imports `VirtualAllocExNuma`, `GetProcessGroupAffinity`, `CreateMemoryResourceNotification`,
+      `SetXStateFeaturesMask`, `IsProcessInJob`, `QueryInformationJobObject`, `CancelSynchronousIo`,
+      `ConvertInterfaceLuidToIndex` and `ConvertInterfaceNameToLuidW`. These come from the .NET NativeAOT runtime and
+      its libraries.
+    - bale_core, bale_gpu and rav1g import `NtWriteFile`, `RtlNtStatusToDosError` and `ProcessPrng` from Rust std,
+      and `CoCreateFreeThreadedMarshaler`, `RoGetAgileReference` and `CoIncrementMTAUsage` from the `windows`
+      crate's COM support.
+    - Microsoft's "Modernize your UWP app with .NET and Native AOT" (Learn, ms.date 2026-01-26) says: "You can ignore
+      Windows App Certification Kit (WACK) failures related to "unsupported Win32 APIs." Partner Center no longer
+      performs strict Win32 API validation for UWP apps. AppContainer security handles runtime permissions instead."
+      The .NET 9 UWP announcement (#ifdef Windows, 2024-09-11) says the same.
+    - All four binaries load and run on the console, so every import resolves there.
+    - Neither page names Xbox or native DLLs. The first Partner Center submission is the real confirmation. If it does
+      reject them: the .NET imports cannot be removed (every NativeAOT UWP app has them), while the Rust ones would
+      need a patched std and the COM helpers replaced.
 - Versions: production is `0.2.<run>.0` (the Store reserves the fourth part). Each submission must be higher than the
   last, so a Store upload comes from a new run, never "Re-run jobs" (same run number). Debug-server builds stay
   `0.2.<run>.<attempt - 1>` for sideload updates.
