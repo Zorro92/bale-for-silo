@@ -17,9 +17,9 @@ part Bale hasn't built yet; check when building it), **deviation** (Bale differs
 | Repo | Commit | Reviewed |
 |---|---|---|
 | silo-android | `b7c0412af6b4` | 2026-11-24 |
-| silo-apple | `198a3e90f6ba` | 2026-11-26 |
-| silo-server | `0ad67a01e233` | 2026-11-26 |
-| silo-roku | `3ae62aa5c260` | 2026-11-25 |
+| silo-apple | `4d661fe17de0` | 2026-11-27 |
+| silo-server | `0a631fb9cba8` | 2026-11-27 |
+| silo-roku | `1b1e31f8e848` | 2026-11-27 |
 
 The first review (2026-11-10) started from the commit each local clone was made at.
 
@@ -245,11 +245,130 @@ Deferred for now: playback comes first (2026-11-10). Grouped by area, newest rev
   (Android `b7c0412af`, Apple `5495cdfc`). Bale always prints `EpisodeCode.Format` (Browse rows, Calendar,
   Detail episodes, player title, Up Next). Needs the contract bump below; the S01E01 deviation covers
   only how numbers are spelled, so it doesn't conflict. Unblocks the parity-backlog line.
-- **API contract (2026-11-26):** bump `SILO_REF` (pinned `faa406d92`) to server `0ad67a01e` and
-  regenerate; check the catalog card/detail schemas (`episode_labels`, `air_date`, server `08af5257d`)
-  and the markers schema (`video_frames`, `10d3734c6`). The rest of the diff is admin Insights.
+- **API contract (2026-11-26, target moved 2026-11-27):** bump `SILO_REF` (pinned `faa406d92`) to server
+  `0a631fb9c` and regenerate; check the catalog card/detail schemas (`episode_labels`, `air_date`, server
+  `08af5257d`) and the markers schema (`video_frames`, `10d3734c6`). Nothing on generated paths changed
+  between `0ad67a01e` and `0a631fb9c`; the rest of the diff is admin Insights and metrics.
+- **Skip pills timed (2026-11-27):** Skip Recap and Skip Credits become timed one-press pills on the intro
+  pill's `ask` rules, whatever the intro mode: focus on appear, A on the pill or at the root skips, Back
+  dismisses only the timed pill, a run-out timer hides it undecided; they wait behind the intro pill and Up
+  Next and start a full timer when first shown. Every skip pill (Skip Intro, Watch Intro, recap, credits)
+  shows 10 s instead of 5. An `ask` pill whose timer ran out comes back untimed while the controls are up
+  (no fill, no focus, root A and Back leave it alone, hidden in a scrub). An automatic skip or Skip Credits
+  opening Up Next resolves the range (Apple `69925d9f`, Roku `9b1bccc`). Bale's `IntroSkipPrompt` is 5 s with
+  no returned pill, and `PlaybackSkipMarkers` / `PlayerPage.SkipMarkers.cs` keep the recap/credits pill
+  untimed and unfocused. Android TV's port and the server's amended intro-skip spec are on branches only:
+  build from Apple's state machine and test table, then check against the server spec when it merges.
+- **Buffering prompt 10 s (2026-11-27):** `PROMPT_SECONDS` goes from 15 to 10 for the "Playback keeps
+  buffering" prompt and the "Restore quality" undo pill (Apple `058a8eb7`). Change
+  `BufferingQualityController.PromptSeconds`, Rust `buffering.rs` `PROMPT_SECONDS` and the vendored vectors
+  fixture together, and redo the tests with 15 s arithmetic. The new vectors aren't on silo-server main yet
+  (Apple's fixture names server `eeb9283b`); vendor them from the server once merged.
+- **Later, from the 2026-11-27 review:** Up Next's "Play Next Up" / "Exit Playback" labels once Android TV's
+  catalog sync brings them (Apple `4d661fe1`, Roku `c4f2ddb`); the player Sleep Timer and its expiry rules
+  (Apple `8b41df2e`); the centred tvOS error card and smaller buffering card (Apple `3839762f`, `058a8eb7`;
+  hold until Android TV follows); demo sign-in (server `dfe6da931`, `5196d0af4`; Roku "Try the demo",
+  neither TV app Bale copies has it; add both paths to `scripts/generate-api.sh` when building it).
 
 ## Reviews
+### 2026-11-27
+
+Two act items, both from Apple TV (one also on Roku): Skip Recap and Skip Credits become timed one-press
+pills on Skip Intro's rules with every skip pill shown 10 s instead of 5, and the buffering prompt and
+Restore quality pill stay up 10 s instead of 15. Neither has reached Android TV or silo-server main yet.
+The server adds a demo sign-in (Roku offers "Try the demo"; neither TV app Bale copies does) and nothing
+on Bale's generated contract paths changed.
+
+#### silo-android
+
+No new commits.
+
+#### silo-apple (`198a3e90f6ba..4d661fe17de0`, 7 commits, 2 none)
+
+- `69925d9f` act: Skip Recap and Skip Credits run on the intro pill's `ask` state machine whatever the intro
+  mode. The pill shows with a timer and takes focus as it appears; Select on the pill, or at the player root
+  while the timed pill shows, skips in one press; Menu/Back dismisses the timed pill and consumes only that
+  press; a run-out timer hides it without deciding the range. Pause freezes the timer, seeking out hides the
+  pill, seeking back into an undecided range starts a full timer; an automatic skip, a select or a dismissal
+  decides the range. One pill at a time: recap/credits waits behind the intro pill and Next Up. Every skip
+  pill's timer goes from 5 to 10 s (`INTRO_PROMPT_SECONDS`, Watch Intro included). A pill whose timer ran out
+  comes back untimed while the controls are up (no fill, no focus on appear, root Select and Back leave it
+  alone, hidden during a scrub) and still holds the buffering pill back. Credits that run to the file's end
+  keep the Next Up path. Bale: `IntroSkipPrompt.PromptMs` is 5 s and an expired offer never returns;
+  `PlaybackSkipMarkers` draws the recap/credits pill untimed for the whole range, never focused, and Back
+  passes it by. Android TV's port and the server's amended spec are on branches only. See the Open item.
+- `058a8eb7` act: the "Playback keeps buffering" prompt and the "Restore quality" undo pill stay up 10 s, not
+  15 (`PROMPT_SECONDS`), with the conformance vectors re-vendored from the server (server `eeb9283b`, not on
+  silo-server main yet). Bale's `BufferingQualityController.PromptSeconds`, Rust `buffering.rs`
+  `PROMPT_SECONDS` and the vendored vectors fixture all say 15. See the Open item. Also later: tvOS draws a
+  smaller buffering card (one-line title, 54 pt buttons); Bale follows `TvPlayerNoticeOverlay.kt`, hold until
+  Android TV changes.
+- `8b41df2e` later: a Sleep Timer row in the player menu's Video tab (Off, 5, 15, 30, 45, 60, 120 min; shows
+  the time left). On expiry it pauses as a Pause press does (a load with no transport holds the pause, a
+  reconnecting replan resumes paused) and cancels Up Next's automatic advance. Bale has no sleep timer
+  (parity-backlog, Player › Options › Video); take these rules when building it.
+- `8b41df2e` deviation: Down with the controls hidden opens the player menu on Info. Bale's D-pad brings up
+  the controls (player controller map). The menu reopening the tab last shown is for Bale's Options panel
+  when its tab memory is checked.
+- `3839762f` later: tvOS playback errors show in a centred card (warning icon, "Can't play this title", the
+  message, Retry and Go Back; focus on Retry when offered). Bale follows Android's `TvErrorScreen`; hold
+  until Android TV changes.
+- `4d661fe1` later: Up Next's buttons read "Play Next Up" and "Exit Playback"; pills grow to fit labels; in
+  a shuffle Pick Another gets its own row. Bale's card follows Android TV ("Play Now", Hide); the shared
+  catalog key now reads "Play Next Up" (Roku `c4f2ddb`), so rename when Android TV's catalog sync lands.
+
+None for Bale: `dbd679d3` (iPad series-detail layout loop), `5c7179c8` (app icon logo size).
+
+#### silo-server (`0ad67a01e233..0a631fb9cba8`, 32 commits, 24 none)
+
+- `dfe6da931`, `5196d0af4`, `f1e03a03b` later: demo sign-in for a server run as a public demo.
+  `GET /api/v2/auth/demo/capability` answers `available` / `not_configured` / `disabled`, and
+  `POST /api/v2/auth/demo` (empty object, the usual device headers) answers the login `TokenPair`; elsewhere
+  409 `capability_disabled` / `capability_not_configured`. The session is the shared account's ordinary one.
+  Roku offers it ("Try the demo", `c4f2ddb`); Android TV and tvOS don't, nor does Bale, which generates
+  neither path.
+- `0a631fb9c` later: promoting an account to admin now signs it out everywhere, as a password or `enabled`
+  change does. Bale returns to sign-in on a refused refresh; not re-checked in this review.
+- `72d7f9a46` later: on a demo server a visitor's session list shows other sessions as id + `current` only.
+  For a future signed-in sessions screen (Bale has none).
+- `89be4eccb` later: a CPU H.264 transcode restarted after a seek encodes at superfast with a 10-frame
+  lookahead (first 10 s after a seek 1.46 s instead of 1.89 s on the server's bench). No client change;
+  Bale's `seek_reanchor` on HLS transcodes gets video back sooner, so seek timings on that route aren't
+  comparable across this commit.
+- `8def07756` later: a series' `last_air_date` no longer counts specials unless no regular episode aired
+  (with a recompute migration). `CardYears` reads it, so a special after the finale no longer moves the end
+  year on cards; no change.
+- `088678bf1` later: the effective subtitle-appearance route reports `device_id` only with a device override.
+  Bale doesn't call that route.
+
+None for Bale: 24 commits, web UI and translations, admin metrics and Insights docs, stream telemetry, node
+metrics, backup and restore, history import (`c59798116`), metadata matching, audiobooks, Jellyfin
+compatibility (`93d2e51ca`), image memory (`88db53ae5`), the accounts list before passwords are turned off
+(`bb749d718`) and transcode-node balancing by job kind (`18fd4f26d`, `078265d87`).
+
+Contract changes on generated paths: none (every `scripts/generate-api.sh` path and its schemas compared,
+descriptions included). New and ungenerated: `/api/v2/auth/demo`, `/api/v2/auth/demo/capability`, an admin
+sign-in accounts list; the rest is admin (`cpu_pct`, `egress`) and reworded session-list descriptions.
+
+#### silo-roku (`3ae62aa5c260..1b1e31f8e848`, 4 commits, 2 none)
+
+- `9b1bccc` act: the Roku side of Apple `69925d9f`: Skip Recap and Skip Credits are timed one-press pills on
+  Skip Intro's `ask` rules, every skip pill shows 10 s, an expired pill returns untimed while the controls
+  show (Up from the scrubber reaches it), auto-skip and Skip Credits opening Up Next resolve their range, Up
+  Next hides every pill with its timer held, a press arriving as the timer runs out still acts, and a skip
+  pill holds the buffering card back. One shared `skipOffer` reducer serves all three pills, the shape
+  Bale's port should take. Same Open item.
+- `c4f2ddb` later: onboarding leads with on-device entry: server setup opens on the address field with phone
+  pairing in the background; up to two verified LAN servers show above the field without taking focus (an
+  HTTP one asks for consent and confirms `server_id`); "Try the demo" (`POST /api/v2/auth/demo`); sign-in
+  leads with the password form, the code loop running behind it; Back cancels a connect. Bale keeps Android
+  TV's `TvLoginScreen.kt` order (code first) and already has LAN discovery and cancellable connect.
+  Small-device ideas: mDNS queries at 0/1/3/7 s then every 15 s, at most 16 datagrams per wake, a
+  local-address check every 5 s, providers and device-capability reads in parallel. Its strings rename
+  `upNext.playNow` to "Play Next Up".
+
+None for Bale: `96027cc` (translation sync), `1b1e31f` (Roku certification rule for the sign-in email).
+
 ### 2026-11-26
 
 Two act items, both from the server: sports episodes labelled by air date are now in silo-server's
