@@ -5,8 +5,14 @@ A native Xbox client for [Silo](https://siloserver.org), the self-hosted media s
 Bale is an independent, community project. It is not affiliated with or endorsed by the Silo
 project. *Silo* and the Silo logo are trademarks of Silo Media L.L.C.
 
-> **Status:** first milestone. Bale can pair with a Silo server using a sign-in code and
-> remember the session. Browsing and playback come next.
+> **Status:** working toward a beta and a Store release. Bale signs in to a Silo server with a sign-in code and
+> browses Home, libraries, search, people and title pages. Playback covers direct play, server remux and server
+> transcode: hardware decode where the console takes the stream, FFmpegInteropX for MKV, AV1, VP9 and HLS, AV1 on
+> the rav1g GPU decoder with dav1d as the fallback, and HDR tone-mapped to SDR on SDR TVs. Subtitles and
+> CEA-608 captions are drawn by Bale's own renderer on libass. Items the console hasn't confirmed yet are marked
+> "console check pending" in [docs/parity-backlog.md](docs/parity-backlog.md). Not yet: shuffle, audiobooks, Dolby
+> Vision output and CEA-708 captions. The package is prepared for Store certification; see
+> [docs/store-readiness.md](docs/store-readiness.md).
 
 ## How it's built
 
@@ -15,15 +21,19 @@ project. *Silo* and the Silo logo are trademarks of Silo Media L.L.C.
 | `src/Bale.Core` | Silo API client (generated from Silo's OpenAPI contract), sign-in, session handling | Linux, macOS, Windows |
 | `tests/Bale.Core.Tests` | Unit tests for Core | Linux, macOS, Windows |
 | `tools/Bale.Cli` | Developer tool that runs Core against a real server | Linux, macOS, Windows |
+| `native/bale-core` | Rust port of Core's logic, loaded as a library by the tests, `bale-cli` and the Xbox app ([docs/rust-port.md](docs/rust-port.md)) | Linux, Windows |
 | `src/Bale.Xbox` | The Xbox app: UWP on .NET 10 with Native AOT | Windows (CI does this for you) |
+| `native/bale-gpu` | Rust GPU and media layer that the Xbox app loads: tone mapping, film grain, the subtitle and caption overlay, the player's engine session | Windows (CI does this for you) |
 
 Keep logic in `Bale.Core` wherever possible so it can be developed and tested without Windows.
 
 ## Developing on Linux
 
-You need the [.NET 10 SDK](https://dotnet.microsoft.com/download), `gh`, `curl` and `jq`.
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download), [Rust](https://rustup.rs), `gh`, `curl` and `jq`.
+The tests and `bale-cli` load the library that cargo builds in `native/bale-core`, so build it first.
 
 ```sh
+(cd native/bale-core && cargo build --release --locked --features debug-probes)
 dotnet test tests/Bale.Core.Tests
 
 # Try sign-in against your own server: prints a code to approve in Silo.
@@ -66,7 +76,7 @@ See [AGENTS.md](AGENTS.md) (and `CLAUDE.md` for Claude Code, with a `verify-on-x
 ## Related projects
 
 - [ass-rs](https://github.com/wiedymi/ass-rs) is a pure-Rust ASS/SSA parser, editor and renderer. Bale's subtitle
-  renderer is being built on libass. ass-rs is the pure-Rust option we are watching, and we may use it as a future
+  renderer is built on libass. ass-rs is the pure-Rust option we are watching, and we may use it as a future
   renderer as it moves toward parity with libass.
 
 ## License
