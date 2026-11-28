@@ -2717,7 +2717,21 @@ matching counts the same entries, so a 4K display now prefers a 4K AV1 version w
   packaged; a missing export is caught. The log reads `player: rav1g prewarm started (return 0)`, `already started
   (return 1)` or `failed (could not start its thread) (return -1)`, then (debug FFmpeg log provider) the fork's
   `ffmpeg: Bale rav1g: prewarm ready ms=N (device ms=D pipelines=S)` (wrapper bale.85+: N lasts until every pipeline
-  state exists, S is the wait's status, 0 = OK; before bale.85 N stopped at device creation and missed the compiles). **Memory:** the device and pipelines stay resident for the process (the
+  state exists, S is the wait's status, 0 = OK; before bale.85 N stopped at device creation and missed the compiles). **Prepare bits (wrapper bale.86, rav1g 0.9.0-alpha.1, interface 4):** with a
+  known bit depth the Detail page calls `bale_rav1g_prewarm_prepare(prepare)` instead, which compiles only the
+  version's states (rav1g.h `RAV1G_PREPARE_*`, `Rav1gPolicy.PrewarmPrepare` / Rust `av1_decoder::prewarm_prepare`):
+  `RAV1G_PREPARE_ONLY` (0x40000000) | bit depth (8-bit 1, more 2) | the display pass the route will run: PQ 8 / HLG 16
+  on a known SDR display (none on an HDR one), SDR 4 when SDR is larger than the display mode or BT.2020 SDR is mapped
+  for an SDR display. Film grain and super-resolution are not in the catalog; a stream that needs a state the prewarm
+  left out compiles it at its decoder's creation (the fork passes the key frame's stream info), so a wrong guess costs
+  time only. The display facts (raw mode size, HDR) are read on the UI thread, for an AV1 version only. An HDR10 title on
+  the SDR display is `prepare=0x4000000A` (rav1g's test player: 56 of 96 states, 5.8 s instead of 7.9 s on 4 threads).
+  Logs: Bale's `player: rav1g prewarm started prepare=0x.. (return 0)`, the fork's `Bale rav1g: prewarm started
+  (prepare=0x..)`, `prewarm ready ms=N (device ms=D pipelines=S prepare=0x..)`. Without any prewarm, the first AV1 stream
+  creates the device with only its own states on 4 threads (`Bale rav1g: device created (threads=N prepare=0x.. ok=N)`).
+  **Seek flush (bale.86):** after a seek's drain the fork calls `rav1g_decoder_flush`, which drops the frames in flight
+  and every reference, so a resume's first frames never name a cancelled frame (0.2.810's first-open
+  `CORRUPT_FRAME`, hr=0x80042B27); `Bale rav1g: flush failed (hr=..)` only on error. **Memory:** the device and pipelines stay resident for the process (the
   fork's idle reading: app 228 MiB before, 275 MiB after), the allocation the first rav1g open makes anyway; a Detail
   page whose AV1 version is then not played keeps that much of the 3328 MiB app pool (2857 MiB DXGI budget). Console
   check pending (test list below).
@@ -2987,7 +3001,7 @@ reports `BALE_TONEMAP_OUTPUT_NV12_DITHERED`, `engine_output.rs` returns `stage_o
 excepted (owner, 2026-11-26): on the rav1g route the tone map is the route's own `ConsoleToneMap` and the SDR
 downscale rav1g's display pass (`Rav1gRouteDecision.DownscaleStage`, `rav1g_downscale`, since route.rs keeps AV1
 off the console downscale), and with depth 8 rav1g's display pass writes ordered-dithered NV12 itself, after grain
-and tone map (rav1g 0.7.0-alpha.1+, pinned 0.8.0-alpha.3; the fork's BaleRav1g.h maps the key into the pass's depth).
+and tone map (rav1g 0.7.0-alpha.1+, pinned 0.9.0-alpha.1; the fork's BaleRav1g.h maps the key into the pass's depth).
 Its threshold is R2 quasirandom, and since 2026-11-26 bale_gpu's stage dithers with the same R2 threshold by default
 (owner), so both routes write the same 8-bit codes for the same value. A rav1g mount without a stage (the source
 fits the display, no tone map) keeps its direct output at the source depth, and the engine's B8G8R8A8/R10G10B10A2

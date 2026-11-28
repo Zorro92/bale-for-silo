@@ -142,6 +142,26 @@ public static class Rav1gPolicy
     public static bool PrewarmSupported(string wrapperVersion) =>
         BaleCoreNative.Call("av1_decoder.prewarm_supported", wrapperVersion, BaleCoreJson.Default.String, BaleCoreJson.Default.Boolean);
 
+    /// <summary>Whether the pinned wrapper exports <c>bale_rav1g_prewarm_prepare</c> (2.1.0-bale.86+, rav1g interface 4).</summary>
+    public static bool PrewarmPrepareSupported(string wrapperVersion) =>
+        BaleCoreNative.Call("av1_decoder.prewarm_prepare_supported", wrapperVersion, BaleCoreJson.Default.String, BaleCoreJson.Default.Boolean);
+
+    /// <summary>
+    /// rav1g's <c>prepare</c> bits for the prewarm (rav1g.h <c>RAV1G_PREPARE_*</c>): only the pipeline states this version's
+    /// playback will use (its bit depth, and the display pass of its transfer when the pass runs), or null to prepare every
+    /// state (unknown bit depth, not exactly one video track). A stream that needs more compiles it at its decoder's creation.
+    /// </summary>
+    /// <param name="displayWidth">The current display mode's raw width; 0 when unknown.</param>
+    /// <param name="sdrDisplay">The display is known SDR (the route's tone map; rav1g's display pass maps PQ/HLG).</param>
+    public static uint? PrewarmPrepare(FileVersion? version, int displayWidth, int displayHeight, bool sdrDisplay) =>
+        BaleCoreNative.Call("av1_decoder.prewarm_prepare", writer =>
+        {
+            writer.Server("version", version);
+            writer.WriteNumber("display_width", displayWidth);
+            writer.WriteNumber("display_height", displayHeight);
+            writer.WriteBoolean("sdr_display", sdrDisplay);
+        }, BaleCoreJson.Default.NullableUInt32);
+
     /// <summary>The log words for <c>bale_rav1g_prewarm</c>'s return: 0 started, 1 already started, -1 failed.</summary>
     public static string PrewarmResult(int code) =>
         BaleCoreNative.Call("av1_decoder.prewarm_result", code, BaleCoreJson.Default.Int32, BaleCoreJson.Default.String);

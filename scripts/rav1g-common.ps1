@@ -3,12 +3,14 @@ $ErrorActionPreference = 'Stop'
 # The exports the FFmpegInteropX fork resolves from rav1g.dll (Source/BaleRav1g.h, BaleRav1gExports). A library
 # without every one of them makes the fork fall back to dav1d, so CI refuses to package it.
 $Rav1gExports = @('rav1g_abi_version', 'rav1g_version', 'rav1g_peek_stream_info', 'rav1g_device_create',
-    'rav1g_device_d3d12_device', 'rav1g_settings_default', 'rav1g_decoder_create', 'rav1g_decoder_decode',
-    'rav1g_decoder_drain', 'rav1g_decoder_configuration', 'rav1g_decoder_output_fence', 'rav1g_decoder_destroy')
+    'rav1g_device_create_with_settings', 'rav1g_device_d3d12_device', 'rav1g_settings_default', 'rav1g_decoder_create',
+    'rav1g_decoder_decode', 'rav1g_decoder_drain', 'rav1g_decoder_flush', 'rav1g_decoder_configuration',
+    'rav1g_decoder_output_fence', 'rav1g_decoder_destroy')
 
-# The interface version the pinned wrapper is built against: static_assert in BaleRav1g.h (bale.78 onward: 3,
-# rav1g 0.8's display tone-map parity; bale.74 to bale.77: 2; bale.44 to bale.73: 1).
-$Rav1gWrapperAbiVersion = 3
+# The interface version the pinned wrapper is built against: static_assert in BaleRav1g.h (bale.86 onward: 4,
+# rav1g 0.9's decoder flush and prepare bits; bale.78 to bale.85: 3, rav1g 0.8's display tone-map parity;
+# bale.74 to bale.77: 2; bale.44 to bale.73: 1).
+$Rav1gWrapperAbiVersion = 4
 
 # The licence texts the release's rav1g-licenses.zip carries (rav1g's build.yml release job). They ship in the
 # package as Licenses/rav1g/<path>.

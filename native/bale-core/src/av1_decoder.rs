@@ -32,6 +32,16 @@ pub const OUTPUT_TEXTURE_MARGIN: i32 = 2;
 pub const DECODE_AHEAD_FRAMES: i32 = 8;
 /// Wrapper 2.1.0-bale.48 exports `bale_rav1g_prewarm` from FFmpegInteropX.dll.
 pub const PREWARM_WRAPPER_REVISION: i32 = 48;
+/// Wrapper 2.1.0-bale.86 exports `bale_rav1g_prewarm_prepare(uint32_t)` (rav1g interface version 4).
+pub const PREWARM_PREPARE_WRAPPER_REVISION: i32 = 86;
+
+// rav1g.h (v0.9.0-alpha.1) `RAV1G_PREPARE_*`: which pipeline states rav1g's device compiles at creation.
+const PREPARE_BIT_DEPTH_8: u32 = 1;
+const PREPARE_BIT_DEPTH_10: u32 = 2;
+const PREPARE_DISPLAY_SDR: u32 = 4;
+const PREPARE_DISPLAY_PQ: u32 = 8;
+const PREPARE_DISPLAY_HLG: u32 = 16;
+const PREPARE_ONLY: u32 = 0x4000_0000;
 
 // Media Foundation's enum values, as the fork's VideoColorAttributes::Apply writes them.
 const MF_PRIMARIES_BT709: u32 = 2;
@@ -64,7 +74,7 @@ pub struct SourceFacts {
 /// The interface version the pinned wrapper's `BaleRav1g.h` is written against (its static_assert;
 /// scripts/rav1g.json `abi_version`, scripts/rav1g-common.ps1 `$Rav1gWrapperAbiVersion`). The fork
 /// refuses a library of any other version and decodes with dav1d.
-pub const LIBRARY_ABI_VERSION: u32 = 3;
+pub const LIBRARY_ABI_VERSION: u32 = 4;
 
 /// The exports the fork resolves from rav1g.dll (`BaleRav1gExports`; scripts/rav1g-common.ps1
 /// `$Rav1gExports`, which CI checks in the package). A library without one of them is refused.
@@ -73,11 +83,13 @@ pub const LIBRARY_EXPORTS: &[&str] = &[
     "rav1g_version",
     "rav1g_peek_stream_info",
     "rav1g_device_create",
+    "rav1g_device_create_with_settings",
     "rav1g_device_d3d12_device",
     "rav1g_settings_default",
     "rav1g_decoder_create",
     "rav1g_decoder_decode",
     "rav1g_decoder_drain",
+    "rav1g_decoder_flush",
     "rav1g_decoder_configuration",
     "rav1g_decoder_output_fence",
     "rav1g_decoder_destroy",
@@ -241,13 +253,71 @@ pub fn output_textures(frame_rate: Option<f64>) -> Option<i32> {
 
 /// Whether the pinned wrapper exports `bale_rav1g_prewarm` (2.1.0-bale.48 or later).
 pub fn prewarm_supported(version: &str) -> bool {
-    version.strip_prefix("2.1.0-bale.").is_some_and(|revision| {
-        !revision.is_empty()
-            && revision.bytes().all(|b| b.is_ascii_digit())
-            && revision
-                .parse::<i32>()
-                .is_ok_and(|revision| revision >= PREWARM_WRAPPER_REVISION)
-    })
+    wrapper_revision(version).is_some_and(|revision| revision >= PREWARM_WRAPPER_REVISION)
+}
+
+/// Whether the pinned wrapper exports `bale_rav1g_prewarm_prepare` (2.1.0-bale.86 or later).
+pub fn prewarm_prepare_supported(version: &str) -> bool {
+    wrapper_revision(version).is_some_and(|revision| revision >= PREWARM_PREPARE_WRAPPER_REVISION)
+}
+
+fn wrapper_revision(version: &str) -> Option<i32> {
+    let revision = version.strip_prefix("2.1.0-bale.")?;
+    if revision.is_empty() || !revision.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    revision.parse().ok()
+}
+
+#[derive(Deserialize)]
+pub struct PrepareArgs {
+    /// The Detail page's selected or Auto version (the one [`prewarm_candidate`] admitted).
+    pub version: Option<FileVersion>,
+    /// The current display mode's raw size; 0 when unknown (no downscale is assumed then).
+    pub display_width: i64,
+    pub display_height: i64,
+    /// The display is known SDR: [`route`] sets `bale_tonemap=1`, and rav1g's display pass maps PQ/HLG.
+    pub sdr_display: bool,
+}
+
+/// The `prepare` bits for `bale_rav1g_prewarm_prepare` (rav1g.h `RAV1G_PREPARE_*`): only the pipeline
+/// states the version's playback will use, as [`route`] would set it up: its bit depth, and the display
+/// pass of its transfer when the pass will run (PQ/HLG on an SDR display; SDR scaled down to the display
+/// or BT.2020 SDR mapped for an SDR one). `None` (prepare every state) when the bit depth is unknown or
+/// the version has not exactly one video track. Film grain and super-resolution are not in the catalog:
+/// a stream that needs them compiles those states at its decoder's creation (the fork passes the key
+/// frame's stream info), so a wrong guess costs time, never a failure.
+pub fn prewarm_prepare(args: &PrepareArgs) -> Option<u32> {
+    let track = match args.version.as_ref()?.video_tracks.as_deref()? {
+        [track] => track,
+        _ => return None,
+    };
+    let depth = match track.bit_depth? {
+        ..=0 => return None,
+        1..=8 => PREPARE_BIT_DEPTH_8,
+        _ => PREPARE_BIT_DEPTH_10,
+    };
+    let display = match transfer(track.color_transfer.as_deref()) {
+        Some(MF_TRANSFER_PQ) if args.sdr_display => PREPARE_DISPLAY_PQ,
+        Some(MF_TRANSFER_HLG) if args.sdr_display => PREPARE_DISPLAY_HLG,
+        Some(MF_TRANSFER_PQ | MF_TRANSFER_HLG) => 0,
+        _ => {
+            let downscale = crate::tone_map::downscale_to_display(
+                track.width.unwrap_or(0),
+                track.height.unwrap_or(0),
+                args.display_width,
+                args.display_height,
+            );
+            let gamut = args.sdr_display
+                && primaries(track.color_primaries.as_deref()) == Some(MF_PRIMARIES_BT2020);
+            if downscale || gamut {
+                PREPARE_DISPLAY_SDR
+            } else {
+                0
+            }
+        }
+    };
+    Some(PREPARE_ONLY | depth | display)
 }
 
 /// The log words for `bale_rav1g_prewarm`'s return (the fork's bale/README.md: 0 started, 1 already
@@ -1241,7 +1311,7 @@ mod tests {
     fn a_library_is_usable_only_as_the_fork_loads_it() {
         let usable = library(true, true, None, Some(LIBRARY_ABI_VERSION));
         assert!(usable.usable);
-        assert_eq!(usable.detail, "rav1g.dll usable (interface 3)");
+        assert_eq!(usable.detail, "rav1g.dll usable (interface 4)");
         let refused = [
             (library(false, false, None, None), "rav1g.dll not packaged"),
             (library(true, false, None, None), "rav1g.dll failed to load"),
@@ -1256,7 +1326,7 @@ mod tests {
             ),
             (
                 library(true, true, None, Some(2)),
-                "rav1g.dll interface 2, expected 3",
+                "rav1g.dll interface 2, expected 4",
             ),
             (
                 library(true, true, None, None),
@@ -1269,9 +1339,103 @@ mod tests {
         }
     }
 
+    fn prepare_track(
+        depth: Option<i64>,
+        transfer: &str,
+        primaries: &str,
+        width: i64,
+        height: i64,
+    ) -> PrepareArgs {
+        PrepareArgs {
+            version: Some(FileVersion {
+                video_tracks: Some(vec![VideoTrack {
+                    bit_depth: depth,
+                    color_transfer: Some(transfer.into()),
+                    color_primaries: Some(primaries.into()),
+                    width: Some(width),
+                    height: Some(height),
+                    ..VideoTrack::default()
+                }]),
+                ..FileVersion::default()
+            }),
+            display_width: 1920,
+            display_height: 1080,
+            sdr_display: true,
+        }
+    }
+
+    #[test]
+    fn prepare_bits_follow_the_route() {
+        // The fork's README example: an HDR10 title on an SDR display.
+        let hdr10 = prepare_track(Some(10), "smpte2084", "bt2020", 3840, 2160);
+        assert_eq!(prewarm_prepare(&hdr10), Some(0x4000_000A));
+        // HLG on an SDR display; either on an HDR display passes through without the pass.
+        assert_eq!(
+            prewarm_prepare(&prepare_track(
+                Some(10),
+                "arib-std-b67",
+                "bt2020",
+                1920,
+                1080
+            )),
+            Some(0x4000_0012)
+        );
+        let mut hdr_display = hdr10;
+        hdr_display.sdr_display = false;
+        assert_eq!(prewarm_prepare(&hdr_display), Some(0x4000_0002));
+        // SDR at the display's size: no display pass; larger: the SDR pass scales it down.
+        assert_eq!(
+            prewarm_prepare(&prepare_track(Some(10), "bt709", "bt709", 1920, 1080)),
+            Some(0x4000_0002)
+        );
+        assert_eq!(
+            prewarm_prepare(&prepare_track(Some(8), "bt709", "bt709", 1920, 1080)),
+            Some(0x4000_0001)
+        );
+        assert_eq!(
+            prewarm_prepare(&prepare_track(Some(8), "bt709", "bt709", 3840, 2160)),
+            Some(0x4000_0005)
+        );
+        // BT.2020 SDR is mapped for an SDR display.
+        assert_eq!(
+            prewarm_prepare(&prepare_track(Some(10), "bt2020-10", "bt2020", 1920, 1080)),
+            Some(0x4000_0006)
+        );
+        // An unknown display size assumes no downscale.
+        let mut unknown = prepare_track(Some(8), "bt709", "bt709", 3840, 2160);
+        (unknown.display_width, unknown.display_height) = (0, 0);
+        assert_eq!(prewarm_prepare(&unknown), Some(0x4000_0001));
+    }
+
+    #[test]
+    fn unknown_facts_prepare_every_state() {
+        assert_eq!(
+            prewarm_prepare(&prepare_track(None, "bt709", "bt709", 1920, 1080)),
+            None
+        );
+        let mut none = prepare_track(Some(10), "bt709", "bt709", 1920, 1080);
+        none.version = None;
+        assert_eq!(prewarm_prepare(&none), None);
+        let mut two = prepare_track(Some(10), "bt709", "bt709", 1920, 1080);
+        let tracks = two.version.as_mut().unwrap().video_tracks.as_mut().unwrap();
+        tracks.push(tracks[0].clone());
+        assert_eq!(prewarm_prepare(&two), None);
+    }
+
+    #[test]
+    fn prepare_needs_bale_86() {
+        assert!(prewarm_prepare_supported("2.1.0-bale.86"));
+        assert!(prewarm_prepare_supported("2.1.0-bale.100"));
+        assert!(!prewarm_prepare_supported("2.1.0-bale.85"));
+        assert!(!prewarm_prepare_supported("2.1.0-bale.86-beta"));
+        assert!(!prewarm_prepare_supported("2.1.0"));
+        assert!(prewarm_supported("2.1.0-bale.48"));
+        assert!(!prewarm_supported("2.1.0-bale.47"));
+    }
+
     #[test]
     fn the_library_list_is_the_forks() {
-        assert_eq!(LIBRARY_EXPORTS.len(), 12);
+        assert_eq!(LIBRARY_EXPORTS.len(), 14);
         assert_eq!(LIBRARY_EXPORTS[0], "rav1g_abi_version");
         assert!(
             LIBRARY_EXPORTS

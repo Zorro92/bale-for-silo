@@ -19,6 +19,11 @@ internal static class Rav1gPrewarm
     [DllImport("FFmpegInteropX.dll", ExactSpelling = true)]
     private static extern int bale_rav1g_prewarm();
 
+    // Wrapper 2.1.0-bale.86 (rav1g interface 4): the same, compiling only the states of rav1g.h's RAV1G_PREPARE_* bits
+    // (RAV1G_PREPARE_ONLY set) instead of all 96; the first prewarm or stream decides the device.
+    [DllImport("FFmpegInteropX.dll", ExactSpelling = true)]
+    private static extern int bale_rav1g_prewarm_prepare(uint prepare);
+
     // Set once the fork was asked: later Detail pages cost one read (the fork's call is idempotent besides).
     private static int _requested;
 
@@ -38,6 +43,10 @@ internal static class Rav1gPrewarm
     internal static void ForDetail(FileVersion? version)
     {
         if (version is null || Volatile.Read(ref _requested) != 0) return;
+        // The display facts the prepare bits need are read here, on the UI thread (HdmiDisplayInformation), and only for
+        // an AV1 version (a cheap pre-filter; PrewarmCandidate still decides on the pool).
+        if (!string.Equals(version.CodecVideo?.Trim(), "av1", StringComparison.OrdinalIgnoreCase)) return;
+        var display = DisplayFacts();
         _ = Task.Run(async () =>
         {
             try
@@ -48,7 +57,9 @@ internal static class Rav1gPrewarm
                 // A rav1g playback's own open makes the device; beside any other, 6 compile threads would only compete with it.
                 if (PlaybackResources.Lifetime.Active) return;
                 if (Interlocked.Exchange(ref _requested, 1) != 0) return;
-                Request();
+                Request(display is { } facts
+                    ? Rav1gPolicy.PrewarmPrepare(version, facts.Width, facts.Height, facts.SdrDisplay)
+                    : null);
             }
             catch (Exception ex) { Log.Info($"player: rav1g prewarm failed ({ex.GetType().Name})"); }
         });
@@ -59,12 +70,31 @@ internal static class Rav1gPrewarm
     internal static void Start()
     {
         Interlocked.Exchange(ref _requested, 1);
-        _ = Task.Run(Request);
+        _ = Task.Run(() => Request(null));
     }
 #endif
 
-    /// <summary>Asks the fork on the calling pool thread and logs its answer in one fixed line; never throws.</summary>
-    private static void Request()
+    /// <summary>The current display mode's raw size and whether it is SDR, as a playback's route sees them (UI thread).</summary>
+    private static (int Width, int Height, bool SdrDisplay)? DisplayFacts()
+    {
+        try
+        {
+            var size = DisplayHdrOutput.CurrentRawSize() ?? (0, 0);
+            var sdr = !ConsoleToneMapPolicy.HasHdrOutput(DisplayHdrOutput.DetectCapabilities().Hdr);
+            return (size.Width, size.Height, sdr);
+        }
+        catch (Exception ex)
+        {
+            Log.Info($"player: rav1g prewarm display facts unavailable ({ex.GetType().Name})");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Asks the fork on the calling pool thread and logs its answer in one fixed line; never throws. <paramref name="prepare"/>:
+    /// rav1g's prepare bits (<see cref="Rav1gPolicy.PrewarmPrepare"/>) with wrapper bale.86+, null for every state.
+    /// </summary>
+    private static void Request(uint? prepare)
     {
         try
         {
@@ -76,6 +106,12 @@ internal static class Rav1gPrewarm
             if (!Rav1gLibrary.Present)
             {
                 Log.Info("player: rav1g prewarm skipped (rav1g.dll not packaged)");
+                return;
+            }
+            if (prepare is { } bits && Rav1gPolicy.PrewarmPrepareSupported(FfmpegWrapperVersion.Value))
+            {
+                var prepared = bale_rav1g_prewarm_prepare(bits);
+                Log.Info($"player: rav1g prewarm {Rav1gPolicy.PrewarmResult(prepared)} prepare=0x{bits:X8} (return {prepared})");
                 return;
             }
             var code = bale_rav1g_prewarm();

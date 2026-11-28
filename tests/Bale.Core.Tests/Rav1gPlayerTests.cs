@@ -63,7 +63,7 @@ public sealed class Rav1gPlayerTests
         var start = prewarm[prewarm.IndexOf("#if DEBUG_SERVER\n    /// <summary>Debug <c>av1-decoder rav1g</c>", StringComparison.Ordinal)..];
         start = start[..start.IndexOf("#endif", StringComparison.Ordinal)];
         Assert.Contains("internal static void Start()", start);
-        Assert.Contains("Interlocked.Exchange(ref _requested, 1);\n        _ = Task.Run(Request);", start);
+        Assert.Contains("Interlocked.Exchange(ref _requested, 1);\n        _ = Task.Run(() => Request(null));", start);
         Assert.Contains("[DllImport(\"FFmpegInteropX.dll\", ExactSpelling = true)]\n    private static extern int bale_rav1g_prewarm();", prewarm);
         Assert.Contains("Rav1gPolicy.PrewarmSupported(FfmpegWrapperVersion.Value)", prewarm);
         Assert.Contains("catch (EntryPointNotFoundException)", prewarm);

@@ -187,17 +187,35 @@ public sealed class Rav1gPolicyTests
     }
 
     [Fact]
+    public void PrewarmPrepareBitsComeFromTheVersionAndTheDisplay()
+    {
+        static FileVersion Version(int? depth, string transfer, string primaries, int width, int height) => new()
+        {
+            CodecVideo = "av1",
+            VideoTracks = [new VideoTrack { BitDepth = depth, ColorTransfer = transfer, ColorPrimaries = primaries, Width = width, Height = height }],
+        };
+        Assert.Equal(0x4000000Au, Rav1gPolicy.PrewarmPrepare(Version(10, "smpte2084", "bt2020", 3840, 2160), 1920, 1080, true));
+        Assert.Equal(0x40000002u, Rav1gPolicy.PrewarmPrepare(Version(10, "smpte2084", "bt2020", 3840, 2160), 3840, 2160, false));
+        Assert.Equal(0x40000002u, Rav1gPolicy.PrewarmPrepare(Version(10, "bt709", "bt709", 1920, 1080), 1920, 1080, true));
+        Assert.Equal(0x40000005u, Rav1gPolicy.PrewarmPrepare(Version(8, "bt709", "bt709", 3840, 2160), 1920, 1080, true));
+        Assert.Null(Rav1gPolicy.PrewarmPrepare(Version(null, "bt709", "bt709", 1920, 1080), 1920, 1080, true));
+        Assert.Null(Rav1gPolicy.PrewarmPrepare(null, 1920, 1080, true));
+        Assert.True(Rav1gPolicy.PrewarmPrepareSupported("2.1.0-bale.86"));
+        Assert.False(Rav1gPolicy.PrewarmPrepareSupported("2.1.0-bale.85"));
+    }
+
+    [Fact]
     public void TheLibraryIsUsableOnlyAsTheForkLoadsIt()
     {
-        Assert.Equal(new Rav1gLibraryStatus(true, "rav1g.dll usable (interface 3)"), Rav1gPolicy.Library(true, true, null, 3));
+        Assert.Equal(new Rav1gLibraryStatus(true, "rav1g.dll usable (interface 4)"), Rav1gPolicy.Library(true, true, null, 4));
         Assert.Equal(new Rav1gLibraryStatus(false, "rav1g.dll not packaged"), Rav1gPolicy.Library(false, false, null, null));
         Assert.Equal(new Rav1gLibraryStatus(false, "rav1g.dll failed to load"), Rav1gPolicy.Library(true, false, null, null));
         Assert.Equal(new Rav1gLibraryStatus(false, "rav1g.dll lacks rav1g_decoder_drain"),
-            Rav1gPolicy.Library(true, true, "rav1g_decoder_drain", 3));
-        Assert.Equal(new Rav1gLibraryStatus(false, "rav1g.dll interface 2, expected 3"), Rav1gPolicy.Library(true, true, null, 2));
+            Rav1gPolicy.Library(true, true, "rav1g_decoder_drain", 4));
+        Assert.Equal(new Rav1gLibraryStatus(false, "rav1g.dll interface 2, expected 4"), Rav1gPolicy.Library(true, true, null, 2));
         Assert.False(Rav1gPolicy.Library(true, true, null, null).Usable);
-        Assert.Equal(3u, Rav1gPolicy.LibraryAbiVersion);
-        Assert.Equal(12, Rav1gPolicy.LibraryExports.Count);
+        Assert.Equal(4u, Rav1gPolicy.LibraryAbiVersion);
+        Assert.Equal(14, Rav1gPolicy.LibraryExports.Count);
     }
 
     [Theory]

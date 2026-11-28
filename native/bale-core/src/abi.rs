@@ -319,6 +319,14 @@ fn dispatch(name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
         "av1_decoder.prewarm_result" => with_json(name, input, |code: i32| {
             crate::av1_decoder::prewarm_result(code)
         }),
+        "av1_decoder.prewarm_prepare_supported" => with_json(name, input, |v: String| {
+            crate::av1_decoder::prewarm_prepare_supported(&v)
+        }),
+        "av1_decoder.prewarm_prepare" => {
+            with_json(name, input, |a: crate::av1_decoder::PrepareArgs| {
+                crate::av1_decoder::prewarm_prepare(&a)
+            })
+        }
         "av1_decoder.prewarm_candidate" => {
             with_json(name, input, |a: crate::av1_decoder::PrewarmArgs| {
                 crate::av1_decoder::prewarm_candidate(&a)

@@ -242,14 +242,17 @@ public sealed class Rav1gReleaseTests
         forDetail = forDetail[..forDetail.IndexOf("\n    }\n", StringComparison.Ordinal)];
         // The UI thread reads one flag; the rest runs on the pool, in this order: the library check, the decision (Core,
         // Rust av1_decoder::prewarm_candidate), no playback running, the process's first ask, then the fork.
-        Assert.Contains("if (version is null || Volatile.Read(ref _requested) != 0) return;\n        _ = Task.Run(async () =>", forDetail);
+        Assert.Contains("if (version is null || Volatile.Read(ref _requested) != 0) return;", forDetail);
+        // An AV1 version only, then the display facts for rav1g's prepare bits on the UI thread (HdmiDisplayInformation).
+        Assert.Contains("if (!string.Equals(version.CodecVideo?.Trim(), \"av1\", StringComparison.OrdinalIgnoreCase)) return;\n        var display = DisplayFacts();\n        _ = Task.Run(async () =>", forDetail);
         var steps = new[]
         {
             "var library = await Rav1gLibrary.Status.ConfigureAwait(false);",
             "if (!Rav1gPolicy.PrewarmCandidate(Decoder, Rav1gClaim, library.Usable, DeviceIdentity.SoftwareVideoSupported, version)) return;",
             "if (PlaybackResources.Lifetime.Active) return;",
             "if (Interlocked.Exchange(ref _requested, 1) != 0) return;",
-            "Request();",
+            "Request(display is { } facts",
+            "? Rav1gPolicy.PrewarmPrepare(version, facts.Width, facts.Height, facts.SdrDisplay)",
         };
         var at = steps.Select(step => forDetail.IndexOf(step, StringComparison.Ordinal)).ToArray();
         Assert.All(at, index => Assert.True(index > 0));
@@ -257,6 +260,10 @@ public sealed class Rav1gReleaseTests
         Assert.Contains("catch (Exception ex) { Log.Info($\"player: rav1g prewarm failed ({ex.GetType().Name})\"); }", forDetail);
         // One fixed line per answer, as the debug trigger has logged it since wrapper bale.48.
         Assert.Contains("Log.Info($\"player: rav1g prewarm {Rav1gPolicy.PrewarmResult(code)} (return {code})\");", prewarm);
+        // Wrapper bale.86+: only the prepared states, with the bits in the line.
+        Assert.Contains("[DllImport(\"FFmpegInteropX.dll\", ExactSpelling = true)]\n    private static extern int bale_rav1g_prewarm_prepare(uint prepare);", prewarm);
+        Assert.Contains("if (prepare is { } bits && Rav1gPolicy.PrewarmPrepareSupported(FfmpegWrapperVersion.Value))", prewarm);
+        Assert.Contains("Log.Info($\"player: rav1g prewarm {Rav1gPolicy.PrewarmResult(prepared)} prepare=0x{bits:X8} (return {prepared})\");", prewarm);
     }
 
     [Fact]
