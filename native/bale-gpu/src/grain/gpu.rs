@@ -121,15 +121,15 @@ impl Intermediate {
     }
 }
 
-/// A source the pixel shaders may sample directly: a DEFAULT texture with an SRV bind
-/// (the zero-copy landing texture). Anything else goes through the intermediate copy.
+/// A source the pixel shaders may sample directly: a DEFAULT texture with an SRV bind.
+/// Anything else goes through the intermediate copy.
 fn readable_in_place(desc: &D3D11_TEXTURE2D_DESC) -> bool {
     desc.Usage == D3D11_USAGE_DEFAULT && desc.BindFlags & D3D11_BIND_SHADER_RESOURCE.0 as u32 != 0
 }
 
 struct FrameResources {
     key: (u32, u32, DXGI_FORMAT),
-    // Created on first use, so the zero-copy path never allocates the full-frame scratch texture.
+    // Created on first use, so a frame sampled in place never allocates the full-frame scratch texture.
     intermediate: Option<Intermediate>,
     scaling: InputTexture,
     offsets: InputTexture,
@@ -515,8 +515,8 @@ impl BaleGrainGpu {
                     format,
                     (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE).0 as u32,
                 );
-                // Staging sources take the intermediate copy; SRV-bound ones (zero-copy landing)
-                // are sampled in place. Production uses both, so both must match dav1d.
+                // Staging sources take the intermediate copy; SRV-bound ones are sampled in place.
+                // Both paths must match dav1d.
                 for in_place in [false, true] {
                     let src_desc = if in_place {
                         texture_desc(64, 64, format, D3D11_BIND_SHADER_RESOURCE.0 as u32)

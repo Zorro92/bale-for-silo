@@ -3,7 +3,6 @@ use super::{Tracked, texture_size};
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_BUFFER_DESC, D3D11_TEXTURE2D_DESC, ID3D11Buffer, ID3D11DeviceChild, ID3D11Texture2D,
 };
-use windows::Win32::Graphics::Direct3D12::{D3D12_RESOURCE_DIMENSION_BUFFER, ID3D12Resource};
 use windows::Win32::Graphics::Dxgi::IDXGISwapChain1;
 use windows::Win32::System::Com::{IAgileObject, IAgileObject_Impl};
 use windows::core::{GUID, Interface, Result, implement};
@@ -58,26 +57,6 @@ fn track_child(resource: &ID3D11DeviceChild, category: u32, bytes: u64, count: i
     let sentinel = sentinel(category, bytes, count);
     // SAFETY: private data retains the marker but the marker owns no COM resource (no cycle).
     // A failed attach drops the local marker and reverses accounting before returning the error.
-    unsafe { resource.SetPrivateDataInterface(&MEMORY_SENTINEL, &sentinel) }
-}
-
-pub(crate) fn track_committed(resource: &ID3D12Resource, category: u32) -> Result<()> {
-    // SAFETY: live resource, metadata only.
-    let desc = unsafe { resource.GetDesc() };
-    let bytes = if desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER {
-        desc.Width
-    } else {
-        texture_size(
-            desc.Width,
-            desc.Height,
-            desc.Format.0,
-            u32::from(desc.MipLevels),
-            u32::from(desc.DepthOrArraySize),
-            desc.SampleDesc.Count,
-        )
-    };
-    let sentinel = sentinel(category, bytes, 1);
-    // SAFETY: as for D3D11, held until the resource's last Release.
     unsafe { resource.SetPrivateDataInterface(&MEMORY_SENTINEL, &sentinel) }
 }
 

@@ -112,7 +112,7 @@ pub unsafe extern "C" fn bale_gpu_device_release_counts(watched: *mut u64, relea
     }
 }
 
-/// Independent additive lifecycle ABI; the existing GPU, subtitle, grain and zero-copy ABIs stay put.
+/// Independent additive lifecycle ABI; the existing GPU, subtitle and grain ABIs stay put.
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_lifecycle_abi_version() -> u32 {
     1
@@ -135,12 +135,11 @@ pub extern "C" fn bale_gpu_device_count() -> u32 {
         .count() as u32
 }
 
-/// Retires idle zero-copy runtimes and trims all remaining registered D3D11 devices.
+/// Trims all remaining registered D3D11 devices.
 /// The app must have stopped every playback/probe first. Never call on an active player.
 #[unsafe(no_mangle)]
 pub extern "C" fn bale_gpu_trim() -> i32 {
     catch_unwind(AssertUnwindSafe(|| {
-        crate::d3d12_repack::release_idle();
         let devices: Vec<_> = DEVICES
             .lock()
             .unwrap_or_else(|e| e.into_inner())

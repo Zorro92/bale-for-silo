@@ -3,12 +3,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// (output name, source name, profile, preprocessor defines). The zero-copy compute shaders are
-/// built a second time with `BALE_8BIT` for 8-bit pictures; their 10-bit builds take no define. The
-/// tone-map plane shaders are built again with `BALE_STAGED` for the downscale path, and both of
-/// those again with `BALE_DITHER_R2` for rav1g's NV12 threshold (the stage's default since
-/// 2026-11-26; the builds without it are the static Bayer ones of debug `bayerdither`).
-const SHADERS: [(&str, &str, &str, &[&str]); 19] = [
+/// (output name, source name, profile, preprocessor defines). The tone-map plane shaders are built
+/// again with `BALE_STAGED` for the downscale path, and both of those again with `BALE_DITHER_R2`
+/// for rav1g's NV12 threshold (the stage's default since 2026-11-26; the builds without it are the
+/// static Bayer ones of debug `bayerdither`).
+const SHADERS: [(&str, &str, &str, &[&str]); 15] = [
     ("fullscreen_vs", "fullscreen_vs", "vs_5_0", &[]),
     ("tonemap_luma_ps", "tonemap_luma_ps", "ps_5_0", &[]),
     ("tonemap_chroma_ps", "tonemap_chroma_ps", "ps_5_0", &[]),
@@ -53,15 +52,6 @@ const SHADERS: [(&str, &str, &str, &[&str]); 19] = [
     ),
     ("grain_luma_ps", "grain_luma_ps", "ps_5_0", &[]),
     ("grain_chroma_ps", "grain_chroma_ps", "ps_5_0", &[]),
-    ("repack_zc_cs", "repack_zc_cs", "cs_5_0", &[]),
-    ("repack_zc8_cs", "repack_zc_cs", "cs_5_0", &["BALE_8BIT=1"]),
-    ("repack_grain_zc_cs", "repack_grain_zc_cs", "cs_5_0", &[]),
-    (
-        "repack_grain_zc8_cs",
-        "repack_grain_zc_cs",
-        "cs_5_0",
-        &["BALE_8BIT=1"],
-    ),
     // Subtitle overlay (`subs::overlay`).
     ("sub_vs", "sub_vs", "vs_5_0", &[]),
     ("sub_ps", "sub_ps", "ps_5_0", &[]),

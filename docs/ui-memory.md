@@ -112,7 +112,7 @@ Safe lifecycle logs are `ui resources: suspend released images=N surfaces=M shad
    dependent). At equal input-idle offsets compare memory while opening/playing. Pause/resume must
    be instant and must **not** change UI release/restore counters or refill hidden art. Back/end/
    navigation away must log `playback-return restored` and reload only the visible returning page.
-6. Repeat with native MP4/HLS, FFmpeg/system HEVC/VP9, zero-copy AV1 8/10-bit, text and bitmap/PGS
+6. Repeat with native MP4/HLS, FFmpeg/system HEVC/VP9, AV1 8/10-bit, text and bitmap/PGS
    subtitles. Background during playback must still stop media, release display resources and trim;
    returning shows Retry, with hidden art still released. Retry must recreate playback/subtitles.
    Back from Retry must restore Detail correctly. Also try a quick app switch during shutdown and

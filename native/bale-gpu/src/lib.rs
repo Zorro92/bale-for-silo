@@ -1,12 +1,11 @@
 //! Bale's native GPU/media layer, called from the C# Xbox app and the FFmpegInteropX wrapper over a
-//! narrow C ABI: the zero-copy software AV1 repack (`d3d12_repack`, zero-copy ABI), GPU film
-//! grain ([`grain`], grain ABI), the debug frame observer (`frames`), and debug loader/engine
-//! probes (`bale_gpu_*`, this file and `engine`), the subtitle overlay ([`subs`], subtitle ABI,
-//! `bale_sub_*` in this file, with the bitmap ABI `bale_sub_bitmap_*` for image subtitles), the
-//! debug libass subtitle probes (`ass`), in-band closed captions ([`subs::cc`], caption ABI,
-//! `bale_cc_*` in this file), the debug audio passthrough probe ([`audio_probe`],
-//! `bale_gpu_audio_probe`) and the exclusive-mode audio output ([`audio_out`], audio output ABI,
-//! `bale_audio_out_*`).
+//! narrow C ABI: GPU film grain ([`grain`], grain ABI), the debug frame observer (`frames`), and
+//! debug loader/engine probes (`bale_gpu_*`, this file and `engine`), the subtitle overlay
+//! ([`subs`], subtitle ABI, `bale_sub_*` in this file, with the bitmap ABI `bale_sub_bitmap_*` for
+//! image subtitles), the debug libass subtitle probes (`ass`), in-band closed captions
+//! ([`subs::cc`], caption ABI, `bale_cc_*` in this file), the debug audio passthrough probe
+//! ([`audio_probe`], `bale_gpu_audio_probe`) and the exclusive-mode audio output ([`audio_out`],
+//! audio output ABI, `bale_audio_out_*`).
 //!
 //! The debug probes and readouts exist only with the `debug-probes` feature (Cargo.toml), which CI enables for
 //! debug-server packages alone; production DLLs export none of them (ci.yml's export lists).
@@ -15,10 +14,8 @@
 mod ass;
 pub mod audio_out;
 pub mod audio_probe;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "debug-probes"))]
 mod d3d12;
-#[cfg(windows)]
-pub mod d3d12_repack;
 #[cfg(windows)]
 mod engine;
 pub mod engine_events;
@@ -42,7 +39,6 @@ pub mod tonemap;
 pub use tonemap::ffi::bale_tonemap_abi_version;
 #[cfg(windows)]
 pub use tonemap::ffi::{bale_tonemap_apply, bale_tonemap_create, bale_tonemap_destroy};
-pub mod zc_frame;
 
 #[cfg(feature = "debug-probes")]
 use std::sync::{Arc, Mutex};

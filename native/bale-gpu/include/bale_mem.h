@@ -4,7 +4,8 @@
 
 /* Independent memory ledger ABI 1, cdecl; resolve exports from bale_gpu.dll.
  * IDs: 0 unassigned; 1 tone map; 2 film grain; 3 subtitle overlay;
- * 4 engine target/staging; 5 zero-copy resources; 6-15 reserved for bale_gpu;
+ * 4 engine target/staging; 5 retired (was zero-copy resources; never reassigned);
+ * 6-15 reserved for bale_gpu;
  * 16 d3d11va decoder texture array (slices); 17 stage output (tone map/downscale);
  * 18 dav1d upload pool + staging ring; 19 rav1g output images;
  * 20 rav1g process device present (count=1, bytes=0);

@@ -283,8 +283,7 @@ fn all_44_fixtures_match_dav1d_on_warp() {
     all_44_fixtures(true);
 }
 
-/// Zero-copy hands the grain pass an SRV-bound DEFAULT landing texture, sampled in place
-/// without the intermediate copy.
+/// An SRV-bound DEFAULT source is sampled in place, without the intermediate copy.
 #[test]
 fn all_44_fixtures_match_dav1d_on_warp_reading_source_in_place() {
     all_44_fixtures(false);

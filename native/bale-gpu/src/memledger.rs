@@ -1,6 +1,7 @@
 //! Memory ledger ABI 1 (independent of the GPU/decoder ABIs). Fixed category IDs:
-//! 1 tone map, 2 film grain, 3 subtitles, 4 engine target/staging, 5 zero-copy resources;
-//! 6–15 reserved for bale_gpu; 16 d3d11va decoder texture array (slices), 17 stage output,
+//! 1 tone map, 2 film grain, 3 subtitles, 4 engine target/staging, 5 retired (was zero-copy
+//! resources, removed 2026-11-27; never reassigned); 6–15 reserved for bale_gpu; 16 d3d11va decoder
+//! texture array (slices), 17 stage output,
 //! 18 dav1d upload pool/staging, 19 rav1g output images, 20 rav1g process device present, 21 decoder copy
 //! pool/rav1g direct-copy textures, 22 rav1g decoder buffers (streams); 23–31 reserved for
 //! FFmpegInteropX; 32 player swap chain (estimate); 33–63 reserved.
@@ -14,13 +15,12 @@ mod gpu;
 #[cfg(windows)]
 pub use gpu::{buffer_bytes, texture_bytes};
 #[cfg(windows)]
-pub(crate) use gpu::{track_buffer, track_committed, track_swap_chain, track_texture};
+pub(crate) use gpu::{track_buffer, track_swap_chain, track_texture};
 
 pub const TONE_MAP: u32 = 1;
 pub const FILM_GRAIN: u32 = 2;
 pub const SUBTITLES: u32 = 3;
 pub const ENGINE: u32 = 4;
-pub const ZERO_COPY: u32 = 5;
 const CATEGORIES: usize = 64;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -517,7 +517,7 @@ The tuning log and `FFmpeg tone map override` stats/where row report the capture
 
 `bale_gpu.dll` also exports the independent **memory ABI 1**, declared in
 [`native/bale-gpu/include/bale_mem.h`](../native/bale-gpu/include/bale_mem.h) (C/cdecl).
-It does not change the tone-map, grain, subtitle, zero-copy or engine ABI versions:
+It does not change the tone-map, grain, subtitle or engine ABI versions:
 
 ```c
 typedef struct BaleMemEntry {
@@ -556,7 +556,7 @@ Reset sets peak=current, preserving residency, history and underflow counters.
 | 2 | bale_gpu film grain: GPU buffers/textures and probes |
 | 3 | bale_gpu subtitle overlay: swap-chain buffers (including resize), atlas, bitmap/staging textures, buffers |
 | 4 | bale_gpu engine target/staging textures (`engine.rs`) |
-| 5 | bale_gpu zero-copy resources: D3D12 committed resources and private D3D11 landing/self-test textures |
+| 5 | Retired 2026-11-27 (was bale_gpu zero-copy resources: D3D12 committed resources and landing/self-test textures); never reassigned |
 | 6–15 | Reserved for bale_gpu |
 | 16 | d3d11va decoder texture array (count = slices) |
 | 17 | Stage output (tone map/downscale output) |

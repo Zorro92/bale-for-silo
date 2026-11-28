@@ -59,6 +59,8 @@ impl Offsets {
         self.values[row * self.cols + col]
     }
 
+    /// The raw block grid for the GPU upload (the D3D11 grain pass).
+    #[cfg(windows)]
     pub(super) fn as_bytes(&self) -> &[u8] {
         &self.values
     }

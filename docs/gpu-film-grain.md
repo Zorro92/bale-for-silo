@@ -1,6 +1,6 @@
 # Bale stage 2: GPU AV1 film grain (design)
 
-**Status (owner, 2026-11-27):** the dav1d path applies grain only on the D3D11 grain pass (fork mode 3, CPU grain on probe failure). Bale no longer sends fork mode 2 (GPU grain on zero-copy streams) or `bale_d3d11_upload`, and the debug `grain=gpu` and `dav1d-path zerocopy` routes that sent them are removed. bale_gpu keeps its `bale_zc_*` exports for FFmpegInteropX. The notes below are the 2026-11-09 history.
+**Status (owner, 2026-11-27):** the dav1d path applies grain only on the D3D11 grain pass (fork mode 3, CPU grain on probe failure). Bale no longer sends fork mode 2 (GPU grain on zero-copy streams) or `bale_d3d11_upload`, and the debug `grain=gpu` and `dav1d-path zerocopy` routes that sent them are removed. bale_gpu's `bale_zc_*` exports and the D3D12 repack behind them were removed the same day: the fork resolves those exports only on its zero-copy route, which Bale no longer takes. The notes below are the 2026-11-09 history.
 
 **Current state (2026-11-09, wrapper 0020 / `2.1.0-bale.20`, `bale_gpu` ABI 6, grain ABI 2):** GPU grain
 is the only grain Bale applies in production. Zero-copy frames get it fused into the D3D12 direct write

@@ -36,14 +36,14 @@ features = [
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D10",
     "Win32_Graphics_Direct3D11",
-    # Zero-copy repack; d3d12.dll is loaded by the caller, never imported.
+    # Debug memprobe (api 12); d3d12.dll is loaded by the caller, never imported.
     "Win32_Graphics_Direct3D12",
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
     # IAudioClient: the audio output (audio_out/) and the debug probe. mmdevapi.dll is loaded by the caller, never imported.
     "Win32_Media_Audio",
     "Win32_Media_MediaFoundation",
-    # Zero-copy repack: D3D12/DXGI shared handles and events take SECURITY_ATTRIBUTES.
+    # CreateEventW takes SECURITY_ATTRIBUTES (the audio output and the subtitle overlay's events).
     "Win32_Security",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",

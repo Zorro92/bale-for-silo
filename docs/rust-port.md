@@ -6,7 +6,7 @@ ported where it makes sense, GPU work in D3D11 by default (D3D12 only where D3D1
 ## Where rendering already is
 
 Everything Bale draws itself already runs on the GPU, most of it from Rust (`native/bale-gpu`):
-tone mapping, AV1 film grain, the AV1 zero-copy repack (D3D12, Series only) and the subtitle
+tone mapping, AV1 film grain and the subtitle
 overlay (D3D11 swap chain over the video; libass rasterises glyphs on the CPU, which is inherent).
 The XAML UI is drawn by the system compositor on the GPU; only layout and C# logic use the CPU.
 No page does hand-written CPU drawing.

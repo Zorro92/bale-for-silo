@@ -42,7 +42,7 @@ impl Probe {
             11 => Backend::D11(D11::new(device)?),
             12 if !module.is_invalid() => {
                 // SAFETY: caller keeps d3d12.dll loaded until destroy; fresh device on this adapter.
-                let d12 = unsafe { crate::d3d12_repack::create_device(module, &adapter)? };
+                let d12 = unsafe { crate::d3d12::create_device(module, &adapter)? };
                 drop(device);
                 Backend::D12(D12::new(d12)?)
             }
@@ -198,8 +198,7 @@ mod tests {
                 Backend::D11(D11::new(device.unwrap()).unwrap())
             } else {
                 Backend::D12(
-                    D12::new(crate::d3d12_repack::create_device(module, &adapter).unwrap())
-                        .unwrap(),
+                    D12::new(crate::d3d12::create_device(module, &adapter).unwrap()).unwrap(),
                 )
             };
             let mut probe = Probe {
