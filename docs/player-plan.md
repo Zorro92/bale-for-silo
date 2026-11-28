@@ -2716,7 +2716,8 @@ matching counts the same entries, so a 4K display now prefers a 4K AV1 version w
   once. Skipped when the pinned wrapper is older than bale.48 (`Rav1gPolicy.PrewarmSupported`) or rav1g.dll is not
   packaged; a missing export is caught. The log reads `player: rav1g prewarm started (return 0)`, `already started
   (return 1)` or `failed (could not start its thread) (return -1)`, then (debug FFmpeg log provider) the fork's
-  `ffmpeg: Bale rav1g: prewarm ready ms=N`. **Memory:** the device and pipelines stay resident for the process (the
+  `ffmpeg: Bale rav1g: prewarm ready ms=N (device ms=D pipelines=S)` (wrapper bale.85+: N lasts until every pipeline
+  state exists, S is the wait's status, 0 = OK; before bale.85 N stopped at device creation and missed the compiles). **Memory:** the device and pipelines stay resident for the process (the
   fork's idle reading: app 228 MiB before, 275 MiB after), the allocation the first rav1g open makes anyway; a Detail
   page whose AV1 version is then not played keeps that much of the 3328 MiB app pool (2857 MiB DXGI budget). Console
   check pending (test list below).
