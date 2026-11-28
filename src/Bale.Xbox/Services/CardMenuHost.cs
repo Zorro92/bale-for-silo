@@ -83,6 +83,8 @@ internal sealed class CardMenuHost
 
     public event Action<object>? Changed;
     public event Action<MediaCard>? DismissedFromHome;
+    /// <summary>Continue Watching's Play/Resume card action, with the card item; its owner starts the playback.</summary>
+    public event Action<object>? PlayRequested;
     public bool IsOpen => _menu.IsOpen || _opening is not null;
 
     /// <summary>System Back must dismiss a card popup before the page/shell handles its own Back chain.</summary>
@@ -282,7 +284,8 @@ internal sealed class CardMenuHost
         Close();
         if (action == CardAction.Play)
         {
-            await Playback.ShowComingAsync();
+            // Nothing is written: the owner starts the card's own playback (TvMediaCardActions.kt's onPlay).
+            PlayRequested?.Invoke(target.Item);
             return;
         }
 

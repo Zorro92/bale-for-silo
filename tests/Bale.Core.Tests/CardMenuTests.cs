@@ -61,6 +61,15 @@ public class CardMenuTests
     }
 
     [Fact]
+    public void PlayStartsTheServersResumeTargetOrTheCardItself()
+    {
+        // A series card resumes the episode the server names (play_content_id); a card that plays itself has none.
+        Assert.Equal("e7", CardMenu.PlayTarget(Card("show", "series") with { PlayContentId = "e7" }));
+        Assert.Equal("show", CardMenu.PlayTarget(Card("show", "series") with { PlayContentId = null }));
+        Assert.Equal("movie", CardMenu.PlayTarget(Card() with { PlayContentId = " " }));
+    }
+
+    [Fact]
     public void RemovalIsHomeProgressOnlyAndNeedsAnAnchor()
     {
         var next = Card("episode", "episode", "show");

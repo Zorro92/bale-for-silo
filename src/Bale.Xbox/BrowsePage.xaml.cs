@@ -50,6 +50,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
     private bool _isLoaded;
     private bool _updatingRows;
     private bool _returning;
+    private bool _playingCard;
     private int _focusVersion;
     private readonly ObservableCollection<RowView> _rows = new();
     private readonly CardMenuHost _cardMenu;
@@ -67,6 +68,7 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
             view => _libraryId is null && !_forYou ? _rows.FirstOrDefault(row => row.Cards.Contains(view))?.Row : null);
         _cardMenu.Changed += OnCardChanged;
         _cardMenu.DismissedFromHome += OnHomeCardDismissed;
+        _cardMenu.PlayRequested += OnCardPlayRequested;
 
         Rows.ItemsSource = _rows;
         // The tunnelling pass runs before the ListView can make its own geometric (sideways) move.
@@ -666,6 +668,40 @@ public sealed partial class BrowsePage : Page, IRestoresFocus
         {
             PauseHomeForNavigation();
             ShellPage.Current?.OpenDetail(card.ContentId);
+        }
+    }
+
+    /// <summary>
+    /// Continue Watching's Play/Resume (CardMenu.ForCard): the card's target starts on Auto tracks from its saved position.
+    /// It is pushed over the shell the way Detail is, so Back from the player returns here with focus on the card.
+    /// </summary>
+    private async void OnCardPlayRequested(object item)
+    {
+        if (item is not CardView { Card: var card } || Session.Client is not { } client || _playingCard) return;
+        _playingCard = true;
+        var profile = client.ProfileId;
+        try
+        {
+            var request = await CardPlayback.RequestAsync(client, card);
+            // Detail, Back or a profile change while the target loaded owns the next screen: never push over it.
+            if (!_isLoaded || !IsHome || !_homeActive || !ReferenceEquals(client, Session.Client) || client.ProfileId != profile) return;
+            if (request is null)
+            {
+                ExitNotice.ShowShort(CardPlayback.LoadFailed);
+                return;
+            }
+
+            PauseHomeForNavigation();
+            ShellPage.Current?.OpenPlayer(request);
+        }
+        catch (Exception ex)
+        {
+            Log.Info($"Home play handoff type={ex.GetType().Name} hr=0x{unchecked((uint)ex.HResult):X8}");
+            ExitNotice.ShowShort(CardPlayback.LoadFailed);
+        }
+        finally
+        {
+            _playingCard = false;
         }
     }
 

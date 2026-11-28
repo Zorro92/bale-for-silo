@@ -595,6 +595,13 @@ public sealed partial class ShellPage : Page, IBackHandler, IRestoresFocus
         Frame.Navigate(typeof(DetailPage), entry);
     }
 
+    /// <summary>Pushes a player over the shell as OpenDetail pushes Detail, so Back from it returns to the cached shell.</summary>
+    internal void OpenPlayer(PlayerRequest request)
+    {
+        ClosePanels();
+        Frame.Navigate(typeof(PlayerPage), request);
+    }
+
     /// <summary>TvAppNavigation.kt keeps the server for Login unless the viewer explicitly removes it.</summary>
     internal async Task SignOutAsync(bool removeServer = false)
     {

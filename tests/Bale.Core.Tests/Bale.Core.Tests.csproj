@@ -224,6 +224,7 @@
     <Compile Include="../../src/Bale.Xbox/Services/DebugStartBudget.cs" Link="DebugStartBudget.cs" />
     <None Include="../../src/Bale.Xbox/PlayerPage.StartBudget.cs" Link="PlayerPage.StartBudget.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/BrowsePage.Home.cs" Link="BrowsePage.Home.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/Bale.Xbox/BrowsePage.xaml.cs" Link="BrowsePage.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/Bale.Xbox/Services/DebugSeekWatchdog.cs" Link="DebugSeekWatchdog.cs" />
     <None Include="../../src/Bale.Xbox/PlayerPage.SeekWatchdog.cs" Link="PlayerPage.SeekWatchdog.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/Bale.Xbox/PlayerPage.BufferingQuality.cs" Link="PlayerPage.BufferingQuality.cs.txt" CopyToOutputDirectory="PreserveNewest" />

@@ -68,7 +68,7 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
         InitializeComponent();
         _cardMenu = new CardMenuHost(this, PageScroller, item =>
         {
-            if (item is EpisodeView) _ = Playback.ShowComingAsync();
+            if (item is EpisodeView episode) _ = PlayEpisodeAsync(episode);
             else if (IsCollectionsItem(item)) OpenCollectionsItem(item);
             else OpenSimilar(item);
         });
@@ -1070,8 +1070,15 @@ public sealed partial class DetailPage : Page, IBackHandler, IRestoresFocus
 
     private async void OnEpisodeClick(object sender, ItemClickEventArgs e)
     {
-        if (e.ClickedItem is EpisodeView view) await OpenPlayerAsync(view.Episode.ContentId, null, fromEpisode: true);
+        if (e.ClickedItem is EpisodeView view) await PlayEpisodeAsync(view);
     }
+
+    /// <summary>
+    /// TvDetailEpisodeRail.kt's onEpisodeSelected and tvOS quickPlayEpisode: the episode plays from its own saved position
+    /// (startFromBeginning false), with the series page's return focus on its card. Keyboard and gamepad A reach this
+    /// through CardMenuHost, which swallows their ItemClick; a pointer click still raises ItemClick.
+    /// </summary>
+    private Task PlayEpisodeAsync(EpisodeView view) => OpenPlayerAsync(view.Episode.ContentId, null, fromEpisode: true);
 
     private void OnMenuCardChanged(object item)
     {

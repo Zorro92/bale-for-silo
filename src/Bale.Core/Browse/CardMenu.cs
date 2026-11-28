@@ -47,6 +47,13 @@ public static class CardMenu
         return entries;
     }
 
+    /// <summary>
+    /// What a card's Play/Resume starts: the server's play_content_id (the episode a series card resumes; absent when the
+    /// item plays itself, CatalogItem), else the card's own item. Detail's Play target follows the same rule (DetailFeed).
+    /// </summary>
+    public static string PlayTarget(MediaCard card) =>
+        string.IsNullOrWhiteSpace(card.PlayContentId) ? card.ContentId : card.PlayContentId;
+
     /// <summary>TvDetailEpisodeRail.kt exposes watched and favorite only, without Play or watchlist.</summary>
     public static IReadOnlyList<CardMenuEntry> ForEpisode(bool played, bool favorite) =>
         ForFlags(new ItemFlags(false, favorite, played), watchlist: false);
