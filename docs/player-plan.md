@@ -2541,6 +2541,18 @@ dav1d. Console decode/performance, HDMI switching and physical Back behavior req
 
 ## Playback smoothness (2026-11-22)
 
+**Stats tab layout (owner decision, 2026-11-27).** Production shows only the Options panel's Stats tab, laid out as Apple's
+tvOS panel (`PlaybackStatsPanel`, `PlaybackStats.swift`): **Playback** on the left (Playback, Video, Dynamic range, Audio,
+Subtitles, Playback rate only while it is not 1×, Diagnostics); **Stream** and **Engine** on the right (Playback status,
+Network throughput, Dropped frames, Missed frames; Route, Delivery, Backend, Video and Audio decoders). Labels are Apple's
+English strings and values follow its formats ("HEVC · 3840×2160 · 23.976 fps", "EAC3 5.1", "Server Remux HLS"). A section
+with no rows is left out, as on tvOS, and so is a row Bale cannot measure, never a faked value. Left out on purpose:
+Forward buffer and Display cushion (no Bale source), A/V sync gap, Instant read bitrate and the read, cache and memory
+counters (no Bale source), Source (Apple shows a host name; Bale never shows a URL), Audio underruns (never counted) and
+Hard containers (a constant "No"). **Missed frames** stays as the owner's smoothness reading. It is not Apple's "Dropped
+frames" (the engine's own count), which is shown beside it where the engine route measures it. The debug overlay (`DEBUG_SERVER`
+only) shows the same rows plus Source, Media bitrate, Buffering and its own counters.
+
 **Smoothness = stalls + drops; never judge it from dropped frames alone.** A waiting IMFMediaEngine
 pauses its playback clock. No frame arrives late, so a visibly stuttering decode can drop zero frames,
 show a healthy playing-only fps, and take much longer than the media's duration.

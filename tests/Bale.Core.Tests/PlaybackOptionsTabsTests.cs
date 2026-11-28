@@ -111,8 +111,8 @@ public class PlaybackOptionsTabsTests
             Assert.Contains(Named(pane), panel.Descendants());
 
         var code = Read("PlayerPage.Options.cs.txt");
-        Assert.Contains("PlaybackOptionsTabs.Visible(_optionsStatsRows.Count > 0", code);
-        Assert.Contains("RefreshHudStats(attempt, sampleBandwidth: false).OfficialHudRows()", code);
+        Assert.Contains("PlaybackOptionsTabs.Visible(_optionsStats.Count > 0", code);
+        Assert.Contains("RefreshHudStats(attempt, sampleBandwidth: false).OfficialSections()", code);
         // Picks take the control bar's path (local audio switch or replan; closed captions the player's own) and leave the
         // panel open.
         Assert.Contains("ChangeTracksAsync(trackIndex, null) : PickSubtitleAsync(trackIndex)", code);

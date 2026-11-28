@@ -7,7 +7,7 @@ using Windows.Media.Playback;
 namespace Bale.Xbox;
 
 /// <summary>
-/// The official Stats readout (TvPlayerHud.kt hudRows()) for the Options panel's Stats tab, in every build. The debug
+/// The Stats tab's readout (Apple's tvOS panel, PlaybackStats.swift) for the Options panel, in every build. The debug
 /// overlay (PlayerPage.Stats.cs) adds Bale's diagnostics on top of the same snapshot.
 /// </summary>
 public sealed partial class PlayerPage
@@ -15,14 +15,12 @@ public sealed partial class PlayerPage
     private PlaybackStats _hudStats = new();
 
     private static PlaybackStats PlanStats(Attempt? attempt, bool? isHls = null) => (attempt is { Plan: { } plan }
-        // The title's versions name a version swap in the Delivery row.
+        // The title's versions name a version swap in the Diagnostics rows.
         ? PlaybackStats.FromPlan(plan, isHls, attempt.Request.Detail.Versions)
         : new PlaybackStats()) with
     {
         // The route is decided before the mount opens: name FFmpeg from the start, not after the first refresh.
         BackendDisplayName = attempt?.Media?.Route is { UseFfmpeg: true } ? "FFmpegInteropX" : "Windows MediaPlayer",
-        // VideoBackendCapabilities.kt reports backend support, not a claimed container list.
-        HardContainers = "No",
     };
 
     /// <summary>
@@ -53,11 +51,39 @@ public sealed partial class PlayerPage
                 }
                 catch (Exception ex) { LogFailure("stats bandwidth", ex); }
             }
-            if (media.Player is { } player) stats = stats with { Smoothness = player.ReadSmoothness(stats.FrameRate) };
+            stats = stats with
+            {
+                Phase = PhaseOf(media),
+                PlaybackRate = media.Player?.PlaybackSession.PlaybackRate,
+                Subtitles = SubtitleValue(),
+            };
+            if (media.Player is { } player)
+            {
+                var smoothness = player.ReadSmoothness(stats.FrameRate);
+                // The engine's own drop count. MediaPlayer does not measure drops (AGENTS.md, Player diagnostics).
+                stats = stats with { Smoothness = smoothness, DroppedFrames = player is EngineBackend ? (long)smoothness.DroppedFrames : null };
+            }
         }
         // Smoothness keeps renderer drops and waiting-time equivalents separate; audio underruns stay unknown.
         return _hudStats = stats with { EstimatedBandwidthBps = bandwidth };
     }
+
+    /// <summary>The Stats tab's Playback status: a seek in progress, else the backend session's state (none while it is not open).</summary>
+    private PlaybackStatsPhase? PhaseOf(Mount media)
+    {
+        if (_seeking) return PlaybackStatsPhase.Seeking;
+        return media.Player?.PlaybackSession.PlaybackState switch
+        {
+            MediaPlaybackState.Opening => PlaybackStatsPhase.Loading,
+            MediaPlaybackState.Buffering => PlaybackStatsPhase.Rebuffering,
+            MediaPlaybackState.Playing => PlaybackStatsPhase.Playing,
+            MediaPlaybackState.Paused => PlaybackStatsPhase.Paused,
+            _ => null,
+        };
+    }
+
+    /// <summary>Playback › Subtitles: the track the Subtitles tab selects, or Off; no value when the file has no subtitle tracks.</summary>
+    private string? SubtitleValue() => _subtitleRows.Count == 0 ? null : _subtitleRows.FirstOrDefault(row => row.IsSelected)?.Name ?? "Off";
 
     /// <summary>
     /// The FFmpeg rows come from the mount's stream snapshot, never the wrapper: CurrentVideoStream/CurrentAudioStream
@@ -79,7 +105,7 @@ public sealed partial class PlayerPage
                 VideoCodec = PlaybackStats.CompactValue(video.CodecName, 80),
                 VideoDecoderName = FfmpegSource.DecoderName(video.DecoderEngine, media.Rav1gRoute),
                 Resolution = video.PixelWidth > 0 && video.PixelHeight > 0
-                    ? string.Create(CultureInfo.InvariantCulture, $"{video.PixelWidth}x{video.PixelHeight}") : null,
+                    ? PlaybackStats.Dimensions(video.PixelWidth, video.PixelHeight) : null,
                 FrameRate = video.FramesPerSecond > 0 && double.IsFinite(video.FramesPerSecond)
                     ? video.FramesPerSecond : stats.FrameRate,
             };
@@ -89,7 +115,6 @@ public sealed partial class PlayerPage
                 AudioCodec = PlaybackStats.CompactValue(audio.CodecName, 80),
                 AudioDecoderName = FfmpegSource.DecoderName(audio.DecoderEngine),
                 AudioChannelCount = audio.Channels,
-                AudioSampleRate = audio.SampleRate,
             };
         return stats;
     }
@@ -106,7 +131,7 @@ public sealed partial class PlayerPage
             {
                 VideoCodec = format.Subtype,
                 Resolution = format.Width > 0 && format.Height > 0
-                    ? string.Create(CultureInfo.InvariantCulture, $"{format.Width}x{format.Height}") : null,
+                    ? PlaybackStats.Dimensions((int)format.Width, (int)format.Height) : null,
                 FrameRate = PlaybackStats.ResolveFrameRate(plan, isHls,
                     format.FrameRate.Numerator > 0 && format.FrameRate.Denominator > 0
                         ? (double)format.FrameRate.Numerator / format.FrameRate.Denominator : null),
@@ -129,7 +154,6 @@ public sealed partial class PlayerPage
             {
                 AudioCodec = format.Subtype,
                 AudioChannelCount = format.ChannelCount,
-                AudioSampleRate = format.SampleRate,
             };
             stats = stats with { AudioDecoderName = $"Media Foundation ({track.SupportInfo.DecoderStatus})" };
         }

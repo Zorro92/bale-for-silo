@@ -10,8 +10,8 @@ internal sealed class DebugStatsRowFilter
     // Every row label the player can show, so commands sent before a player opens are not reported unknown.
     internal static readonly string[] KnownLabels =
     [
-        "Backend", "Route", "Subtitles", "Hard containers", "Video codec", "Resolution", "Frame rate", "HDR mode",
-        "Video decoder", "Audio codec", "Audio decoder", "Estimated bandwidth", "Missed frames", "Audio underruns",
+        "Backend", "Route", "Playback", "Video", "Dynamic range", "Audio", "Subtitles", "Playback rate", "Diagnostics",
+        "Playback status", "Network throughput", "Dropped frames", "Missed frames",
         "Stage GPU", "Tone-map peak", "Stalls", "Dropped (engine)", "Decode rate", "Decoder discarded", "Starved", "Playback time", "Player", "Engine frames",
         "Delivery", "Source", "Media bitrate", "Buffering", "HDR output", "Display mode", "Late frames",
         "Stream waits", "Read-ahead", "Stream reads", "FFmpeg HDR", "Video media type (track)", "Video media type (mss)",

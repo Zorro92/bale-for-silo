@@ -291,6 +291,8 @@
           </Grid.ColumnDefinitions>
           <StackPanel x:Name="StatsPaneLeftRows" />
           <StackPanel x:Name="StatsPaneRightRows" Grid.Column="1" />
+          <!-- Section headers (PLAYBACK, STREAM, ENGINE) take this eyebrow style, as the Video pane's headers do. -->
+          <TextBlock x:Name="StatsSectionStyleSource" Visibility="Collapsed" Style="{StaticResource SkylinePlayerEyebrowStyle}" />
         </Grid>
         <StackPanel x:Name="VideoPane" Visibility="Collapsed" Spacing="6">
           <TextBlock Text="AUTOMATION" Style="{StaticResource SkylinePlayerEyebrowStyle}" />

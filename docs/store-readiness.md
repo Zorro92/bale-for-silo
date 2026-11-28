@@ -181,9 +181,8 @@ silo-android's TV app (AGENTS.md); where that differs from Microsoft's guidance,
 
 ## Decisions for the owner
 
-- **Stats tab.** The player's Options › Stats shows technical rows in production too (Backend, Route, Video and Audio
-  decoder labels, and others; `PlaybackStats`). Hide them in production, or keep them as the official apps' "stats for
-  nerds" equivalent?
+- **Stats tab.** Resolved 2026-11-27 (owner): production Options › Stats shows only Apple's tvOS rows, in Apple's Playback,
+  Stream and Engine sections (`PlaybackStats.OfficialSections`); the debug overlay stays debug-only.
 - **The EXPERIMENTAL Settings group**: resolved 2026-11-27 (owner). Removed: dav1d always uses GPU grain, with no setting.
 - **The debug server** is unauthenticated and listens on the whole LAN (port 8790) with input injection. Debug-server
   builds must never be installed on someone else's console; production has none of it (CI checks).

@@ -31,7 +31,7 @@ public sealed partial class PlayerPage
     private IReadOnlyList<PlaybackOptionsTab> _optionsTabs = [PlaybackOptionsTab.Info, PlaybackOptionsTab.Video];
     private IReadOnlyList<PlaybackTrackRow> _audioRows = [];
     private IReadOnlyList<PlaybackTrackRow> _subtitleRows = [];
-    private IReadOnlyList<(string Label, string Value)> _optionsStatsRows = [];
+    private IReadOnlyList<PlaybackStatsSection> _optionsStats = [];
 
     private bool OptionsOpen => OptionsPanel.Visibility == Visibility.Visible;
 
@@ -53,8 +53,8 @@ public sealed partial class PlayerPage
             FillChapters(chapters);
             FillTracks();
             // The last once-a-second throughput sample stays; the rest is read now.
-            FillOptionsStats(RefreshHudStats(attempt, sampleBandwidth: false).OfficialHudRows());
-            _optionsTabs = PlaybackOptionsTabs.Visible(_optionsStatsRows.Count > 0, PlaybackOptionsTabs.TrackCount(_audioRows),
+            FillOptionsStats(RefreshHudStats(attempt, sampleBandwidth: false).OfficialSections());
+            _optionsTabs = PlaybackOptionsTabs.Visible(_optionsStats.Count > 0, PlaybackOptionsTabs.TrackCount(_audioRows),
                 PlaybackOptionsTabs.TrackCount(_subtitleRows), chapters.Count);
             foreach (var tab in AllOptionsTabs)
                 OptionsTabButton(tab).Visibility = _optionsTabs.Contains(tab) ? Visibility.Visible : Visibility.Collapsed;
@@ -254,37 +254,52 @@ public sealed partial class PlayerPage
         return Enumerable.Range(0, count).Select(i => tracks is not null && i < tracks.Count && tracks[i].IsSelected).ToArray();
     }
 
-    /// <summary>TvPlayerHud.kt HudStatsPane: label/value rows, the first half on the left, one line each.</summary>
-    private void FillOptionsStats(IReadOnlyList<(string Label, string Value)> rows)
+    /// <summary>
+    /// Apple's tvOS Stats pane (PlaybackStatsPanel, usesTwoColumnLayout): Playback on the left; Stream and Engine on the right.
+    /// Each section has an eyebrow header, then label/value rows (a value that does not fit ends in an ellipsis). The pane is
+    /// read-only, so no row takes focus.
+    /// </summary>
+    private void FillOptionsStats(IReadOnlyList<PlaybackStatsSection> sections)
     {
-        if (_optionsStatsRows.SequenceEqual(rows)) return;
-        _optionsStatsRows = rows;
+        if (SameStats(_optionsStats, sections)) return;
+        _optionsStats = sections;
         StatsPaneLeftRows.Children.Clear();
         StatsPaneRightRows.Children.Clear();
-        var split = (rows.Count + 1) / 2;
-        for (var i = 0; i < rows.Count; i++)
+        foreach (var section in sections)
         {
-            var (label, value) = rows[i];
-            var row = new Grid { Style = StatsRowStyleSource.Style };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.Children.Add(new TextBlock { Text = label, Style = StatsLabelStyleSource.Style });
-            // HudReadOnlyRow: the value ends in an ellipsis rather than wrapping (the debug overlay wraps).
-            var text = new TextBlock
+            var column = section.Id == "playback" ? StatsPaneLeftRows : StatsPaneRightRows;
+            column.Children.Add(new TextBlock
             {
-                Text = value, Style = StatsValueStyleSource.Style,
-                TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1,
-            };
-            Grid.SetColumn(text, 1);
-            row.Children.Add(text);
-            (i < split ? StatsPaneLeftRows : StatsPaneRightRows).Children.Add(row);
+                Text = section.Title.ToUpperInvariant(), Style = StatsSectionStyleSource.Style,
+                Margin = column.Children.Count == 0 ? new Thickness(0) : new Thickness(0, 16, 0, 4),
+            });
+            foreach (var (label, value) in section.Rows)
+            {
+                var row = new Grid { Style = StatsRowStyleSource.Style };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.Children.Add(new TextBlock { Text = label, Style = StatsLabelStyleSource.Style });
+                // HudReadOnlyRow: the value ends in an ellipsis rather than wrapping (the debug overlay wraps).
+                var text = new TextBlock
+                {
+                    Text = value, Style = StatsValueStyleSource.Style,
+                    TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1,
+                };
+                Grid.SetColumn(text, 1);
+                row.Children.Add(text);
+                column.Children.Add(row);
+            }
         }
     }
+
+    private static bool SameStats(IReadOnlyList<PlaybackStatsSection> before, IReadOnlyList<PlaybackStatsSection> after) =>
+        before.Count == after.Count && before.Zip(after).All(pair => pair.First.Id == pair.Second.Id
+            && pair.First.Rows.SequenceEqual(pair.Second.Rows));
 
     /// <summary>OnTick, once a second: the open Stats tab follows playback.</summary>
     private void UpdateOptionsStats()
     {
-        if (OptionsOpen && _optionsTab == PlaybackOptionsTab.Stats) FillOptionsStats(_hudStats.OfficialHudRows());
+        if (OptionsOpen && _optionsTab == PlaybackOptionsTab.Stats) FillOptionsStats(_hudStats.OfficialSections());
     }
 
     private IReadOnlyList<PlaybackTrackRow> PlayingTrackRows(PlaybackSelectorKind kind) =>

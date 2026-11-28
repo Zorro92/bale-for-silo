@@ -167,7 +167,7 @@ public class DebugStatsRowFilterTests
         var filter = new DebugStatsRowFilter();
         Apply(filter, "hide", "Delivery");
         var output = filter.DescribeStats(stats.HudRows());
-        Assert.Contains("Delivery: Direct play [hidden]\n", output);
+        Assert.Contains("Delivery: Original HTTP [hidden]\n", output);
         Assert.Contains("Source: mkv\n", output);
         Assert.DoesNotContain("unexpected diagnostic", output);
     }

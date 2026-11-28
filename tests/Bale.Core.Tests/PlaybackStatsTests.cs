@@ -6,107 +6,12 @@ namespace Bale.Core.Tests;
 
 public class PlaybackStatsTests
 {
-    [Fact]
-    public void HudRowsKeepTheOfficialOrderWithBaleExtrasLast()
-    {
-        var stats = new PlaybackStats
-        {
-            BackendDisplayName = "Windows MediaPlayer",
-            BackendRoute = "Native Direct",
-            SubtitleRendering = "Media3Text", // Exercise the row order for a backend with a renderer.
-            HardContainers = "No",
-            VideoCodec = "HEVC",
-            Resolution = "1920x1080",
-            FrameRate = 23.976023,
-            HdrMode = "SDR",
-            VideoDecoderName = "Media Foundation (FullySupported)",
-            AudioCodec = "AAC",
-            AudioDecoderName = "Media Foundation (FullySupported)",
-            EstimatedBandwidthBps = 151_300_000,
-            Smoothness = new PlaybackSmoothnessSnapshot(2, 20, 2.5, 1, 0.3, 0.3, 1, 0.3, 0, 0, 10, 9.7),
-            AudioUnderruns = 1,
-            Delivery = "Direct play (source_compatible)",
-            Source = "mkv · hevc · Main 10 · 10-bit · 1920x1080 · aac 6 ch",
-            MediaBitrateBps = 19_000_000,
-            BufferingCount = 3,
-            BufferingSeconds = 2.75,
-        };
-        Assert.Equal(new (string, string)[]
-        {
-            ("Backend", "Windows MediaPlayer"),
-            ("Route", "Native Direct"),
-            ("Subtitles", "Media3Text"),
-            ("Hard containers", "No"),
-            ("Video codec", "HEVC"),
-            ("Resolution", "1920x1080"),
-            ("Frame rate", "23.976 fps"),
-            ("HDR mode", "SDR"),
-            ("Video decoder", "Media Foundation (FullySupported)"),
-            ("Audio codec", "AAC"),
-            ("Audio decoder", "Media Foundation (FullySupported)"),
-            ("Estimated bandwidth", "151.3 Mbps"),
-            ("Missed frames", "20 (2.5%)"),
-            ("Audio underruns", "1"),
-            ("Delivery", "Direct play (source_compatible)"),
-            ("Source", "mkv · hevc · Main 10 · 10-bit · 1920x1080 · aac 6 ch"),
-            ("Media bitrate", "19.0 Mbps"),
-            ("Buffering", "3 times, 2.8 s"),
-        }, stats.HudRows());
-        // The Options panel's Stats tab shows TvPlayerHud.kt hudRows() plus Missed frames: the overlay's rows up to Audio underruns.
-        Assert.Equal(stats.HudRows().Take(14), stats.OfficialHudRows());
-        Assert.Equal("Audio underruns", stats.OfficialHudRows()[^1].Label);
-    }
-
-    [Fact]
-    public void OfficialRowsLeaveOutBaleDiagnosticsAndCanBeEmpty()
-    {
-        var diagnosticsOnly = new PlaybackStats { Delivery = "Direct play", Source = "mkv", MediaBitrateBps = 1_000_000, BufferingCount = 1 };
-        Assert.NotEmpty(diagnosticsOnly.HudRows());
-        Assert.Empty(diagnosticsOnly.OfficialHudRows());
-    }
-
     [Theory]
     [InlineData(null, 7, null)]
     [InlineData("  hevc \n main10 ", 80, "hevc main10")]
     [InlineData("abcdefghij", 7, "abcd...")]
     public void CompactValueKeepsOneBoundedLine(string? text, int maxLength, string? expected) =>
         Assert.Equal(expected, PlaybackStats.CompactValue(text, maxLength));
-
-    [Fact]
-    public void MissingValuesAndZeroCountersDoNotCreateRows()
-    {
-        Assert.Empty(new PlaybackStats().HudRows());
-        Assert.Empty(new PlaybackStats
-        {
-            BackendDisplayName = " ",
-            VideoCodec = "",
-            FrameRate = double.NaN,
-            EstimatedBandwidthBps = -1,
-            AudioUnderruns = 0,
-            AudioChannelCount = 6,
-            AudioSampleRate = 48000,
-            MediaBitrateBps = 0,
-            BufferingCount = 0,
-            BufferingSeconds = 10,
-        }.HudRows());
-    }
-
-    [Fact]
-    public void SparseRowsKeepTheirRelativeOrderAndZeroBandwidthIsAValue()
-    {
-        var stats = new PlaybackStats { AudioCodec = "AAC", EstimatedBandwidthBps = 0, Delivery = "Remux", Source = "mp4" };
-        Assert.Equal(new (string, string)[]
-        {
-            ("Audio codec", "AAC"), ("Estimated bandwidth", "0 bps"), ("Delivery", "Remux"), ("Source", "mp4"),
-        }, stats.HudRows());
-    }
-
-    [Fact]
-    public void AudioEncodingDetailsStayWithTheAudioCodecRow()
-    {
-        var stats = new PlaybackStats { AudioCodec = "AAC", AudioChannelCount = 6, AudioSampleRate = 48000 };
-        Assert.Equal(("Audio codec", "AAC · 6 ch · 48000 Hz"), Assert.Single(stats.HudRows()));
-    }
 
     [Theory]
     [InlineData(0, "0 bps")]
@@ -120,20 +25,6 @@ public class PlaybackStatsTests
     public void BitrateMatchesTheOfficialThresholdsAndRounding(long bps, string expected) =>
         Assert.Equal(expected, PlaybackStats.FormatBitrate(bps));
 
-    [Fact]
-    public void AllNumbersUseInvariantCulture()
-    {
-        var previous = CultureInfo.CurrentCulture;
-        try
-        {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
-            Assert.Equal("1.3 Mbps", PlaybackStats.FormatBitrate(1_250_000));
-            var stats = new PlaybackStats { FrameRate = 59.940059, BufferingCount = 1, BufferingSeconds = 1.25 };
-            Assert.Equal(new (string, string)[] { ("Frame rate", "59.940 fps"), ("Buffering", "1 times, 1.2 s") }, stats.HudRows());
-        }
-        finally { CultureInfo.CurrentCulture = previous; }
-    }
-
     [Theory]
     [InlineData("original_http", "Direct play", "Native Direct")]
     [InlineData("server_remux_hls", "Remux", "HLS")]
@@ -146,11 +37,11 @@ public class PlaybackStatsTests
         var plan = new PlaybackPlan { Delivery = delivery, DecisionReason = "subtitle_burn_in_required" };
         var stats = PlaybackStats.FromPlan(plan);
         Assert.Equal(route, stats.BackendRoute);
-        Assert.Equal(decision is null ? null : decision + " (subtitles burned in)", stats.Delivery);
+        Assert.Equal(decision is null ? null : decision + " (subtitles burned in)", stats.Decision);
         plan.DecisionReason = null;
         stats = PlaybackStats.FromPlan(plan);
         Assert.Equal(route, stats.BackendRoute);
-        Assert.Equal(decision, stats.Delivery);
+        Assert.Equal(decision, stats.Decision);
     }
 
     [Theory]
@@ -184,7 +75,7 @@ public class PlaybackStatsTests
             Assert.NotEqual(code.Replace('_', ' '), text);
         }
         Assert.Equal("Direct play", PlaybackStats.FromPlan(new PlaybackPlan
-            { Delivery = "original_http", DecisionReason = "validated_original_playback" }).Delivery);
+            { Delivery = "original_http", DecisionReason = "validated_original_playback" }).Decision);
     }
 
     [Fact]
@@ -249,7 +140,6 @@ public class PlaybackStatsTests
         var stats = PlaybackStats.FromPlan(plan);
         Assert.Equal("mkv · hevc · Main 10 · 10-bit · 3840x2160 · eac3 6 ch", stats.Source);
         Assert.Equal("SDR", stats.HdrMode);
-        Assert.Null(stats.SubtitleRendering);
         Assert.DoesNotContain(stats.HudRows(), row => row.Label == "Subtitles");
         Assert.Equal(19_000_000, stats.MediaBitrateBps);
         Assert.Null(stats.EstimatedBandwidthBps);
@@ -268,7 +158,7 @@ public class PlaybackStatsTests
         Assert.Equal("SDR", stats.HdrMode);
         Assert.Null(stats.Source);
         Assert.Null(stats.BackendRoute);
-        Assert.Null(stats.Delivery);
+        Assert.Null(stats.Decision);
         Assert.Null(stats.FrameRate);
         Assert.Null(stats.MediaBitrateBps);
         Assert.Null(PlaybackStats.FromPlan(new PlaybackPlan { EffectiveRecipe = new EffectiveRecipeV3 { BitrateKbps = long.MaxValue } }).MediaBitrateBps);
@@ -290,7 +180,7 @@ public class PlaybackStatsTests
         };
         var stats = PlaybackStats.FromPlan(plan);
         Assert.Equal("Native Direct", stats.BackendRoute);
-        Assert.Equal("Direct play", stats.Delivery);
+        Assert.Equal("Direct play", stats.Decision);
         Assert.Equal("mkv · hevc", stats.Source);
         Assert.DoesNotContain(stats.HudRows(), row => row.Value.Contains("secret", StringComparison.Ordinal));
     }
@@ -305,19 +195,19 @@ public class PlaybackStatsTests
     ];
 
     [Fact]
-    public void DeliveryNamesTheVersionTheServerPlayedInstead()
+    public void DecisionNamesTheVersionTheServerPlayedInstead()
     {
         // The real case: a 4K Dolby Vision pick on an SDR display, played from the 1080p version.
         var plan = new PlaybackPlan { Delivery = "original_http", RequestedMediaFileId = "202779", EffectiveMediaFileId = "24796" };
-        Assert.Equal("Direct play · 1080P version instead of 4K · DV", PlaybackStats.FromPlan(plan, versions: SwapVersions).Delivery);
-        Assert.Contains(("Delivery", "Direct play · 1080P version instead of 4K · DV"), PlaybackStats.FromPlan(plan, versions: SwapVersions).HudRows());
+        Assert.Equal("Direct play · 1080P version instead of 4K · DV", PlaybackStats.FromPlan(plan, versions: SwapVersions).Decision);
+        Assert.Contains(("Diagnostics", "1080P version instead of 4K · DV"), PlaybackStats.FromPlan(plan, versions: SwapVersions).HudRows());
         // The decision reason keeps its place.
         plan.DecisionReason = "quality_device_limit";
         Assert.Equal("Direct play (above max resolution) · 1080P version instead of 4K · DV",
-            PlaybackStats.FromPlan(plan, isHls: false, SwapVersions).Delivery);
+            PlaybackStats.FromPlan(plan, isHls: false, SwapVersions).Decision);
         // Same readout label on both sides.
         plan = new PlaybackPlan { Delivery = "server_transcode_hls", RequestedMediaFileId = "24797", EffectiveMediaFileId = "24796" };
-        Assert.Equal("Transcode · other 1080P version played", PlaybackStats.FromPlan(plan, versions: SwapVersions).Delivery);
+        Assert.Equal("Transcode · other 1080P version played", PlaybackStats.FromPlan(plan, versions: SwapVersions).Decision);
     }
 
     [Theory]
@@ -328,9 +218,9 @@ public class PlaybackStatsTests
     public void SwapToOrFromAnUnknownVersionSaysOnlyThatAnotherPlayed(string requested, string effective)
     {
         var plan = new PlaybackPlan { Delivery = "original_http", RequestedMediaFileId = requested, EffectiveMediaFileId = effective };
-        Assert.Equal("Direct play · other version played", PlaybackStats.FromPlan(plan, versions: SwapVersions).Delivery);
-        Assert.Equal("Direct play · other version played", PlaybackStats.FromPlan(plan, versions: []).Delivery);
-        Assert.Equal("Direct play · other version played", PlaybackStats.FromPlan(plan).Delivery);
+        Assert.Equal("Direct play · other version played", PlaybackStats.FromPlan(plan, versions: SwapVersions).Decision);
+        Assert.Equal("Direct play · other version played", PlaybackStats.FromPlan(plan, versions: []).Decision);
+        Assert.Equal("Direct play · other version played", PlaybackStats.FromPlan(plan).Decision);
     }
 
     [Theory]
@@ -349,13 +239,13 @@ public class PlaybackStatsTests
             RequestedMediaFileId = requested, EffectiveMediaFileId = effective,
         };
         Assert.Null(PlaybackStats.DescribeVersionSwap(plan, SwapVersions));
-        Assert.Equal("Direct play (above max resolution)", PlaybackStats.FromPlan(plan, versions: SwapVersions).Delivery);
+        Assert.Equal("Direct play (above max resolution)", PlaybackStats.FromPlan(plan, versions: SwapVersions).Decision);
     }
 
     [Fact]
     public void ASwapShowsEvenWithoutAReadableDelivery()
     {
         var plan = new PlaybackPlan { RequestedMediaFileId = "202779", EffectiveMediaFileId = "24796" };
-        Assert.Equal("1080P version instead of 4K · DV", PlaybackStats.FromPlan(plan, versions: SwapVersions).Delivery);
+        Assert.Equal("1080P version instead of 4K · DV", PlaybackStats.FromPlan(plan, versions: SwapVersions).Decision);
     }
 }

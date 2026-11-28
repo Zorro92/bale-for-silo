@@ -318,8 +318,8 @@ public sealed class DolbyVision7Tests
     [Fact]
     public void StatsNameTheBaseLayerAndSdrMapping()
     {
-        Assert.Contains("Dolby Vision 7 → HDR10 base layer", PlaybackStats.FromPlan(Plan()).Delivery);
-        Assert.Contains("Dolby Vision 7 → HDR10 base layer → SDR", PlaybackStats.FromPlan(Plan(true)).Delivery);
+        Assert.Contains("Dolby Vision 7 → HDR10 base layer", PlaybackStats.FromPlan(Plan()).Decision);
+        Assert.Contains("Dolby Vision 7 → HDR10 base layer → SDR", PlaybackStats.FromPlan(Plan(true)).Decision);
         Assert.Equal("HDR10 HDMI · Dolby Vision 7 → HDR10 base layer", DebugHdrPlayback.Output(false, Plan()));
         Assert.Equal("SDR / console tone map · Dolby Vision 7 → HDR10 base layer", DebugHdrPlayback.Output(false, Plan(true), true));
     }

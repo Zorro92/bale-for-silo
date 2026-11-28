@@ -28,7 +28,7 @@ public static class PlaybackOptionsInfo
     public static IReadOnlyList<PlaybackInfoRow> StreamRows(PlaybackPlan plan, string? subtitles, string? chapter, AudioTrack? playingAudio = null)
     {
         var rows = new List<PlaybackInfoRow>();
-        if (PlaybackStats.FromPlan(plan).Delivery is { } delivery) rows.Add(new("Playback", delivery));
+        if (PlaybackStats.FromPlan(plan).Decision is { } delivery) rows.Add(new("Playback", delivery));
         if (VideoCodecName(plan.EffectiveRecipe?.VideoCodec ?? plan.Source?.VideoCodec) is { } video) rows.Add(new("Video", video));
         if (AudioValue(plan, playingAudio) is { } audio) rows.Add(new("Audio", audio));
         rows.Add(new("Subtitles", string.IsNullOrWhiteSpace(subtitles) ? "Off" : subtitles));

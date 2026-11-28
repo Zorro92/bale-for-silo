@@ -80,7 +80,8 @@ rather than leaving them transparent so they cost nothing while hidden.
    landing time; the scan ends without seeking if the player leaves. Rate to tune on the console. Built on
    the existing seek path (exact landing with FastSeek off, keyframe for software AV1).
 4. **HUD: Audio and Subtitles tabs** with mid-playback switching (local switch or replan), then
-   Info/Video/Chapters; the debug stats move into the Stats tab.
+   Info/Video/Chapters. The Stats tab shows only production rows (owner, 2026-11-27: Apple's tvOS layout, see
+   docs/player-plan.md "Stats tab layout"); the debug overlay stays debug-only.
    First part, code done 2026-11-16: Audio and Subtitles buttons in the transport row (pills
    "Audio · English", "Subtitles · Off" on focus) open the Detail page's track lists for the playing
    file; a pick sends a `track_change` replan of the same session at the current position
