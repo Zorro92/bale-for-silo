@@ -219,8 +219,8 @@ public class DebugFfmpegPlaytestTests
     }
 
     [Theory]
-    [InlineData(null, null, null, "dav1d (D3D11 default)")]
-    [InlineData("default", null, null, "dav1d (D3D11 default)")]
+    [InlineData(null, null, null, "GPU D3D11 (default)")]
+    [InlineData("default", null, null, "GPU D3D11 (default)")]
     [InlineData("on", "bale_film_grain_mode", "0", "dav1d (override)")]
     [InlineData("dav1d", "bale_film_grain_mode", "0", "dav1d (override)")]
     [InlineData("gpu", "bale_film_grain_mode", "2", "GPU (override)")]

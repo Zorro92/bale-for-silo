@@ -78,12 +78,12 @@ public sealed class Rav1gReleaseTests
             var route = PlaybackRoutePolicy.Decide(plan, false);
             var decision = Rav1gPolicy.Route("rav1g", route, plan, [Version(1080, 8_000)], (1920, 1080), true, false, status.Usable);
             Assert.False(decision.Rav1g);
-            // dav1d exactly as before rav1g: no fork key, the software defaults (16 ahead at 1080p), CPU grain.
+            // dav1d exactly as before rav1g: no fork key, the software defaults (16 ahead at 1080p), GPU grain.
             var config = FfmpegSource.Configuration(route, new DebugFfmpegInputTuning(), decision);
             Assert.DoesNotContain("bale_av1_decoder", config.FFmpegOptions.Keys);
             Assert.DoesNotContain("bale_rav1g_display", config.FFmpegOptions.Keys);
             Assert.Equal("16", config.FFmpegOptions["bale_decode_ahead_frames"]);
-            Assert.Equal("0", config.FFmpegOptions["bale_film_grain_mode"]);
+            Assert.Equal("3", config.FFmpegOptions["bale_film_grain_mode"]);
             Assert.Equal(1000, SoftwareDecodeTuning.BufferTimeMs(true, decision.BufferMs, route.VideoWidth, route.VideoHeight));
             // The claim stays dav1d's 1080p60 (PlaybackClaims passes the library's verdict).
             var claims = ConsoleEvidence.ForHardware(Series, status.Usable);
@@ -154,7 +154,7 @@ public sealed class Rav1gReleaseTests
         Assert.Contains("var rav1g = media.Rav1g = Rav1gPolicy.Route(attempt.Av1Decoder, media.Route, attempt.Plan!,\n"
             + "                    attempt.Request.Detail.Versions, DisplayHdrOutput.CurrentRawSize(), sdrDisplay, attempt.Rav1gRemounted,\n"
             + "                    Rav1gLibrary.Usable);", media);
-        Assert.Contains("var config = FfmpegSource.Configuration(media.Route, media.Rav1g, attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits);", media);
+        Assert.Contains("var config = FfmpegSource.Configuration(media.Route, media.Rav1g, attempt.SdrWhiteNits);", media);
         Assert.Contains("FfmpegSource.ValidateVideoDecoders(media.FfmpegSource, media.Route, rav1gRoute);", media);
         Assert.Contains("media.Rav1gActive = media.FfmpegStreams?.Value?.Video?.DecoderEngine == DecoderEngine.FFmpegD3D11HardwareDecoder;", media);
         Assert.Contains("media.Rav1gCheck = new Rav1gOutputCheck(rav1g.Source, sdrDisplay, !ConsoleToneMapRuntime.SupportsP010,", media);
@@ -186,13 +186,13 @@ public sealed class Rav1gReleaseTests
         Assert.Contains("internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, Rav1gRouteDecision? rav1g = null,", source);
         Assert.Contains("var rav1gStage = rav1g is { Rav1g: true } && route.SoftwareVideo && route.VideoCodec == \"av1\";", source);
         Assert.Contains("if (rav1g is { Rav1g: true } && softwareVideo && route.VideoCodec == \"av1\")", source);
-        Assert.Contains("ApplyRav1g(config, rav1g, dav1dGpuFilmGrain);", source);
+        Assert.Contains("ApplyRav1g(config, rav1g);", source);
         var apply = source[source.IndexOf("internal static void ApplyRav1g(", StringComparison.Ordinal)..];
         apply = apply[..apply.IndexOf("\n    }\n", StringComparison.Ordinal)];
         foreach (var key in new[] { "bale_av1_decoder", "bale_av1_fallback_max_height", "bale_decode_ahead_frames",
             "bale_gpu_output_textures", "bale_tonemap", "bale_tonemap_output_width", "bale_rav1g_display" })
             Assert.Contains($"config.FFmpegOptions[\"{key}\"]", apply);
-        Assert.Contains("ApplySoftwareVideo(config, dav1dGpuFilmGrain);", apply);
+        Assert.Contains("ApplySoftwareVideo(config);", apply);
         // The provider knobs, perf logs and zero-copy path stay debug-only.
         Assert.DoesNotContain("DebugRav1gTuning", source);
         Assert.DoesNotContain("ApplyDav1dPath", source);

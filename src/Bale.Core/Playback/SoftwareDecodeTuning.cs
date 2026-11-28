@@ -14,10 +14,11 @@ public sealed record SoftwareDecodeTuning(int? DecodeAheadFrames = null, int? Da
     // MiB less than 8 with the same CPU and stalls; 5 and 4 save more but stall noticeably more in heavy
     // scenes. Trimming decode-ahead or BufferTime further also added stalls.
     public const int Above1080pDav1dMaxFrameDelay = 6;
-    // Owner, 2026-11-19: dav1d's own CPU grain on D3D11, with CPU NV12/P010 output.
-    // Fork modes: 0 = dav1d applies grain, 2 = GPU grain (zero-copy streams only).
-    // Export-only bale_dav1d_export_film_grain=1 overrides either mode for grain=off.
-    public const int FilmGrainMode = 0;
+    // Owner, 2026-11-27: the dav1d path applies grain on the GPU only (fork mode 3: D3D11 staged upload + bale_gpu grain;
+    // CPU grain only when the fork's open-time probe fails). Fork modes: 0 = dav1d applies grain (debug grain=dav1d),
+    // 2 = GPU grain on debug zero-copy streams, 3 = GPU grain on D3D11. Export-only bale_dav1d_export_film_grain=1
+    // overrides every mode for grain=off.
+    public const int FilmGrainMode = 3;
 
     public static int? BufferTimeMs(bool softwareVideo, int? overrideMs = null, long? width = null, long? height = null) =>
         overrideMs ?? (softwareVideo ? (Above1080p(width, height) ? Above1080pBufferMs : DefaultBufferMs) : null);

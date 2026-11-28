@@ -35,7 +35,7 @@ public sealed class DebugDav1dPathSwitchTests
         const string capture = "public string Dav1dPath { get; } = DebugDav1dPathSwitch.Mode;";
         Assert.Contains(capture, player);
         Assert.DoesNotContain("DebugDav1dPathSwitch", player.Replace(capture, "", StringComparison.Ordinal));
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)",
+        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.SdrWhiteNits)",
             Read("PlayerPage.Media.cs.txt"));
         Assert.DoesNotContain("DebugDav1dPathSwitch", Read("FfmpegSource.cs.txt"));
     }
@@ -57,7 +57,7 @@ public sealed class DebugDav1dPathSwitchTests
             Assert.Equal(registrations + 1, ZeroCopyRuntime.Registrations);
             foreach (var config in new[] { cpu, declined })
             {
-                Assert.Equal("0", config.FFmpegOptions["bale_film_grain_mode"]);
+                Assert.Equal("3", config.FFmpegOptions["bale_film_grain_mode"]);
                 Assert.DoesNotContain("bale_d3d11_upload", config.FFmpegOptions.Keys);
                 Assert.DoesNotContain("bale_zero_copy", config.FFmpegOptions.Keys);
                 if (rav1g) Assert.Equal("1080", config.FFmpegOptions["bale_av1_fallback_max_height"]);
@@ -68,9 +68,9 @@ public sealed class DebugDav1dPathSwitchTests
     }
 
     [Theory]
-    [InlineData(null, "0", false)]
+    [InlineData(null, "3", false)]
     [InlineData("dav1d", "0", false)]
-    [InlineData("off", "0", true)]
+    [InlineData("off", "3", true)]
     public void D3d11GrainOverridesKeepCpuBuffers(string? grain, string mode, bool exportOnly)
     {
         Assert.True(DebugFfmpegPlaytest.TryParseGrain(grain, out var selection, out _));

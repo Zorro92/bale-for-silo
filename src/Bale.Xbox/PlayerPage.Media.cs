@@ -332,7 +332,7 @@ public sealed partial class PlayerPage
 #if DEBUG_SERVER
                 DebugDescribeUrlRoute(attempt, media);
                 var config = FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,
-                    attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits);
+                    attempt.SdrWhiteNits);
                 media.FfmpegDecoderOverride = attempt.FfmpegTuning.DecoderOverride;
                 media.FfmpegToneMapOverride = attempt.FfmpegTuning.ToneMapOverride;
                 media.FfmpegColorInfoOverride = attempt.FfmpegTuning.ColorInfoOverride;
@@ -349,7 +349,7 @@ public sealed partial class PlayerPage
                     attempt.FfmpegTuningLogged = true;
                 }
 #else
-                var config = FfmpegSource.Configuration(media.Route, media.Rav1g, attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits);
+                var config = FfmpegSource.Configuration(media.Route, media.Rav1g, attempt.SdrWhiteNits);
 #endif
                 FfmpegSource.ApplyDisplaySize(config, media.Route, DisplayHdrOutput.CurrentRawSize());
                 // Phase 2 of the bit-depth rule: decide the stage's depth with the engine output, once per open.

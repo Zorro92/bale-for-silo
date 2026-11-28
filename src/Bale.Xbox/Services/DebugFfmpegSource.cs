@@ -24,7 +24,7 @@ internal static class DebugFfmpegSource
         if (tuning.DecoderUseMaxResolution is { } maxres) config.FFmpegOptions["bale_decoder_use_max_resolution"] = maxres.ToString(CultureInfo.InvariantCulture);
         if (tuning.DecoderMaxDpbCount is { } dpb) config.FFmpegOptions["bale_decoder_max_dpb_count"] = dpb.ToString(CultureInfo.InvariantCulture);
         if (tuning.HdrSupport is { } hdr) config.Video.HdrSupport = hdr ? HdrSupport.Enabled : HdrSupport.Disabled;
-        // Software mode probes D3D11 CPU output and dav1d CPU grain without D3D12.
+        // Software mode probes D3D11 CPU output and GPU grain (mode 3) without D3D12.
         // A grain override is applied after it, as in the player.
         if (mode == "software") FfmpegSource.ApplySoftwareVideo(config);
         if (DebugFfmpegPlaytest.GrainOption(tuning.FilmGrain) is { } grain) config.FFmpegOptions[grain.Key] = grain.Value;

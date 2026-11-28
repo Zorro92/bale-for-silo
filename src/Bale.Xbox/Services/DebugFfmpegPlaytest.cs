@@ -93,7 +93,7 @@ internal static class DebugFfmpegPlaytest
     }
 
     /// <summary>off remains export-only; on aliases dav1d; gpu requires wrapper patch 0009.
-    /// Default or omitted emits no override: software video keeps dav1d CPU grain on D3D11.</summary>
+    /// Default or omitted emits no override: software video keeps GPU grain on D3D11.</summary>
     internal static bool TryParseGrain(string? grain, out DebugFilmGrain? selection, out string error)
     {
         error = string.Empty;
@@ -114,7 +114,7 @@ internal static class DebugFfmpegPlaytest
     {
         DebugFilmGrain.Dav1d => ("bale_film_grain_mode", "0"),
         DebugFilmGrain.Gpu => ("bale_film_grain_mode", "2"),
-        // Wrapper bale.60: GPU grain on dav1d's D3D11 CPU output, no zero-copy (the Experimental setting's mode).
+        // Wrapper bale.60: GPU grain on dav1d's D3D11 CPU output, no zero-copy (the release dav1d mode since 2026-11-27).
         DebugFilmGrain.GpuD3d11 => ("bale_film_grain_mode", "3"),
         DebugFilmGrain.Off => ("bale_dav1d_export_film_grain", "1"),
         _ => null,
@@ -152,7 +152,7 @@ internal static class DebugFfmpegPlaytest
             + $"Decoder use max resolution: {tuning.DecoderUseMaxResolution ?? 0} (0=unset, 1=on; {(tuning.DecoderUseMaxResolution is null ? "default" : "override")}; system video only)\n"
             + $"Decoder max DPB count: {tuning.DecoderMaxDpbCount ?? 0} (0=unset; {(tuning.DecoderMaxDpbCount is null ? "default" : "override")}; system video only)\n"
             + $"HDR support: {tuning.HdrSupport switch { true => "on (override)", false => "off (override)", null => "automatic (default)" }}\n"
-            + $"Film grain requested: {tuning.FilmGrain switch { DebugFilmGrain.Dav1d => "dav1d (override)", DebugFilmGrain.Gpu => "GPU (override)", DebugFilmGrain.GpuD3d11 => "GPU D3D11 (override)", DebugFilmGrain.Off => "exported, not applied (override; libdav1d only)", _ => mode == "software" ? "dav1d (D3D11 default)" : "wrapper default (not software mode)" }}\n"
+            + $"Film grain requested: {tuning.FilmGrain switch { DebugFilmGrain.Dav1d => "dav1d (override)", DebugFilmGrain.Gpu => "GPU (override)", DebugFilmGrain.GpuD3d11 => "GPU D3D11 (override)", DebugFilmGrain.Off => "exported, not applied (override; libdav1d only)", _ => mode == "software" ? "GPU D3D11 (default)" : "wrapper default (not software mode)" }}\n"
             + $"D3D11 upload requested: {(mode == "software" ? "0 (D3D11 CPU buffers)" : "0 (not software mode)")}\n"
             + $"Effective grain mode/fallback: see Bale film grain native diagnostics\n");
     }
@@ -218,7 +218,7 @@ internal static class DebugFfmpegPlaytest
 internal enum DebugFilmGrain { Dav1d, Gpu, Off, GpuD3d11 }
 
 // Nullable decode settings use release software-video defaults or the wrapper's defaults for other modes.
-// Software mode uses the software-AV1 path (CPU buffers and dav1d CPU grain on D3D11).
+// Software mode uses the software-AV1 path (CPU buffers and GPU grain on D3D11).
 internal sealed record DebugFfmpegTuning(uint? Threads = null, bool? Allow10bit = null, double Rate = 1.0,
     int? DecodeAheadFrames = null, int? Dav1dMaxFrameDelay = null, int? DecodeThreadPriority = null,
     int? DecoderUseMaxResolution = null, int? DecoderMaxDpbCount = null, bool? HdrSupport = null, DebugFilmGrain? FilmGrain = null)

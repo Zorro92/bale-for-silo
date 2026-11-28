@@ -372,7 +372,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("public DebugFfmpegInputTuning FfmpegTuning { get; } = DebugFfmpegInputTuning.Current", Read("PlayerPage.cs.txt"));
         var player = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks", player);
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)", player);
+        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.SdrWhiteNits)", player);
         Assert.Contains("prefetched.PrefetchBlocks", player);
         Assert.Contains("if (!attempt.FfmpegTuningLogged)", player);
         Assert.Contains("attempt.FfmpegTuningLogged = true", player);
@@ -412,7 +412,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.True(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = "default" }, out var cleared));
         Assert.Null(cleared.FilmGrain);
         Assert.DoesNotContain("grain=", cleared.Description);
-        Assert.Equal(0, SoftwareDecodeTuning.FilmGrainMode);
+        Assert.Equal(3, SoftwareDecodeTuning.FilmGrainMode);
         Assert.Null(DebugFfmpegPlaytest.GrainOption(cleared.FilmGrain));
         foreach (var invalid in new[] { "OFF", "1", "", "true", "cpu" })
             Assert.False(DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["grain"] = invalid }, out _));
@@ -430,13 +430,12 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         var software = FfmpegSource.Configuration(new(true, true, "av1", "aac", 0, 1920, 1080), tuning);
         Assert.Equal("1", software.FFmpegOptions["bale_dav1d_export_film_grain"]);
         Assert.Contains("grain=dav1d|gpu|off|on|default", DebugFfmpegInputTuning.Usage);
-        Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = dav1dGpuFilmGrain ? \"3\"", production);
-        Assert.Contains(": SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);", production);
+        Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);", production);
         Assert.Equal(("bale_film_grain_mode", "0"), DebugFfmpegPlaytest.GrainOption(DebugFilmGrain.Dav1d));
-        Assert.Contains("default=dav1d (d3d11), on/dav1d=dav1d", DebugFfmpegInputTuning.Usage);
-        Assert.Contains("production default=dav1d, on/dav1d=dav1d", Read("DebugServer.cs.txt"));
-        Assert.Contains("grain=default: dav1d (d3d11 default); on/dav1d: dav1d", Read("bale-debug.sh"));
-        Assert.Contains("software mode uses CPU buffers and dav1d CPU grain on D3D11", Read("bale-debug.sh"));
+        Assert.Contains("default=GPU (d3d11), on/dav1d=dav1d", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("production default=GPU, on/dav1d=dav1d", Read("DebugServer.cs.txt"));
+        Assert.Contains("grain=default: GPU (d3d11 default); on/dav1d: dav1d", Read("bale-debug.sh"));
+        Assert.Contains("software mode uses CPU buffers and GPU grain on D3D11", Read("bale-debug.sh"));
     }
 
     [Fact]
@@ -444,8 +443,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     {
         var production = DebugFfmpegDecoderTests.ProductionSource();
         Assert.Contains("if (softwareVideo && route.VideoCodec == \"av1\")", production);
-        Assert.Contains("ApplySoftwareVideo(config, dav1dGpuFilmGrain);", production);
-        Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = dav1dGpuFilmGrain ? \"3\"", production);
+        Assert.Contains("ApplySoftwareVideo(config);", production);
         Assert.DoesNotContain("ZeroCopyRuntime.Register()", production);
         Assert.DoesNotContain("bale_d3d11_upload", production);
         Assert.DoesNotContain("bale_zero_copy", production);

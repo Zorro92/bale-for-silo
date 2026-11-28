@@ -170,7 +170,7 @@ playback/seek checks, not whole-film runs; system-decoder renderer-drop counts r
 
 All builds, including production (`BaleDebugServer=false`), apply the wrapper-fork defaults from
 `SoftwareDecodeTuning` to software AV1: `bale_decode_ahead_frames=16` and
-`bale_film_grain_mode=0` (dav1d CPU grain), without `bale_d3d11_upload` or `bale_zero_copy`.
+`bale_film_grain_mode=3` (GPU grain on D3D11, owner 2026-11-27), without `bale_d3d11_upload` or `bale_zero_copy`.
 Above 1080p, decode-ahead drops to 8 and BufferTime to 500 ms (see docs/gpu-film-grain.md section 8).
 `bale_dav1d_max_frame_delay=6` is set only above 1080p (width > 1920 or height > 1080). Route
 width/height follow the video codec's plan selection: original delivery uses `plan.Source`; other
@@ -195,31 +195,30 @@ Claims and the default dav1d configuration never call `ZeroCopyRuntime.Register(
 rav1g's 2160p60 at 40 Mbps where rav1g.dll is usable (see "rav1g"); debug `av1-decoder dav1d` and `av1-claim 1080` keep
 1080p60 and log why once per attempt.
 
-Settings › Playback › **EXPERIMENTAL** offers **GPU film grain (AV1 fallback)**, an owner-requested
-deviation from the official Silo apps. `AppSettings.Dav1dGpuFilmGrain` is device-wide, persisted and off
-by default. Each playback attempt captures it, including replans/remounts and rav1g's in-open dav1d
-fallback. When enabled, `FfmpegSource.ApplySoftwareVideo` requests `bale_film_grain_mode=3` from wrapper
-`2.1.0-bale.60`: dav1d CPU output passes through a private D3D11 staged upload and bale_gpu's D3D11
-grain pass, without `bale_zero_copy`, `bale_d3d11_upload` or D3D12. This may help slower older consoles.
+**GPU film grain: owner decision, 2026-11-27 (GPU grain only).** The dav1d path always applies AV1 film grain on the GPU.
+`FfmpegSource.ApplySoftwareVideo` requests `bale_film_grain_mode=3` from wrapper `2.1.0-bale.60`: dav1d CPU output passes
+through a private D3D11 staged upload and bale_gpu's D3D11 grain pass, without `bale_zero_copy`, `bale_d3d11_upload` or
+D3D12. The EXPERIMENTAL row (*GPU film grain (AV1 fallback)*, device-wide, off by default, 2026-11-19) is removed: no
+setting, no per-attempt capture, and the stored LocalSettings value is never read. This may help slower older consoles.
 Console check (2026-11-26, Series X, 0.1.791, wrapper bale.84, 1080p60 10-bit SVT-AV1 film-grain clips, on the dav1d
 path): 0 missed frames either way. Bale's Device Portal CPU was ≈12–14% and steady with GPU grain, against ≈30–53% and
 bursty with CPU grain. The same paused frame differs GPU vs CPU by RMSE 0.73%, less than either differs from grain off
 (1.24–1.32%), and the two look the same. A failed open-time probe keeps CPU grain for that stream
 and logs `Bale film grain: mode=dav1d (reason, hr=..)`, while success logs
-`Bale film grain: mode=gpu-d3d11`. Bale logs the final `player: dav1d grain request=... (setting=on|off)`
+`Bale film grain: mode=gpu-d3d11`. Bale logs the final `player: dav1d grain request=...`
 once per AV1 open, after debug overrides; that request does not establish which path the fork used.
 Debug `grain=dav1d` still forces CPU grain, `grain=off` still exports only, and debug zero-copy keeps
-its own mode 2. The standalone probe keeps its CPU default independently of the setting.
+its own mode 2. The standalone probe's software default is the same GPU grain.
 
-`FfmpegSource.ApplySoftwareVideo` defaults to `bale_film_grain_mode=0` (dav1d applies grain). The fork's GPU
-mode 2 exists only for zero-copy streams. The memory-only debug `dav1d-path [d3d11|zerocopy]`, captured
+`FfmpegSource.ApplySoftwareVideo` sends `bale_film_grain_mode=3` (`SoftwareDecodeTuning.FilmGrainMode`, owner
+2026-11-27). The fork's mode 0 (dav1d CPU grain) and mode 2 (GPU grain on zero-copy streams) are debug overrides only. The memory-only debug `dav1d-path [d3d11|zerocopy]`, captured
 per attempt and reset to d3d11 on restart, restores the old D3D12 buffer/upload-6/GPU grain route only
 when set to zerocopy. Registration failure logs and keeps D3D11 with the captured grain setting. `ZeroCopyRuntime` and
 bale_gpu's `bale_zc_*` implementation stay dormant otherwise; nothing is removed from bale_gpu.
 On D3D11, `ffmpeg-tune grain=dav1d` selects mode 0 and `grain=off` sends
 `bale_dav1d_export_film_grain=1`, which takes precedence: export only, no grain applied. CPU grain cost
 can therefore be compared as dav1d minus off, on the console later. The standalone software probe
-also uses D3D11 CPU output/grain, independent of the real-player dav1d-path switch.
+also uses D3D11 CPU output with GPU grain, independent of the real-player dav1d-path switch.
 
 rav1g sets `bale_av1_fallback_max_height=1080` for every open, including the debug zero-copy A/B.
 When the GPU decoder declines a taller source at open, the fork logs
@@ -332,8 +331,7 @@ attempt, not an already open player, Native Direct, HLS or the standalone probe.
 remains independent.
 
 - `grain=dav1d|gpu` (software AV1 only) sends `bale_film_grain_mode=0|2`; `on` aliases dav1d.
-  `default` clears the override, keeping the captured dav1d path and device grain setting: CPU on D3D11
-  unless the experimental GPU setting selects mode 3, GPU mode 2 on debug zerocopy. The explicit debug
+  `default` clears the override, keeping the dav1d path's GPU grain (mode 3) on D3D11; mode 2 on debug zerocopy. The explicit debug
   `grain=gpu` mode 2 works only on zero-copy streams, on Bale-owned textures rather than dav1d reference
   pictures. `grain=off` sends `bale_dav1d_export_film_grain=1`, independently overriding every mode:
   export only, no grain applied. The D3D11 CPU-grain A/B is `grain=dav1d` versus `grain=off` on the same
@@ -458,7 +456,7 @@ scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [auto|software
 Supply seconds/mode before tuning, then keys in any order, at most once each. Seconds are 1–60
 (default 3), threads are 0–16 (0 = logical CPU count), 10bit is on/off, and rate is an invariant
 0.5–2.0 (default 1). The fork keys have the same ranges as above; software-mode probes use the release
-ahead=16 default and D3D11 CPU buffers/dav1d CPU grain when omitted. URI probes have no playback plan/dimensions before creation,
+ahead=16 default and D3D11 CPU buffers with GPU grain (mode 3) when omitted. URI probes have no playback plan/dimensions before creation,
 so delay remains unset unless explicitly overridden (use `delay=6` for a known above-1080p comparison).
 Priority remains unset unless `prio=0..2` is supplied, with the same levels as above. These three
 fork options affect only software video, including an auto-mode probe that selects software decoding;
@@ -470,7 +468,7 @@ Automatic, which applies HDR colour info only when the HDMI mode is already BT.2
 reject the key and the open fails): libdav1d skips film-grain synthesis and exports the parameters as
 frame side data, so a grain-carrying AV1 clip can be timed with and without grain (`Film grain:` in the
 report). `dav1d`/`on` explicitly send `bale_film_grain_mode=0` and `gpu` sends 2; `default`/omitted send no
-grain override, so a software-mode probe keeps dav1d CPU grain on D3D11. (Before wrapper 0020, `cpu` sent 1 and
+grain override, so a software-mode probe keeps the release mode 3 (GPU grain) on D3D11. (Before wrapper 0020, `cpu` sent 1 and
 the probe kept dav1d and CPU buffers unless `grain=gpu` opted it into upload variant 1.)
 Console check on 0.1.291.0 (bale.5, 20 s `software`): the key is accepted and reported as exported.
 The public Jellyfin AV1 clips carry no grain (`film_grain_params_present = 0` in the 1080p and 4K
@@ -2141,7 +2139,8 @@ cold connection. It reports a lower bound when it reaches the target.
   `buffering_quality_v1` (`PlaybackProtocol.LearnedLimit`). The mode is read on sign-in, on return to
   the foreground and when Settings opens; a start never waits for it.
 - **HDR on SDR TVs** (Bale's own group, owner's deviation, 2026-11-24): *SDR Brightness*, the console tone map's SDR
-  white (see "Console tone mapping by default"), then **Experimental** (*GPU film grain*). Both follow Episodes.
+  white (see "Console tone mapping by default"). It follows Episodes. The former **Experimental** group (*GPU film grain*,
+  2026-11-19) was removed on 2026-11-27 (owner: GPU grain only, no setting).
 - Skipped from the official Streaming group (Bale has no honored setting behind them): Resolution,
   Maximum Bitrate, Audio Language, Dolby Vision / Profile 7 fallback, Match Frame Rate, Force HDR
   Passthrough, True Black Bars and the streaming footer that explains them.

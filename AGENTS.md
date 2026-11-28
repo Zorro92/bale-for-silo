@@ -32,7 +32,9 @@ unchanged. Gap analysis and phases: docs/apple-playback-parity.md.
 **Deliberate deviations.** These differ from the official apps on purpose. Keep them; don't
 "fix" them back.
 
-- **Experimental GPU film grain:** Settings › Playback offers a device-wide, persisted, off-by-default dav1d D3D11 GPU grain toggle (owner, 2026-11-19); it needs no zero-copy or D3D12.
+- **GPU film grain (owner, 2026-11-27):** AV1 on the dav1d path always applies grain on the GPU (D3D11, bale_gpu), with no
+  setting: the Settings › Playback › EXPERIMENTAL toggle (2026-11-19) is gone. It needs no zero-copy or D3D12; CPU grain is only
+  the fork's fallback when its open-time probe fails.
 - **SDR Brightness:** Settings › Playback › HDR on SDR TVs offers a device-wide, persisted SDR white for the console
   tone map of HDR video on an SDR TV: Default (100 nits) or 80/120/150/200/250/300 nits, sent as the fork's
   `bale_tonemap_white_nits` to Bale's stage and rav1g's display pass (owner, 2026-11-24; `SdrBrightness`,
@@ -329,11 +331,12 @@ For Bale, a normal app with hevcPlayback on the Series X:
   silo-server's `videoDecodeTakesSourceV3` holds the source's bitrate to; owner: tested to 4K60, reliable to about
   40–60 Mbps, real content stays under 40) beside dav1d's measured 1080p60 entry (no bitrate bound), plus the HDR AV1
   tone-map promise of rav1g's display pass (`Av1DynamicRangeMappingSupported`); Auto's display matching counts the
-  same entries. dav1d (D3D11, CPU NV12/P010 buffers, dav1d CPU film grain, **max 1080p**) stays for older consoles and
+  same entries. dav1d (D3D11, CPU NV12/P010 buffers, GPU film grain, **max 1080p**) stays for older consoles and
   as the fallback; the measured Series/AVX2 software-device claim gate covers both entries.
   dav1d must not require D3D12: neither claims nor its default configuration register zero-copy.
-  `bale_film_grain_mode=0` means dav1d applies grain; the experimental device setting opts into mode 3
-  (private D3D11 staged upload + GPU grain, CPU grain on probe failure); 2 is GPU grain on debug zero-copy streams.
+  `bale_film_grain_mode=3` is the dav1d path's grain (owner, 2026-11-27: the only setting; private D3D11 staged upload +
+  bale_gpu grain, CPU grain on probe failure); `0` means dav1d applies grain (debug `grain=dav1d`); 2 is GPU grain on debug
+  zero-copy streams.
   `bale_dav1d_export_film_grain=1` (`ffmpeg-tune grain=off`) wins over every mode: export only, no grain applied.
   Debug `dav1d-path [d3d11|zerocopy]` is memory only, captured per attempt, default d3d11. `zerocopy`
   alone restores the old `ZeroCopyRuntime` / `bale_zc_*` D3D12 route (upload 6, GPU grain); failed
@@ -570,7 +573,7 @@ For Bale, a normal app with hevcPlayback on the Series X:
   (default 1). `ahead` is 0–64 decoded frames (0 = off),
   `delay` is 0–64 dav1d frames (0 = dav1d default), and `prio` is 0–2 (0 = off,
   1 = THREAD_PRIORITY_ABOVE_NORMAL, 2 = THREAD_PRIORITY_HIGHEST; default unset). Software-mode
-  probes use the release ahead=16 default and D3D11 CPU output/dav1d CPU grain; URI probes have unknown dimensions before creation, so delay stays
+  probes use the release ahead=16 default and D3D11 CPU output/GPU grain; URI probes have unknown dimensions before creation, so delay stays
   unset unless overridden (use delay=6 for a known above-1080p comparison). Auto/system probes
   retain the wrapper defaults unless overridden; threads/10bit defaults are 0/true. `10bit=off`
   requests 8-bit NV12 instead of 10-bit P010 for 10-bit AV1. The response reports applied values/defaults

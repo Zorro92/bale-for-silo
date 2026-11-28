@@ -23,7 +23,7 @@ public sealed class Rav1gPlayerTests
         Assert.Equal("1", config.FFmpegOptions["bale_av1_decoder"]);
         // Honoured only if the fork falls back to dav1d at open; ignored for a rav1g stream.
         Assert.Equal("1080", config.FFmpegOptions["bale_av1_fallback_max_height"]);
-        Assert.Equal("0", config.FFmpegOptions["bale_film_grain_mode"]);
+        Assert.Equal("3", config.FFmpegOptions["bale_film_grain_mode"]);
         Assert.DoesNotContain("bale_zero_copy", config.FFmpegOptions.Keys);
         Assert.DoesNotContain("bale_d3d11_upload", config.FFmpegOptions.Keys);
         Assert.Equal("1", config.FFmpegOptions["bale_tonemap"]);

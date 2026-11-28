@@ -113,13 +113,6 @@ internal static class AppSettings
         set => Local.Values[nameof(ProfileRememberOfferAnswered)] = value;
     }
 
-    /// <summary>Device-wide opt-in for dav1d's D3D11 GPU grain pass; absent means CPU grain.</summary>
-    public static bool Dav1dGpuFilmGrain
-    {
-        get => Local.Values[nameof(Dav1dGpuFilmGrain)] is true;
-        set => Local.Values[nameof(Dav1dGpuFilmGrain)] = value;
-    }
-
     /// <summary>
     /// Device-wide SDR Brightness: the SDR white (int nits) the console tone map maps HDR to (<see cref="SdrBrightness"/>).
     /// Default is stored as no value, so it keeps following Bale's default; an unreadable, unknown or wrongly typed value

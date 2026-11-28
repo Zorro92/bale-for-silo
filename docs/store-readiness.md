@@ -184,8 +184,7 @@ silo-android's TV app (AGENTS.md); where that differs from Microsoft's guidance,
 - **Stats tab.** The player's Options › Stats shows technical rows in production too (Backend, Route, Video and Audio
   decoder labels, and others; `PlaybackStats`). Hide them in production, or keep them as the official apps' "stats for
   nerds" equivalent?
-- **The EXPERIMENTAL Settings group** (GPU film grain for the AV1 fallback, off by default). Ship it, hide it in
-  production, or rename the group?
+- **The EXPERIMENTAL Settings group**: resolved 2026-11-27 (owner). Removed: dav1d always uses GPU grain, with no setting.
 - **The debug server** is unauthenticated and listens on the whole LAN (port 8790) with input injection. Debug-server
   builds must never be installed on someone else's console; production has none of it (CI checks).
 - **Plain HTTP to non-local servers.** Allowed today after the per-origin warning, as in the official clients. Restrict

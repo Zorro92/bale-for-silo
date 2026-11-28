@@ -376,7 +376,7 @@ public class DebugPlaytestScriptTests
         if (!OperatingSystem.IsLinux()) return;
         var result = await RunAsync(["ffmpeg-tune", "upload=6"]);
         Assert.Equal(2, result.ExitCode);
-        Assert.Contains("software AV1 uses D3D11 CPU output and dav1d CPU grain", result.Output);
+        Assert.Contains("software AV1 uses D3D11 CPU output and GPU grain", result.Output);
         foreach (var text in new[] { "sws=", "upload=", "uploadfault=", "repack=", "zerocopy=", "cpu|" })
             Assert.DoesNotContain(text, result.Output);
     }

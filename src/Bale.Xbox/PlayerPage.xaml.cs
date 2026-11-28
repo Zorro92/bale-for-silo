@@ -78,8 +78,6 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public int TransportStallRemounts { get; set; }
         public long TransportStallRemountAt { get; set; }
         public PlaybackVersionNotice VersionNotice { get; } = new();
-        /// <summary>Keep the device's grain choice through every open/remount of this attempt.</summary>
-        public bool Dav1dGpuFilmGrain { get; } = AppSettings.Dav1dGpuFilmGrain;
         /// <summary>Keep the device's SDR Brightness (tone-map SDR white) through every open/remount of this attempt.</summary>
         public int SdrWhiteNits { get; } = AppSettings.SdrWhiteNits;
         /// <summary>The subtitle appearance read this attempt started with; a text subtitle load waits for it (bounded).</summary>

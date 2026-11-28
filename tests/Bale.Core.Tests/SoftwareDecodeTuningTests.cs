@@ -15,13 +15,13 @@ public class SoftwareDecodeTuningTests
     [InlineData("original_http", "hevc", "aac", false, true, false)]
     [InlineData("original_http", "av1", "aac", true, true, false)]
     [InlineData("original_http", "av1", "aac", false, false, false)]
-    public void SoftwareVideoRoutesShareBufferDefaultsAndAv1UsesDav1dCpuGrain(string delivery, string video, string audio,
+    public void SoftwareVideoRoutesShareBufferDefaultsAndAv1UsesDav1dGpuGrain(string delivery, string video, string audio,
         bool isHls, bool ffmpegEnabled, bool expected)
     {
         var route = PlaybackRoutePolicy.Decide(PlaybackRoutePolicyTests.Plan(delivery, video, audio), isHls, ffmpegEnabled);
         Assert.Equal(expected, route.SoftwareVideo);
         // AV1 alone uses these constants; MPEG-4 output stays on the ordinary software provider.
-        Assert.Equal(0, SoftwareDecodeTuning.FilmGrainMode);
+        Assert.Equal(3, SoftwareDecodeTuning.FilmGrainMode);
     }
 
     [Theory]

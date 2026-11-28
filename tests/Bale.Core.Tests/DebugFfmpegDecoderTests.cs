@@ -54,7 +54,7 @@ public sealed class DebugFfmpegDecoderTests
     }
 
     [Fact]
-    public void SoftwareHevcUsesNormalSoftwareDefaultsAndAv1UsesCpuGrain()
+    public void SoftwareHevcUsesNormalSoftwareDefaultsAndAv1UsesGpuGrain()
     {
         var tuning = new DebugFfmpegInputTuning(Decoder: DebugFfmpegDecoder.Software);
         var hevc = FfmpegSource.Configuration(Route(), tuning);
@@ -66,7 +66,7 @@ public sealed class DebugFfmpegDecoderTests
         var av1 = FfmpegSource.Configuration(Route("av1"), tuning);
         Assert.DoesNotContain("bale_zero_copy", av1.FFmpegOptions.Keys);
         Assert.DoesNotContain("bale_d3d11_upload", av1.FFmpegOptions.Keys);
-        Assert.Equal("0", av1.FFmpegOptions["bale_film_grain_mode"]);
+        Assert.Equal("3", av1.FFmpegOptions["bale_film_grain_mode"]);
     }
 
     [Fact]

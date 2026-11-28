@@ -55,7 +55,7 @@ namespace Bale.Xbox.Services;
 ///   GET  /playtest-ffmpeg?url=...  muted FFmpegInteropX probe; seconds=3 (1–60), mode=auto|software|system
 ///                         optional threads=0–16, 10bit=on|off, rate=0.5–2.0 (default 1), ahead=0–64, delay=0–64, prio=0–2, maxres=0|1|default, dpb=0–16|default (system video only),
 ///                         hdr=on|off|default (wrapper HdrSupport Enabled/Disabled; default Automatic),
-///                         grain=dav1d|gpu|off|on|default (software mode default=dav1d, CPU buffers on D3D11; on/dav1d=dav1d; off=export-only; wrapper 2.1.0-bale.10+)
+///                         grain=dav1d|gpu|off|on|default (software mode default=GPU, CPU buffers on D3D11; on/dav1d=dav1d; off=export-only; wrapper 2.1.0-bale.10+)
 ///   GET  /playtest-present?url=...  IMFMediaEngine rendering mode (windowless swap chain) on a full-screen panel; seconds=10 (1–60), target=bgra|fp16|rgb10, hdr=on switches HDMI to HDR10 first,
 ///   GET  /playtest-engine?url=...  muted IMFMediaEngine frame-server probe; seconds=3 (1–60), mode=cs|rust|rust-ffmpeg (Rust port in bale_gpu.dll; rust-ffmpeg = FFmpeg software source via engine extension),
 ///                                  target=bgra|fp16|rgb10 (mode=rust only, default bgra: engine output format and texture; fp16/rgb10 add the HDR readback and an hdr-range= verdict)
@@ -73,7 +73,7 @@ namespace Bale.Xbox.Services;
 ///                         hdr=on|off|default (HdrSupport Enabled/Disabled/Automatic)
 ///                         white=80..400|default (tone-map SDR white in nits for the stage and rav1g's display pass, wrapper 2.1.0-bale.77+;
 ///                         wins over Settings › SDR Brightness; default returns to the setting)
-///                         grain=dav1d|gpu|off|on|default (production default=dav1d, on/dav1d=dav1d; off=export-only; wrapper 2.1.0-bale.10+)
+///                         grain=dav1d|gpu|off|on|default (production default=GPU, on/dav1d=dav1d; off=export-only; wrapper 2.1.0-bale.10+)
 ///                         software AV1 uses D3D11 CPU output; dav1d-path zerocopy restores the old D3D12/GPU grain path
 ///   GET  /mem?gc=1        managed GC heap vs app memory; gc=1 first forces a full collection + finalizers
 ///   POST /mem?action=peaks-reset  reset GPU ledger peaks to current residency

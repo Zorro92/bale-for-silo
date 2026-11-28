@@ -9,7 +9,7 @@ namespace Bale.Core.Tests;
 
 /// <summary>
 /// Settings › Playback › SDR Brightness (owner's deviation, 2026-11-24): the SDR white of the console tone map, sent as the
-/// fork's bale_tonemap_white_nits (wrapper bale.77). Shares the log and LocalSettings stand-ins with the film grain tests.
+/// fork's bale_tonemap_white_nits (wrapper bale.77). Shares the log and LocalSettings stand-ins with the other player tests.
 /// </summary>
 [Collection("Player seek")]
 public sealed class SdrBrightnessTests
@@ -220,8 +220,8 @@ public sealed class SdrBrightnessTests
         Assert.Contains(capture, attempt[..attempt.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal)]);
         Assert.DoesNotContain("AppSettings.SdrWhiteNits", player.Replace(capture, "", StringComparison.Ordinal));
         var media = Read("PlayerPage.Media.cs.txt");
-        Assert.Contains("attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits);", media);
-        Assert.Contains("FfmpegSource.Configuration(media.Route, media.Rav1g, attempt.Dav1dGpuFilmGrain, attempt.SdrWhiteNits)", media);
+        Assert.Contains("attempt.Dav1dPath,\n                    attempt.SdrWhiteNits);", media);
+        Assert.Contains("FfmpegSource.Configuration(media.Route, media.Rav1g, attempt.SdrWhiteNits)", media);
         Assert.DoesNotContain("AppSettings.SdrWhiteNits", media);
         Assert.DoesNotContain("bale_tonemap_white_nits", media);
         // Release builds set the key too; only the override is debug-only.
@@ -235,13 +235,13 @@ public sealed class SdrBrightnessTests
     }
 
     [Fact]
-    public void PlaybackPaneOffersTheValueRowInItsOwnGroupBeforeExperimental()
+    public void PlaybackPaneEndsWithTheValueRowGroup()
     {
         var page = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "SettingsPage.xaml"));
         var pane = Named(page, "PlaybackPane");
         var groups = pane.Elements(Ui + "StackPanel").ToArray();
         // The official groups keep their order; Bale's own groups follow them.
-        Assert.Equal(new[] { "STREAMING", "CONNECTION", "EPISODES", "HDR ON SDR TVS", "EXPERIMENTAL" },
+        Assert.Equal(new[] { "STREAMING", "CONNECTION", "EPISODES", "HDR ON SDR TVS" },
             groups.Select(candidate => (string?)candidate.Element(Ui + "TextBlock")?.Attribute("Text")));
         var group = groups[3];
         Assert.Equal("{StaticResource SkylineSettingsGroupStyle}", (string?)group.Attribute("Style"));
@@ -307,11 +307,11 @@ public sealed class SdrBrightnessTests
         Assert.Contains("private void UpdateSdrBrightness() => SdrBrightnessValue.Text = SdrBrightness.Label(AppSettings.SdrWhiteNits);", code);
         Assert.Contains("label.Text = SdrBrightness.Label(SdrBrightnessNits(option));", code);
         foreach (var name in Options) Assert.Contains($"({name}, {name}Text)", code);
-        Assert.Contains("UpdateDav1dGpuFilmGrain();\n        UpdateSdrBrightness();\n        UpdateConnection();", code);
+        Assert.Contains("UpdateSdrBrightness();\n        UpdateConnection();", code);
         // The row: Up/Down walk the pane's rows only and stop at its ends (never sideways); Left goes back to the rail.
         var actions = code[code.IndexOf("private Control[] DetailActions", StringComparison.Ordinal)..
             code.IndexOf("private SettingsCategory CategoryOf", StringComparison.Ordinal)];
-        Assert.Contains("AutoPlayButton, AutoPlayProfileButton,\n                NextUpButton, IntroSkipButton, SkipCreditsButton, SkipCreditsProfileButton, SdrBrightnessButton, Dav1dGpuFilmGrainButton,", actions);
+        Assert.Contains("AutoPlayButton, AutoPlayProfileButton,\n                NextUpButton, IntroSkipButton, SkipCreditsButton, SkipCreditsProfileButton, SdrBrightnessButton,", actions);
         Assert.Contains("FocusTarget(actions[Math.Clamp(index + vertical, 0, actions.Length - 1)]);", code);
         Assert.Contains("_returnTarget = SdrBrightnessButton;", code);
         // The sheet: the checked option takes focus; Up/Down stop at its ends; Left/Right/Tab do nothing; focus can't leave it.
@@ -328,7 +328,7 @@ public sealed class SdrBrightnessTests
             code);
         Assert.Contains("SdrBrightnessPicker.Visibility = Visibility.Collapsed;\n        FocusTarget(SdrBrightnessButton);", code);
         Assert.Contains("SdrBrightnessPicker.Visibility = Visibility.Collapsed;\n        SignOutPrompt.Hide();", code);
-        // A choice is stored on this Xbox, a failed write says so, as the film grain row does.
+        // A choice is stored on this Xbox, and a failed write says so.
         Assert.Contains("AppSettings.SdrWhiteNits = SdrBrightnessNits(sender);", code);
         Assert.Contains("PlaybackError.Text = \"Bale couldn’t save the SDR brightness preference on this Xbox. Try again.\";", code);
     }
