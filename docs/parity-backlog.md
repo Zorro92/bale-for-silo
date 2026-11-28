@@ -209,6 +209,21 @@ A read-only comparison of every Android TV screen against Bale, leaving out item
 - [ ] Accessibility: reduce motion (`UISettings.AnimationsEnabled`)
 - [ ] Personal collection page (title, Shuffle, grid) instead of the library grid
 
+### Future improvements (owner, 2026-11-27: not needed for release)
+- [ ] YouTube trailers in an overlay on the Detail page instead of leaving Bale. This would deviate from Android, which hands the link off.
+  - Only WebView2 (WinUI 2) is workable. It already played a 720p H.264 clip in a popup on the console (debug `webview-test`, 0.1.370).
+    - The legacy UWP WebView uses EdgeHTML and is unreliable with YouTube.
+    - Pulling the stream out of YouTube (Rust YouTube clients) goes against YouTube's terms and breaks often.
+  - Plan:
+    - Use YouTube's IFrame player on a page Bale ships, served from a virtual host so the embed sends a Referer (YouTube shows "Error 153" without one).
+    - Drive play, pause and seek from the controller through the player API, and close it with Back.
+    - Fall back to today's launch when a video can't be embedded (embedding disabled, age-restricted).
+  - Costs:
+    - WinUI 2 ships in production, several MB more in the package.
+    - About 150–300 MiB while open, out of the 3328 MiB app pool. Create it on open and dispose it on close.
+  - Prototype in a debug build first.
+  - Today's hand-off was checked on the console: in Dev Mode there is no YouTube app, so Edge opens the watch page. A private Store flight is the only way to test the hand-off to the YouTube app itself.
+
 ### Backlog corrections found
 - Line 49 (startup profile rule "Every Time" by default) contradicts Android's Automatic default; it is the open Profile Selection item under Settings parity
 - "Rows of collections … not yet on the console" is out of date (verified on 0.1.687); "Switch Server now opens the saved-server list" is out of date (Change Account replaced it)
