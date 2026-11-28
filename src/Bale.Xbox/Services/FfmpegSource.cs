@@ -14,7 +14,7 @@ internal static class FfmpegSource
     /// <param name="rav1g">This mount's AV1 decoder decision (Rav1gPolicy.Route); null or not rav1g is dav1d.</param>
     /// <param name="sdrWhiteNits">The attempt's captured SDR Brightness, the device setting; ffmpeg-tune white= wins.</param>
     internal static MediaSourceConfig Configuration(PlaybackRouteDecision route, DebugFfmpegInputTuning tuning,
-        Rav1gRouteDecision? rav1g = null, string dav1dPath = "d3d11", int sdrWhiteNits = SdrBrightness.DefaultNits)
+        Rav1gRouteDecision? rav1g = null, int sdrWhiteNits = SdrBrightness.DefaultNits)
 #else
     /// <param name="rav1g">This mount's AV1 decoder decision (Rav1gPolicy.Route); null or not rav1g is dav1d.</param>
     /// <param name="sdrWhiteNits">The attempt's captured SDR Brightness, the device setting.</param>
@@ -98,7 +98,6 @@ internal static class FfmpegSource
         {
             ApplyRav1g(config, rav1g);
 #if DEBUG_SERVER
-            ApplyDav1dPath(config, dav1dPath);
             // Console-test knobs for the provider's feeder thread, rav1g's perf timings and parse depth (bale.52+), and
             // rav1g-tune display=off (the stage instead of rav1g's display pass): debug only, the route's keys above win otherwise.
             foreach (var (key, value) in DebugRav1gTuning.Options()) config.FFmpegOptions[key] = value;
@@ -107,9 +106,6 @@ internal static class FfmpegSource
         else if (softwareVideo && route.VideoCodec == "av1")
         {
             ApplySoftwareVideo(config);
-#if DEBUG_SERVER
-            ApplyDav1dPath(config, dav1dPath);
-#endif
         }
 #if DEBUG_SERVER
         if (tuning.Decoder is DebugFfmpegDecoder.System or DebugFfmpegDecoder.Software)
@@ -161,7 +157,6 @@ internal static class FfmpegSource
             : config.FFmpegOptions["bale_film_grain_mode"] switch
             {
                 "3" => "gpu-d3d11",
-                "2" => "gpu-zerocopy",
                 _ => "cpu",
             };
         Log.Info($"player: dav1d grain request={mode}");
@@ -172,7 +167,7 @@ internal static class FfmpegSource
     /// D3D11 output with GPU grain for the fork's in-open fallback (missing library, interface mismatch,
     /// unsupported stream), capped at 1080 lines by wrapper bale.59: a taller stream whose GPU open declines fails to the
     /// normal replan, never CPU dav1d at 4K. The stage keys downscale SDR or tone-map PQ/HLG on an SDR display; a dav1d
-    /// fallback ignores those keys. No zero-copy registration or upload keys (debug dav1d-path zerocopy aside).
+    /// fallback ignores those keys. No zero-copy registration or upload keys.
     /// </summary>
     internal static void ApplyRav1g(MediaSourceConfig config, Rav1gRouteDecision rav1g)
     {
@@ -272,22 +267,6 @@ internal static class FfmpegSource
     }
 
 #if DEBUG_SERVER
-    /// <summary>
-    /// Debug-only restoration of the old dav1d zero-copy path for a grain A/B. The caller passes the
-    /// attempt's captured switch; failure to register keeps D3D11 with GPU grain.
-    /// </summary>
-    private static void ApplyDav1dPath(MediaSourceConfig config, string path)
-    {
-        if (path != "zerocopy") return;
-        if (!ZeroCopyRuntime.Register())
-        {
-            Log.Info("player: dav1d zero-copy unavailable; using d3d11");
-            return;
-        }
-        config.FFmpegOptions["bale_d3d11_upload"] = "6";
-        config.FFmpegOptions["bale_film_grain_mode"] = "2";
-    }
-
     internal static VideoDecoderMode DecoderMode(VideoDecoderMode production, DebugFfmpegInputTuning tuning) => tuning.Decoder switch
     {
         DebugFfmpegDecoder.Auto => VideoDecoderMode.Automatic,

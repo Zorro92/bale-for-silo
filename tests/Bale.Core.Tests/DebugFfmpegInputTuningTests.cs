@@ -372,7 +372,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.Contains("public DebugFfmpegInputTuning FfmpegTuning { get; } = DebugFfmpegInputTuning.Current", Read("PlayerPage.cs.txt"));
         var player = Read("PlayerPage.Media.cs.txt");
         Assert.Contains("media.Route.UseFfmpeg ? attempt.FfmpegTuning.Prefetch ?? HttpRangeStream.DefaultPrefetchBlocks", player);
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.SdrWhiteNits)", player);
+        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g,\n                    attempt.SdrWhiteNits)", player);
         Assert.Contains("prefetched.PrefetchBlocks", player);
         Assert.Contains("if (!attempt.FfmpegTuningLogged)", player);
         Assert.Contains("attempt.FfmpegTuningLogged = true", player);
@@ -400,7 +400,6 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
     [Theory]
     [InlineData("on", "Dav1d", " grain=dav1d")]
     [InlineData("dav1d", "Dav1d", " grain=dav1d")]
-    [InlineData("gpu", "Gpu", " grain=gpu")]
     [InlineData("off", "Off", " grain=off")]
     public void FilmGrainOverrideIsCapturedAndClearedWithoutChangingOtherOverrides(string value, string expected, string description)
     {
@@ -429,7 +428,7 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
         Assert.DoesNotContain("bale_dav1d_export_film_grain", system.FFmpegOptions.Keys);
         var software = FfmpegSource.Configuration(new(true, true, "av1", "aac", 0, 1920, 1080), tuning);
         Assert.Equal("1", software.FFmpegOptions["bale_dav1d_export_film_grain"]);
-        Assert.Contains("grain=dav1d|gpu|off|on|default", DebugFfmpegInputTuning.Usage);
+        Assert.Contains("grain=dav1d|d3d11|off|on|default", DebugFfmpegInputTuning.Usage);
         Assert.Contains("config.FFmpegOptions[\"bale_film_grain_mode\"] = SoftwareDecodeTuning.FilmGrainMode.ToString(CultureInfo.InvariantCulture);", production);
         Assert.Equal(("bale_film_grain_mode", "0"), DebugFfmpegPlaytest.GrainOption(DebugFilmGrain.Dav1d));
         Assert.Contains("default=GPU (d3d11), on/dav1d=dav1d", DebugFfmpegInputTuning.Usage);
@@ -658,24 +657,6 @@ public sealed class DebugFfmpegInputTuningTests : IDisposable
             Assert.Contains("[d3d12probe=on|off|default]", DebugFfmpegInputTuning.Usage);
         }
         finally { DebugFfmpegInputTuning.TrySet(new Dictionary<string, string> { ["d3d12probe"] = "default" }, out _); }
-    }
-
-    [Fact]
-    public void ZeroCopyRegistrationIsCachedAndLogsNoExceptionText()
-    {
-        var probe = Read("ZeroCopyRuntime.cs.txt");
-        Assert.DoesNotContain("#if", probe);
-        var start = probe.IndexOf("internal static bool Register()", StringComparison.Ordinal);
-        var end = probe.IndexOf("\n    }\n", start, StringComparison.Ordinal);
-        var body = probe[start..end];
-        Assert.Contains("[DllImport(\"bale_gpu.dll\", ExactSpelling = true)] private static extern int bale_zc_register_d3d12(nint d3d12Module);", probe);
-        Assert.Contains("if (state != 0) return state > 0;", body);
-        Assert.Contains("NativeLibrary.TryLoad(\"d3d12.dll\", out var module)", body);
-        Assert.Contains("Volatile.Write(ref _registered, registered ? 1 : -1);", body);
-        Assert.Contains("{ex.GetType().Name} 0x{unchecked((uint)ex.HResult):X8}", body);
-        Assert.DoesNotContain("ex.Message", body);
-        Assert.DoesNotContain("Log.Error", body);
-        Assert.DoesNotContain("NativeLibrary.Free", probe);
     }
 
     private static string Read(string file) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, file));

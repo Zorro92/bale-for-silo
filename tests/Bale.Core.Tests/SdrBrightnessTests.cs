@@ -220,7 +220,7 @@ public sealed class SdrBrightnessTests
         Assert.Contains(capture, attempt[..attempt.IndexOf("#if DEBUG_SERVER", StringComparison.Ordinal)]);
         Assert.DoesNotContain("AppSettings.SdrWhiteNits", player.Replace(capture, "", StringComparison.Ordinal));
         var media = Read("PlayerPage.Media.cs.txt");
-        Assert.Contains("attempt.Dav1dPath,\n                    attempt.SdrWhiteNits);", media);
+        Assert.Contains("media.Rav1g,\n                    attempt.SdrWhiteNits);", media);
         Assert.Contains("FfmpegSource.Configuration(media.Route, media.Rav1g, attempt.SdrWhiteNits)", media);
         Assert.DoesNotContain("AppSettings.SdrWhiteNits", media);
         Assert.DoesNotContain("bale_tonemap_white_nits", media);

@@ -110,7 +110,6 @@ public sealed partial class PlayerPage : Page, IBackHandler
         public int Av1ClaimMaxHeight { get; } = DebugAv1ClaimSwitch.MaxHeight;
         /// <summary>dav1d or rav1g for software AV1 (DebugAv1DecoderSwitch, default rav1g as in release), captured when the attempt starts.</summary>
         public string Av1Decoder { get; } = DebugAv1DecoderSwitch.Mode;
-        public string Dav1dPath { get; } = DebugDav1dPathSwitch.Mode;
         public bool FfmpegEnabled => FfmpegMode != "off";
         public bool ForceFfmpeg => FfmpegMode == "direct";
 #else

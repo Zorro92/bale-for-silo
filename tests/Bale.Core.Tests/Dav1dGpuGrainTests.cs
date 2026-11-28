@@ -7,7 +7,7 @@ namespace Bale.Core.Tests;
 
 /// <summary>
 /// The dav1d path applies grain on the GPU and has no setting (owner, 2026-11-27: GPU grain only). Debug grain
-/// overrides and the zero-copy switch are the only other requests.
+/// overrides are the only other requests.
 /// </summary>
 [Collection("Player seek")]
 public sealed class Dav1dGpuGrainTests
@@ -23,12 +23,10 @@ public sealed class Dav1dGpuGrainTests
     [InlineData(true)]
     public void SoftwareAv1AlwaysRequestsGpuGrainWithoutZeroCopy(bool rav1g)
     {
-        var registrations = ZeroCopyRuntime.Registrations;
         var logStart = Log.Messages.Count;
         var config = FfmpegSource.Configuration(Route(), new(), Decision(rav1g));
         Assert.Equal("3", config.FFmpegOptions["bale_film_grain_mode"]);
         AssertNoZeroCopy(config);
-        Assert.Equal(registrations, ZeroCopyRuntime.Registrations);
         Assert.DoesNotContain("bale_dav1d_export_film_grain", config.FFmpegOptions.Keys);
         if (rav1g)
         {
@@ -43,7 +41,6 @@ public sealed class Dav1dGpuGrainTests
     [InlineData("dav1d", "0", false, "cpu")]
     [InlineData("on", "0", false, "cpu")]
     [InlineData("off", "3", true, "off")]
-    [InlineData("gpu", "2", false, "gpu-zerocopy")]
     [InlineData("d3d11", "3", false, "gpu-d3d11")]
     [InlineData("default", "3", false, "gpu-d3d11")]
     public void DebugGrainOverrideWinsForDav1dAndInOpenRav1gFallback(string grain, string expectedMode,
@@ -60,27 +57,6 @@ public sealed class Dav1dGpuGrainTests
             AssertNoZeroCopy(config);
             Assert.Equal($"player: dav1d grain request={request}", Assert.Single(Log.Messages.Skip(logStart)));
         }
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void DebugZeroCopyKeepsModeTwoAndFailedRegistrationFallsBackToGpuGrain(bool rav1g)
-    {
-        var previous = ZeroCopyRuntime.Available;
-        try
-        {
-            ZeroCopyRuntime.Available = true;
-            var config = FfmpegSource.Configuration(Route(), new(), Decision(rav1g), "zerocopy");
-            Assert.Equal("2", config.FFmpegOptions["bale_film_grain_mode"]);
-            Assert.DoesNotContain("bale_zero_copy", config.FFmpegOptions.Keys);
-            Assert.Equal("6", config.FFmpegOptions["bale_d3d11_upload"]);
-            ZeroCopyRuntime.Available = false;
-            var fallback = FfmpegSource.Configuration(Route(), new(), Decision(rav1g), "zerocopy");
-            Assert.Equal("3", fallback.FFmpegOptions["bale_film_grain_mode"]);
-            AssertNoZeroCopy(fallback);
-        }
-        finally { ZeroCopyRuntime.Available = previous; }
     }
 
     [Fact]
@@ -106,7 +82,7 @@ public sealed class Dav1dGpuGrainTests
         Assert.Null(typeof(AppSettings).GetProperty("Dav1dGpuFilmGrain"));
         Assert.DoesNotContain("GpuFilmGrain", Read("PlayerPage.cs.txt"));
         var media = Read("PlayerPage.Media.cs.txt");
-        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,\n                    attempt.SdrWhiteNits)", media);
+        Assert.Contains("FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g,\n                    attempt.SdrWhiteNits)", media);
         Assert.Contains("FfmpegSource.Configuration(media.Route, media.Rav1g, attempt.SdrWhiteNits)", media);
         Assert.DoesNotContain("GpuFilmGrain", media);
         var production = DebugFfmpegDecoderTests.ProductionSource();

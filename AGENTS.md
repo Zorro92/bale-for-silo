@@ -286,8 +286,8 @@ For Bale, a normal app with hevcPlayback on the Series X:
   the key; older ones keep P010.
   FFmpeg software decode outputs P010 for every source above 8 bits (fork bale.41+) and NV12 for 8-bit sources, also 4:2:2, 4:4:4, full range, RGB and grey (bale.42+).
   dav1d now hands MF CPU NV12 for 8-bit AV1 and P010 for 10-bit on D3D11 (owner, 2026-11-19);
-  rav1g takes NV12 textures for 8-bit and P010 for 10-bit. Only debug `dav1d-path zerocopy` keeps
-  the old D3D12 P010 pool with shifted 8-bit samples (no 10-bit processing).
+  rav1g takes NV12 textures for 8-bit and P010 for 10-bit. The dav1d D3D12 zero-copy route is gone (owner,
+  2026-11-27): nothing in Bale registers D3D12 or keeps a P010 pool with shifted 8-bit samples.
   The engine's output is capped at the display's depth, per mount (`EngineOutputPolicy`, Rust
   `engine_output.rs`, passed to `bale_gpu_engine_session_open_target` as `MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT`,
   logged once per open with current HDMI bpp): P010 → R10G10B10A2 for HDR passthrough (not console tone-mapped),
@@ -335,12 +335,11 @@ For Bale, a normal app with hevcPlayback on the Series X:
   as the fallback; the measured Series/AVX2 software-device claim gate covers both entries.
   dav1d must not require D3D12: neither claims nor its default configuration register zero-copy.
   `bale_film_grain_mode=3` is the dav1d path's grain (owner, 2026-11-27: the only setting; private D3D11 staged upload +
-  bale_gpu grain, CPU grain on probe failure); `0` means dav1d applies grain (debug `grain=dav1d`); 2 is GPU grain on debug
-  zero-copy streams.
+  bale_gpu grain, CPU grain on probe failure); `0` means dav1d applies grain (debug `grain=dav1d`). Bale no longer sends
+  mode 2 (the fork's zero-copy GPU grain) nor `bale_d3d11_upload`.
   `bale_dav1d_export_film_grain=1` (`ffmpeg-tune grain=off`) wins over every mode: export only, no grain applied.
-  Debug `dav1d-path [d3d11|zerocopy]` is memory only, captured per attempt, default d3d11. `zerocopy`
-  alone restores the old `ZeroCopyRuntime` / `bale_zc_*` D3D12 route (upload 6, GPU grain); failed
-  registration logs and keeps D3D11. Leave this runtime and bale_gpu zero-copy code dormant otherwise.
+  The debug `dav1d-path zerocopy` switch and `ZeroCopyRuntime` were removed on 2026-11-27 (owner: no dav1d zero-copy
+  route). bale_gpu's `bale_zc_*` exports stay: FFmpegInteropX's own zero-copy code imports them.
   rav1g always sets `bale_av1_fallback_max_height=1080` (wrapper bale.59): a taller stream whose GPU
   open declines fails with MF_E_UNSUPPORTED_FORMAT and takes the normal failure replan. A failed active
   rav1g mount remounts once on dav1d only with a known source height of at most 1080 (never the scaled

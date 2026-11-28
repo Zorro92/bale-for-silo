@@ -331,7 +331,7 @@ public sealed partial class PlayerPage
                 }
 #if DEBUG_SERVER
                 DebugDescribeUrlRoute(attempt, media);
-                var config = FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g, attempt.Dav1dPath,
+                var config = FfmpegSource.Configuration(media.Route, attempt.FfmpegTuning, media.Rav1g,
                     attempt.SdrWhiteNits);
                 media.FfmpegDecoderOverride = attempt.FfmpegTuning.DecoderOverride;
                 media.FfmpegToneMapOverride = attempt.FfmpegTuning.ToneMapOverride;

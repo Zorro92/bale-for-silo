@@ -211,14 +211,14 @@ Debug `grain=dav1d` still forces CPU grain, `grain=off` still exports only, and 
 its own mode 2. The standalone probe's software default is the same GPU grain.
 
 `FfmpegSource.ApplySoftwareVideo` sends `bale_film_grain_mode=3` (`SoftwareDecodeTuning.FilmGrainMode`, owner
-2026-11-27). The fork's mode 0 (dav1d CPU grain) and mode 2 (GPU grain on zero-copy streams) are debug overrides only. The memory-only debug `dav1d-path [d3d11|zerocopy]`, captured
-per attempt and reset to d3d11 on restart, restores the old D3D12 buffer/upload-6/GPU grain route only
-when set to zerocopy. Registration failure logs and keeps D3D11 with the captured grain setting. `ZeroCopyRuntime` and
-bale_gpu's `bale_zc_*` implementation stay dormant otherwise; nothing is removed from bale_gpu.
+2026-11-27). The fork's mode 0 (dav1d CPU grain) is a debug override only (`grain=dav1d`). Bale no longer sends mode 2 or
+`bale_d3d11_upload`: the debug `dav1d-path zerocopy` switch, `ZeroCopyRuntime` and `grain=gpu` were removed on
+2026-11-27 (owner: no dav1d zero-copy route). bale_gpu's `bale_zc_*` exports and D3D12 helpers stay, because
+FFmpegInteropX's own zero-copy code imports them (and lifecycle and the debug memprobe use the D3D12 helpers).
 On D3D11, `ffmpeg-tune grain=dav1d` selects mode 0 and `grain=off` sends
 `bale_dav1d_export_film_grain=1`, which takes precedence: export only, no grain applied. CPU grain cost
 can therefore be compared as dav1d minus off, on the console later. The standalone software probe
-also uses D3D11 CPU output with GPU grain, independent of the real-player dav1d-path switch.
+also uses D3D11 CPU output with GPU grain.
 
 rav1g sets `bale_av1_fallback_max_height=1080` for every open, including the debug zero-copy A/B.
 When the GPU decoder declines a taller source at open, the fork logs
@@ -319,7 +319,7 @@ with or without `BaleDebugServer`; the CI package checker remains required.
 scripts/bale-debug.sh ffmpeg-tune
 scripts/bale-debug.sh ffmpeg-tune [readahead=on|off|default] [readsize=N|default] [prefetch=N|default] \
   [buffer=ms|default] [ahead=N|default] [delay=N|default] [prio=N|default] \
-  [maxres=0|1|default] [dpb=N|default] [grain=dav1d|gpu|off|on|default]
+  [maxres=0|1|default] [dpb=N|default] [grain=dav1d|d3d11|off|on|default]
 ```
 
 No arguments reads the current process-wide overrides (`GET /ffmpeg-tune`); arguments update them
@@ -330,17 +330,15 @@ creation, retained through recovery/remounts, and applied only to the next real 
 attempt, not an already open player, Native Direct, HLS or the standalone probe. `ffmpeg policy|off`
 remains independent.
 
-- `grain=dav1d|gpu` (software AV1 only) sends `bale_film_grain_mode=0|2`; `on` aliases dav1d.
-  `default` clears the override, keeping the dav1d path's GPU grain (mode 3) on D3D11; mode 2 on debug zerocopy. The explicit debug
-  `grain=gpu` mode 2 works only on zero-copy streams, on Bale-owned textures rather than dav1d reference
-  pictures. `grain=off` sends `bale_dav1d_export_film_grain=1`, independently overriding every mode:
+- `grain=dav1d|d3d11` (software AV1 only) sends `bale_film_grain_mode=0|3`; `on` aliases dav1d. `grain=gpu` (mode 2,
+  zero-copy only) was removed on 2026-11-27. `default` clears the override, keeping the dav1d path's GPU grain (mode 3)
+  on D3D11. `grain=off` sends `bale_dav1d_export_film_grain=1`, independently overriding every mode:
   export only, no grain applied. The D3D11 CPU-grain A/B is `grain=dav1d` versus `grain=off` on the same
   authenticated library file. `grain=cpu` was removed with Bale's former CPU grain implementation;
   dav1d's own CPU grain is mode 0.
-- Software AV1 defaults to D3D11 CPU output without upload/zero-copy keys. Debug
-  `dav1d-path zerocopy` alone restores `bale_d3d11_upload=6`, `bale_zero_copy=1`, GPU grain and D3D12
-  registration, with D3D11 on registration failure. The former `ffmpeg-tune upload=`, `uploadfault=`,
-  `repack=` and `zerocopy=` knobs and upload variants 1–5 remain removed.
+- Software AV1 defaults to D3D11 CPU output without upload/zero-copy keys. The debug `dav1d-path zerocopy` switch
+  (`bale_d3d11_upload=6`, `bale_zero_copy=1`, D3D12 registration) was removed on 2026-11-27. The former `ffmpeg-tune
+  upload=`, `uploadfault=`, `repack=` and `zerocopy=` knobs and upload variants 1–5 remain removed.
   To verify delivery, select `scripts/bale-debug.sh frame-delivery managed` before opening the player,
   then read **Sample memory** in the stats overlay, `where` or `scripts/bale-debug.sh stats`. It reports
   `GPU texture (42/42 checked)`, `CPU buffer (42/42 checked)` or `mixed: texture 10 · buffer 32` from
@@ -450,7 +448,7 @@ Standalone syntax (independent of process-wide `ffmpeg-tune`):
 ```sh
 scripts/bale-debug.sh playtest-ffmpeg <url|@file|suite> [seconds] [auto|software|system] \
   [threads=N] [10bit=on|off] [rate=R] [ahead=N] [delay=N] [prio=N] \
-  [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|gpu|off|on|default]
+  [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|d3d11|off|on|default]
 ```
 
 Supply seconds/mode before tuning, then keys in any order, at most once each. Seconds are 1–60
@@ -944,7 +942,7 @@ allows a resource to stay mapped while the GPU reads it, so dav1d could decode s
   Series X|S only; Xbox One app mode has no D3D12 and keeps today's path. Store certification of a
   D3D12 app (not game) is unverified.
 
-**Historical zero-copy design (approved 2026-11-09; since 2026-11-19 used only by debug `dav1d-path zerocopy`).**
+**Historical zero-copy design (approved 2026-11-09; its debug `dav1d-path zerocopy` route was removed on 2026-11-27).**
 The defaults and measurements in this section describe the earlier implementation; current dav1d
 uses D3D11 CPU output and grain (see "Software AV1 path" above).
 Goal: dav1d decodes straight into GPU-readable memory, and a D3D12 compute shader writes P010, so the
@@ -2678,7 +2676,7 @@ matching counts the same entries, so a 4K display now prefers a 4K AV1 version w
 - **Keys** (`FfmpegSource.ApplyRav1g`, software AV1 only): `bale_av1_decoder=1` and
   `bale_av1_fallback_max_height=1080` (bale.59). dav1d's D3D11 output and captured grain setting (mode 0
   by default, mode 3 when enabled) are configured for the fork's in-open fallback (missing library, interface mismatch, unsupported
-  stream). No zero-copy registration or upload keys unless debug `dav1d-path zerocopy` is captured.
+  stream). No zero-copy registration or upload keys (the debug `dav1d-path zerocopy` switch was removed on 2026-11-27).
   If rav1g declines a stream taller than 1080, the fork refuses it with `MF_E_UNSUPPORTED_FORMAT`, logging
   `Bale AV1: refusing video stream (GPU decoder declined, height N above the fallback limit M)`;
   the open failure reaches Bale's normal failure replan, never CPU dav1d at 4K. FastSeek stays on.

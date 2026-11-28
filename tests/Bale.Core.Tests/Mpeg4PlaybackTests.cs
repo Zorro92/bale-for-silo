@@ -101,7 +101,7 @@ public class Mpeg4PlaybackTests
     public void Mpeg4DoesNotAcquireAv1GrainOptionsAndRejectsUnexpectedVideoEnginesOrCodecs()
     {
         var route = PlaybackRoutePolicy.Decide(Plan(), false);
-        var config = FfmpegSource.Configuration(route, new(FilmGrain: DebugFilmGrain.Gpu));
+        var config = FfmpegSource.Configuration(route, new(FilmGrain: DebugFilmGrain.GpuD3d11));
         Assert.DoesNotContain("bale_film_grain_mode", config.FFmpegOptions.Keys);
         Assert.DoesNotContain("bale_zero_copy", config.FFmpegOptions.Keys);
         var source = new FFmpegMediaSource();

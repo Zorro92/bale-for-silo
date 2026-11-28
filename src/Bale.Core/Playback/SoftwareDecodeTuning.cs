@@ -16,7 +16,7 @@ public sealed record SoftwareDecodeTuning(int? DecodeAheadFrames = null, int? Da
     public const int Above1080pDav1dMaxFrameDelay = 6;
     // Owner, 2026-11-27: the dav1d path applies grain on the GPU only (fork mode 3: D3D11 staged upload + bale_gpu grain;
     // CPU grain only when the fork's open-time probe fails). Fork modes: 0 = dav1d applies grain (debug grain=dav1d),
-    // 2 = GPU grain on debug zero-copy streams, 3 = GPU grain on D3D11. Export-only bale_dav1d_export_film_grain=1
+    // 2 = the fork's zero-copy GPU grain (Bale no longer requests it), 3 = GPU grain on D3D11. Export-only bale_dav1d_export_film_grain=1
     // overrides every mode for grain=off.
     public const int FilmGrainMode = 3;
 

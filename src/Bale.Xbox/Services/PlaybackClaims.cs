@@ -97,7 +97,7 @@ internal static class PlaybackClaims
     /// <summary>
     /// Software video keeps the measured Series/AVX2 device gate, rav1g's AV1 entry included (rav1g is
     /// built and measured for Series consoles). dav1d uses CPU buffers and grain on D3D11, so its AV1
-    /// claim does not load or depend on the dormant D3D12 zero-copy runtime.
+    /// claim does not load or depend on a D3D12 zero-copy runtime (removed 2026-11-27).
     /// </summary>
     private static bool SoftwareVideo() => DeviceIdentity.SoftwareVideoSupported;
 }

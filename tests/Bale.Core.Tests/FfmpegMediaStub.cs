@@ -143,15 +143,4 @@ namespace Bale.Xbox.Services
         internal static bool SupportsDownscale { get; set; } = true;
         internal static bool SupportsSdrDownscale { get; set; } = true;
     }
-
-    internal static class ZeroCopyRuntime
-    {
-        internal static bool Available { get; set; } = true;
-        internal static int Registrations { get; set; }
-        internal static bool Register()
-        {
-            Registrations++;
-            return Available;
-        }
-    }
 }
