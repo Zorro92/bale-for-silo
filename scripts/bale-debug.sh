@@ -981,7 +981,7 @@ case "${1:-}" in
           rate=*) [[ "$value" =~ ^(0*[.][5-9][0-9]*|0*1([.][0-9]*)?|0*2([.]0*)?)$ ]] && valid_tuning=true ;;
         esac
         if [[ "$valid_tuning" != true || -n "${playtest_tuning_seen[$name]:-}" ]]; then
-          echo 'tuning after seconds/mode: [threads=N] [10bit=on|off] [rate=R] [ahead=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|d3d11|off|on|default], any order, no duplicates; N=0–16 (0=CPU count), R=0.5–2.0, ahead/delay=0–64, prio=0–2 (0=off, 1=above normal, 2=highest); system video only: maxres=0–1, dpb=0–16 (0=unset), default = omitted; hdr=on|off forces wrapper HdrSupport Enabled/Disabled (default Automatic); software mode uses CPU buffers and GPU grain on D3D11; grain=on/dav1d keeps dav1d, gpu=GPU (zero-copy), d3d11=GPU on D3D11 (bale.60), off=export-only (wrapper 2.1.0-bale.10+)' >&2
+          echo 'tuning after seconds/mode: [threads=N] [10bit=on|off] [rate=R] [ahead=N] [delay=N] [prio=N] [maxres=0|1|default] [dpb=N|default] [hdr=on|off|default] [grain=dav1d|d3d11|off|on|default], any order, no duplicates; N=0–16 (0=CPU count), R=0.5–2.0, ahead/delay=0–64, prio=0–2 (0=off, 1=above normal, 2=highest); system video only: maxres=0–1, dpb=0–16 (0=unset), default = omitted; hdr=on|off forces wrapper HdrSupport Enabled/Disabled (default Automatic); software mode uses CPU buffers and GPU grain on D3D11; grain=on/dav1d keeps dav1d, d3d11=GPU on D3D11 (bale.60), off=export-only (wrapper 2.1.0-bale.10+)' >&2
           exit 2
         fi
         playtest_tuning_seen[$name]=true

@@ -81,7 +81,7 @@ internal static partial class DebugGpuMemory
         2 => "bale_gpu film grain",
         3 => "bale_gpu subtitle overlay",
         4 => "bale_gpu engine target/staging",
-        5 => "bale_gpu zero-copy resources",
+        5 => "bale_gpu zero-copy resources (retired, unused)",
         16 => "d3d11va decoder texture array",
         17 => "stage output (tone map/downscale output)",
         18 => "dav1d upload pool + staging ring",
